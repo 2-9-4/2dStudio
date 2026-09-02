@@ -1,0 +1,15 @@
+{
+  "formatVersion": 1,
+  "project": {"width": 1024, "height": 1024, "targetFps": 60},
+  "nodes": [
+    {"id": 1, "type": "perlin", "typeVersion": 1, "position": [30, 80], "parameters": {"scale": 7.0, "octaves": 4.0, "speed": 0.05}},
+    {"id": 2, "type": "reaction_diffusion", "typeVersion": 1, "position": [350, 80], "parameters": {"feed": 0.055, "kill": 0.062, "iterations": 8.0}},
+    {"id": 3, "type": "color_ramp", "typeVersion": 1, "position": [690, 80], "parameters": {"r0": 0.02, "g0": 0.05, "b0": 0.15, "r1": 1.0, "g1": 0.45, "b1": 0.08}},
+    {"id": 4, "type": "output", "typeVersion": 1, "position": [1010, 80], "parameters": {}}
+  ],
+  "links": [
+    {"id": 1, "from": {"node": 2, "socket": "image"}, "to": {"node": 3, "socket": "value"}},
+    {"id": 2, "from": {"node": 3, "socket": "image"}, "to": {"node": 4, "socket": "image"}}
+  ],
+  "activeOutput": 4
+}

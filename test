@@ -1,0 +1,212 @@
+{
+  "activeOutput": 4,
+  "formatVersion": 1,
+  "links": [
+    {
+      "from": {
+        "node": 1,
+        "socket": "image"
+      },
+      "id": 3,
+      "to": {
+        "node": 2,
+        "socket": "feedMultiplier"
+      }
+    },
+    {
+      "from": {
+        "node": 10,
+        "socket": "image"
+      },
+      "id": 14,
+      "to": {
+        "node": 7,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 7,
+        "socket": "result"
+      },
+      "id": 17,
+      "to": {
+        "node": 11,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 9,
+        "socket": "image"
+      },
+      "id": 20,
+      "to": {
+        "node": 12,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 12,
+        "socket": "result"
+      },
+      "id": 21,
+      "to": {
+        "node": 10,
+        "socket": "feedMultiplier"
+      }
+    },
+    {
+      "from": {
+        "node": 2,
+        "socket": "image"
+      },
+      "id": 23,
+      "to": {
+        "node": 4,
+        "socket": "image"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": 1,
+      "parameters": {
+        "lacunarity": 2.7009999752044678,
+        "octaves": 1.0,
+        "offsetX": -1.4919999837875366,
+        "persistence": 0.6567000150680542,
+        "scale": 5.270999908447266,
+        "seed": 2910.0,
+        "speed": 1.5219999551773071
+      },
+      "position": [
+        -96.0,
+        44.0
+      ],
+      "type": "perlin",
+      "typeVersion": 1
+    },
+    {
+      "id": 2,
+      "parameters": {
+        "diffA": 0.9853000044822693,
+        "diffB": 0.3508000075817108,
+        "dt": 1.0640000104904175,
+        "feed": 0.10000000149011612,
+        "iterations": 8.0,
+        "kill": 0.04936999827623367
+      },
+      "position": [
+        143.0,
+        44.0
+      ],
+      "type": "reaction_diffusion",
+      "typeVersion": 1
+    },
+    {
+      "id": 4,
+      "parameters": {},
+      "position": [
+        1000.0,
+        80.0
+      ],
+      "type": "output",
+      "typeVersion": 1
+    },
+    {
+      "id": 7,
+      "parameters": {
+        "b": 3.690999984741211,
+        "operation": 2.0
+      },
+      "position": [
+        220.0,
+        569.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 9,
+      "parameters": {
+        "octaves": 1.0,
+        "scale": 2.88100004196167,
+        "speed": 0.21220000088214874
+      },
+      "position": [
+        -704.0,
+        364.0
+      ],
+      "type": "perlin",
+      "typeVersion": 1
+    },
+    {
+      "id": 10,
+      "parameters": {
+        "diffA": 1.0,
+        "diffB": 0.44769999384880066,
+        "feed": 0.05696000158786774,
+        "iterations": 28.0,
+        "structureScale": 6.611000061035156
+      },
+      "position": [
+        -99.0,
+        428.0
+      ],
+      "type": "reaction_diffusion",
+      "typeVersion": 1
+    },
+    {
+      "id": 11,
+      "parameters": {
+        "operation": 11.0,
+        "outMax": 1.9550000429153442
+      },
+      "position": [
+        748.0,
+        345.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 12,
+      "parameters": {
+        "a": 2.48799991607666,
+        "b": -1.5920000076293945,
+        "c": 3.885999917984009,
+        "inMax": 1.343000054359436,
+        "inMin": 0.3481999933719635,
+        "operation": 11.0,
+        "outMax": 3.188999891281128,
+        "outMin": 0.0
+      },
+      "position": [
+        -548.0,
+        -19.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 13,
+      "parameters": {
+        "b": 0.9049999713897705,
+        "operation": 1.0
+      },
+      "position": [
+        -1860.0,
+        476.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    }
+  ],
+  "project": {
+    "height": 1024,
+    "targetFps": 147,
+    "width": 1024
+  }
+}

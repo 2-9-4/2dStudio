@@ -1,0 +1,13 @@
+# Interactive smoke test
+
+1. Launch `reaction_studio` on an OpenGL 4.3-capable desktop and confirm both windows open.
+2. Confirm the default noise-driven reaction-diffusion graph animates and the preview matches the Output node thumbnail.
+3. Change feed, kill, noise scale, and color ramp values and confirm the preview responds live.
+4. Pause and confirm Time and simulation state stop while node editing remains responsive; resume and confirm forward evolution continues.
+5. Reset and confirm the simulation reinitializes without moving or deleting nodes.
+6. Add Math and Mix nodes through the searchable background menu, connect them, then delete a link.
+7. Attempt to create a cycle and confirm the editor reports the graph error while preserving the last valid preview.
+8. Save, modify the graph, load the saved file, and confirm topology, values, positions, resolution, and target FPS restore while the simulation restarts.
+9. Close the preview, keep editing, and reopen it from Window → Open Preview.
+10. Set 1024×1024 at 60 FPS and observe per-node GPU timings and overall FPS. After warm-up there should be no recurring texture allocations or CPU image readback.
+
