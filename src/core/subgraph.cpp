@@ -10,8 +10,10 @@ namespace {
 
 SubgraphKernelNode node(std::string key, std::string operation,
                         std::vector<std::string> inputs = {},
-                        nlohmann::json properties = nlohmann::json::object(), Vec2 position = {}) {
+                        nlohmann::json properties = nlohmann::json::object(), Vec2 position = {},
+                        std::string label = {}) {
     if (!properties.is_object()) properties = nlohmann::json::object();
+    if (!label.empty()) properties["label"] = std::move(label);
     return {std::move(key), std::move(operation), std::move(inputs),
             std::move(properties), position};
 }
@@ -64,21 +66,21 @@ SubgraphDefinition discreteReaction() {
         node("initialSeed", "select", {"hasSeed", "seedInput", "defaultSeed"}, {}, {540, 160}),
         node("halfSeed", "multiply", {"initialSeed"}, {{"value", .5}}, {720, 100}),
         node("initialA", "subtract", {"halfSeed"}, {{"from", 1.0}}, {900, 80}),
-        node("initial", "pack2", {"initialA", "initialSeed"}, {{"role", "initial"}}, {1080, 140}),
+        node("initial", "pack2", {"initialA", "initialSeed"}, {{"role", "initial"}}, {1080, 140}, "Initial State"),
         node("state", "previous_state", {}, {}, {0, 440}),
-        node("a0", "swizzle", {"state"}, {{"channel", 0}}, {180, 380}),
-        node("b0", "swizzle", {"state"}, {{"channel", 1}}, {180, 500}),
-        node("lap", "laplacian", {"state"}, {{"scale", "structureScale"}}, {180, 620}),
+        node("a0", "swizzle", {"state"}, {{"channel", 0}}, {180, 380}, "Current A"),
+        node("b0", "swizzle", {"state"}, {{"channel", 1}}, {180, 500}, "Current B"),
+        node("lap", "laplacian", {"state"}, {{"scale", "structureScale"}}, {180, 620}, "State Laplacian"),
         node("lapA", "swizzle", {"lap"}, {{"channel", 0}}, {360, 600}),
         node("lapB", "swizzle", {"lap"}, {{"channel", 1}}, {360, 700}),
-        node("bb", "multiply", {"b0", "b0"}, {}, {360, 420}),
+        node("bb", "multiply", {"b0", "b0"}, {}, {360, 420}, "B Squared"),
         node("reaction", "multiply", {"a0", "bb"}, {}, {540, 420}),
         node("feedMask", "interface", {}, {{"key", "feedMultiplier"}, {"default", 1.0}}, {360, 800}),
         node("killMask", "interface", {}, {{"key", "killMultiplier"}, {"default", 1.0}}, {360, 880}),
         node("feedValue", "interface", {}, {{"key", "feed"}}, {540, 800}),
         node("killValue", "interface", {}, {{"key", "kill"}}, {540, 880}),
-        node("f", "multiply", {"feedValue", "feedMask"}, {}, {720, 800}),
-        node("k", "multiply", {"killValue", "killMask"}, {}, {720, 880}),
+        node("f", "multiply", {"feedValue", "feedMask"}, {}, {720, 800}, "Effective Feed"),
+        node("k", "multiply", {"killValue", "killMask"}, {}, {720, 880}, "Effective Kill"),
         node("diffAValue", "interface", {}, {{"key", "diffA"}}, {540, 600}),
         node("diffBValue", "interface", {}, {{"key", "diffB"}}, {540, 700}),
         node("diffusionA", "multiply", {"diffAValue", "lapA"}, {}, {720, 580}),
@@ -87,7 +89,7 @@ SubgraphDefinition discreteReaction() {
         node("feedTerm", "multiply", {"f", "oneMinusA"}, {}, {900, 360}),
         node("aDelta0", "subtract", {"diffusionA", "reaction"}, {}, {900, 540}),
         node("aDelta", "add", {"aDelta0", "feedTerm"}, {}, {1080, 500}),
-        node("kf", "add", {"k", "f"}, {}, {900, 820}),
+        node("kf", "add", {"k", "f"}, {}, {900, 820}, "Feed + Kill"),
         node("decay", "multiply", {"kf", "b0"}, {}, {1080, 780}),
         node("bDelta0", "add", {"diffusionB", "reaction"}, {}, {900, 680}),
         node("bDelta", "subtract", {"bDelta0", "decay"}, {}, {1260, 720}),
@@ -98,7 +100,7 @@ SubgraphDefinition discreteReaction() {
         node("bNext0", "add", {"b0", "bStep"}, {}, {1620, 680}),
         node("aNext", "clamp01", {"aNext0"}, {}, {1620, 460}),
         node("bNext", "clamp01", {"bNext0"}, {}, {1800, 680}),
-        node("next", "pack2", {"aNext", "bNext"}, {{"role", "next"}}, {1980, 560}),
+        node("next", "pack2", {"aNext", "bNext"}, {{"role", "next"}}, {1980, 560}, "Next State"),
         node("outputImage", "output", {"bNext"}, {{"key", "image"}}, {2160, 500}),
         node("outputA", "output", {"aNext"}, {{"key", "a"}}, {2160, 580}),
         node("outputB", "output", {"bNext"}, {{"key", "b"}}, {2160, 660}),

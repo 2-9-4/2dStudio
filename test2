@@ -37,17 +37,6 @@
     },
     {
       "from": {
-        "node": 6,
-        "socket": "image"
-      },
-      "id": 7,
-      "to": {
-        "node": 7,
-        "socket": "image"
-      }
-    },
-    {
-      "from": {
         "node": 7,
         "socket": "image"
       },
@@ -114,28 +103,6 @@
     },
     {
       "from": {
-        "node": 14,
-        "socket": "result"
-      },
-      "id": 55,
-      "to": {
-        "node": 21,
-        "socket": "a"
-      }
-    },
-    {
-      "from": {
-        "node": 19,
-        "socket": "result"
-      },
-      "id": 56,
-      "to": {
-        "node": 21,
-        "socket": "b"
-      }
-    },
-    {
-      "from": {
         "node": 21,
         "socket": "result"
       },
@@ -169,17 +136,6 @@
     },
     {
       "from": {
-        "node": 22,
-        "socket": "result"
-      },
-      "id": 64,
-      "to": {
-        "node": 4,
-        "socket": "image"
-      }
-    },
-    {
-      "from": {
         "node": 7,
         "socket": "image"
       },
@@ -199,6 +155,61 @@
         "node": 23,
         "socket": "value"
       }
+    },
+    {
+      "from": {
+        "node": 14,
+        "socket": "result"
+      },
+      "id": 67,
+      "to": {
+        "node": 27,
+        "socket": "image"
+      }
+    },
+    {
+      "from": {
+        "node": 27,
+        "socket": "image"
+      },
+      "id": 69,
+      "to": {
+        "node": 21,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 19,
+        "socket": "result"
+      },
+      "id": 70,
+      "to": {
+        "node": 21,
+        "socket": "b"
+      }
+    },
+    {
+      "from": {
+        "node": 6,
+        "socket": "image"
+      },
+      "id": 72,
+      "to": {
+        "node": 7,
+        "socket": "image"
+      }
+    },
+    {
+      "from": {
+        "node": 22,
+        "socket": "result"
+      },
+      "id": 76,
+      "to": {
+        "node": 4,
+        "socket": "image"
+      }
     }
   ],
   "nodes": [
@@ -208,7 +219,8 @@
         "lacunarity": 1.0,
         "octaves": 1.0,
         "persistence": 0.0,
-        "scale": 3.001499891281128
+        "scale": 4.847599983215332,
+        "speed": 0.22300000488758087
       },
       "position": [
         -719.0,
@@ -223,6 +235,7 @@
         "autoReset": 1.0,
         "diffA": 1.0240000486373901,
         "diffB": 0.3799999952316284,
+        "dt": 0.989080011844635,
         "feed": 0.08020000159740448,
         "iterations": 64.0,
         "kill": 0.06199999898672104,
@@ -297,7 +310,7 @@
       "id": 7,
       "parameters": {
         "bias": 0.0,
-        "iterations": 5.0,
+        "iterations": 8.0,
         "kernel": [
           0.0,
           0.0,
@@ -485,11 +498,11 @@
       "id": 8,
       "parameters": {
         "operation": 11.0,
-        "outMin": 0.4000000059604645
+        "outMin": 0.3499999940395355
       },
       "position": [
-        269.0,
-        460.0
+        253.0,
+        444.0
       ],
       "type": "math",
       "typeVersion": 1
@@ -512,8 +525,8 @@
         "outMin": 0.4000000059604645
       },
       "position": [
-        541.0,
-        555.0
+        509.0,
+        585.0
       ],
       "type": "math",
       "typeVersion": 1
@@ -581,7 +594,7 @@
     {
       "id": 22,
       "parameters": {
-        "factor": 0.7559999823570251,
+        "factor": 0.7799999713897705,
         "mode": 4.0
       },
       "position": [
@@ -609,251 +622,941 @@
       "id": 24,
       "parameters": {
         "bias": 0.0,
-        "iterations": 1.0,
+        "iterations": 4.0,
         "kernel": [
           0.0,
           0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          1.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          0.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
           1.0,
-          1.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
           0.0,
           0.0,
           0.0,
-          1.0,
           1.0,
           1.0,
           1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          0.0,
           0.0,
-          0.0,
-          0.0,
-          1.0,
-          1.0,
           1.0,
           1.0,
           1.0,
           1.0,
           1.0,
-          1.0,
-          1.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
           0.0,
-          0.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
           1.0,
           1.0,
           1.0,
           0.0,
           0.0,
           0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
           1.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
-          0.0,
           0.0,
           0.0
         ],
-        "kernelSize": 15,
+        "kernelSize": 5,
         "normalize": 0.0,
         "operation": 2.0,
         "preset": "Dilation"
       },
       "position": [
-        399.0,
-        -580.0
+        415.0,
+        -564.0
+      ],
+      "type": "convolution",
+      "typeVersion": 1
+    },
+    {
+      "id": 27,
+      "parameters": {
+        "bias": 0.0,
+        "iterations": 1.0,
+        "kernel": [
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          13.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "kernelSize": 7,
+        "normalize": 0.0,
+        "operation": 0.0,
+        "preset": "Sharpen"
+      },
+      "position": [
+        1375.0,
+        524.0
       ],
       "type": "convolution",
       "typeVersion": 1
     }
   ],
   "project": {
-    "height": 512,
-    "targetFps": 60,
-    "width": 512
+    "height": 1024,
+    "targetFps": 240,
+    "width": 1024
   },
-  "subgraphs": []
+  "subgraphs": [
+    {
+      "category": "Simulation",
+      "execution": "simulation",
+      "id": "project.reaction_diffusion.27.1",
+      "interface": [
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "feedMultiplier",
+          "kind": "input",
+          "label": "Feed Multiplier",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "role": "",
+          "type": "numeric"
+        },
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "killMultiplier",
+          "kind": "input",
+          "label": "Kill Multiplier",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "role": "",
+          "type": "numeric"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "seed",
+          "kind": "input",
+          "label": "Seed",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "role": "",
+          "type": "image2d"
+        },
+        {
+          "control": "float",
+          "default": 0.054999999701976776,
+          "key": "feed",
+          "kind": "slider",
+          "label": "Feed",
+          "maximum": 0.10000000149011612,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.06199999898672104,
+          "key": "kill",
+          "kind": "slider",
+          "label": "Kill",
+          "maximum": 0.10000000149011612,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "diffA",
+          "kind": "slider",
+          "label": "Diffusion A",
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.5,
+          "key": "diffB",
+          "kind": "slider",
+          "label": "Diffusion B",
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "structureScale",
+          "kind": "slider",
+          "label": "Structure Scale",
+          "maximum": 8.0,
+          "minimum": 0.25,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "dt",
+          "kind": "slider",
+          "label": "Timestep",
+          "maximum": 2.0,
+          "minimum": 0.009999999776482582,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "integer",
+          "default": 8.0,
+          "key": "iterations",
+          "kind": "slider",
+          "label": "Iterations",
+          "maximum": 64.0,
+          "minimum": 1.0,
+          "optional": false,
+          "role": "iterations",
+          "type": "float"
+        },
+        {
+          "control": "boolean",
+          "default": 0.0,
+          "key": "autoReset",
+          "kind": "slider",
+          "label": "Auto Reset",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "autoReset",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "image",
+          "kind": "output",
+          "label": "Image",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "image2d"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "a",
+          "kind": "output",
+          "label": "A",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "image2d"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "b",
+          "kind": "output",
+          "label": "B",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "image2d"
+        }
+      ],
+      "kernel": [
+        {
+          "inputs": [],
+          "key": "uv",
+          "operation": "uv",
+          "position": [
+            0.0,
+            -4.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [],
+          "key": "center",
+          "operation": "constant2",
+          "position": [
+            0.0,
+            120.0
+          ],
+          "properties": {
+            "x": 0.5,
+            "y": 0.5
+          }
+        },
+        {
+          "inputs": [
+            "uv",
+            "center"
+          ],
+          "key": "radius",
+          "operation": "length",
+          "position": [
+            180.0,
+            60.0
+          ],
+          "properties": {
+            "subtract": true
+          }
+        },
+        {
+          "inputs": [],
+          "key": "seedRadius",
+          "operation": "constant",
+          "position": [
+            180.0,
+            160.0
+          ],
+          "properties": {
+            "value": 0.075
+          }
+        },
+        {
+          "inputs": [
+            "radius",
+            "seedRadius"
+          ],
+          "key": "defaultSeed",
+          "operation": "step",
+          "position": [
+            360.0,
+            100.0
+          ],
+          "properties": {
+            "reverse": true
+          }
+        },
+        {
+          "inputs": [],
+          "key": "seedInput",
+          "operation": "interface",
+          "position": [
+            360.0,
+            200.0
+          ],
+          "properties": {
+            "default": 0.0,
+            "key": "seed"
+          }
+        },
+        {
+          "inputs": [],
+          "key": "hasSeed",
+          "operation": "connected",
+          "position": [
+            360.0,
+            280.0
+          ],
+          "properties": {
+            "key": "seed"
+          }
+        },
+        {
+          "inputs": [
+            "hasSeed",
+            "seedInput",
+            "defaultSeed"
+          ],
+          "key": "initialSeed",
+          "operation": "select",
+          "position": [
+            540.0,
+            160.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "initialSeed"
+          ],
+          "key": "halfSeed",
+          "operation": "multiply",
+          "position": [
+            720.0,
+            100.0
+          ],
+          "properties": {
+            "value": 0.5
+          }
+        },
+        {
+          "inputs": [
+            "halfSeed"
+          ],
+          "key": "initialA",
+          "operation": "subtract",
+          "position": [
+            900.0,
+            80.0
+          ],
+          "properties": {
+            "from": 1.0
+          }
+        },
+        {
+          "inputs": [
+            "initialA",
+            "initialSeed"
+          ],
+          "key": "initial",
+          "operation": "pack2",
+          "position": [
+            1080.0,
+            140.0
+          ],
+          "properties": {
+            "label": "Initial State",
+            "role": "initial"
+          }
+        },
+        {
+          "inputs": [],
+          "key": "state",
+          "operation": "previous_state",
+          "position": [
+            0.0,
+            440.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "state"
+          ],
+          "key": "a0",
+          "operation": "swizzle",
+          "position": [
+            180.0,
+            380.0
+          ],
+          "properties": {
+            "channel": 0,
+            "label": "Current A"
+          }
+        },
+        {
+          "inputs": [
+            "state"
+          ],
+          "key": "b0",
+          "operation": "swizzle",
+          "position": [
+            180.0,
+            500.0
+          ],
+          "properties": {
+            "channel": 1,
+            "label": "Current B"
+          }
+        },
+        {
+          "inputs": [
+            "state"
+          ],
+          "key": "lap",
+          "operation": "laplacian",
+          "position": [
+            180.0,
+            620.0
+          ],
+          "properties": {
+            "label": "State Laplacian",
+            "scale": "structureScale"
+          }
+        },
+        {
+          "inputs": [
+            "lap"
+          ],
+          "key": "lapA",
+          "operation": "swizzle",
+          "position": [
+            360.0,
+            600.0
+          ],
+          "properties": {
+            "channel": 0
+          }
+        },
+        {
+          "inputs": [
+            "lap"
+          ],
+          "key": "lapB",
+          "operation": "swizzle",
+          "position": [
+            360.0,
+            700.0
+          ],
+          "properties": {
+            "channel": 1
+          }
+        },
+        {
+          "inputs": [
+            "b0",
+            "b0"
+          ],
+          "key": "bb",
+          "operation": "multiply",
+          "position": [
+            360.0,
+            420.0
+          ],
+          "properties": {
+            "label": "B Squared"
+          }
+        },
+        {
+          "inputs": [
+            "a0",
+            "bb"
+          ],
+          "key": "reaction",
+          "operation": "multiply",
+          "position": [
+            540.0,
+            420.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [],
+          "key": "feedMask",
+          "operation": "interface",
+          "position": [
+            360.0,
+            800.0
+          ],
+          "properties": {
+            "default": 1.0,
+            "key": "feedMultiplier"
+          }
+        },
+        {
+          "inputs": [],
+          "key": "killMask",
+          "operation": "interface",
+          "position": [
+            360.0,
+            880.0
+          ],
+          "properties": {
+            "default": 1.0,
+            "key": "killMultiplier"
+          }
+        },
+        {
+          "inputs": [],
+          "key": "feedValue",
+          "operation": "interface",
+          "position": [
+            540.0,
+            800.0
+          ],
+          "properties": {
+            "key": "feed"
+          }
+        },
+        {
+          "inputs": [],
+          "key": "killValue",
+          "operation": "interface",
+          "position": [
+            540.0,
+            880.0
+          ],
+          "properties": {
+            "key": "kill"
+          }
+        },
+        {
+          "inputs": [
+            "feedValue",
+            "feedMask"
+          ],
+          "key": "f",
+          "operation": "multiply",
+          "position": [
+            720.0,
+            800.0
+          ],
+          "properties": {
+            "label": "Effective Feed"
+          }
+        },
+        {
+          "inputs": [
+            "killValue",
+            "killMask"
+          ],
+          "key": "k",
+          "operation": "multiply",
+          "position": [
+            720.0,
+            880.0
+          ],
+          "properties": {
+            "label": "Effective Kill"
+          }
+        },
+        {
+          "inputs": [],
+          "key": "diffAValue",
+          "operation": "interface",
+          "position": [
+            540.0,
+            600.0
+          ],
+          "properties": {
+            "key": "diffA"
+          }
+        },
+        {
+          "inputs": [],
+          "key": "diffBValue",
+          "operation": "interface",
+          "position": [
+            540.0,
+            700.0
+          ],
+          "properties": {
+            "key": "diffB"
+          }
+        },
+        {
+          "inputs": [
+            "diffAValue",
+            "lapA"
+          ],
+          "key": "diffusionA",
+          "operation": "multiply",
+          "position": [
+            720.0,
+            580.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "diffBValue",
+            "lapB"
+          ],
+          "key": "diffusionB",
+          "operation": "multiply",
+          "position": [
+            720.0,
+            680.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "a0"
+          ],
+          "key": "oneMinusA",
+          "operation": "subtract",
+          "position": [
+            720.0,
+            360.0
+          ],
+          "properties": {
+            "from": 1.0
+          }
+        },
+        {
+          "inputs": [
+            "f",
+            "oneMinusA"
+          ],
+          "key": "feedTerm",
+          "operation": "multiply",
+          "position": [
+            900.0,
+            360.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "diffusionA",
+            "reaction"
+          ],
+          "key": "aDelta0",
+          "operation": "subtract",
+          "position": [
+            900.0,
+            540.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "aDelta0",
+            "feedTerm"
+          ],
+          "key": "aDelta",
+          "operation": "add",
+          "position": [
+            1080.0,
+            500.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "k",
+            "f"
+          ],
+          "key": "kf",
+          "operation": "add",
+          "position": [
+            900.0,
+            820.0
+          ],
+          "properties": {
+            "label": "Feed + Kill"
+          }
+        },
+        {
+          "inputs": [
+            "kf",
+            "b0"
+          ],
+          "key": "decay",
+          "operation": "multiply",
+          "position": [
+            1080.0,
+            780.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "diffusionB",
+            "reaction"
+          ],
+          "key": "bDelta0",
+          "operation": "add",
+          "position": [
+            900.0,
+            680.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "bDelta0",
+            "decay"
+          ],
+          "key": "bDelta",
+          "operation": "subtract",
+          "position": [
+            1260.0,
+            720.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [],
+          "key": "dtValue",
+          "operation": "interface",
+          "position": [
+            1080.0,
+            900.0
+          ],
+          "properties": {
+            "key": "dt"
+          }
+        },
+        {
+          "inputs": [
+            "aDelta",
+            "dtValue"
+          ],
+          "key": "aStep",
+          "operation": "multiply",
+          "position": [
+            1260.0,
+            480.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "bDelta",
+            "dtValue"
+          ],
+          "key": "bStep",
+          "operation": "multiply",
+          "position": [
+            1440.0,
+            700.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "a0",
+            "aStep"
+          ],
+          "key": "aNext0",
+          "operation": "add",
+          "position": [
+            1440.0,
+            460.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "b0",
+            "bStep"
+          ],
+          "key": "bNext0",
+          "operation": "add",
+          "position": [
+            1620.0,
+            680.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "aNext0"
+          ],
+          "key": "aNext",
+          "operation": "clamp01",
+          "position": [
+            1620.0,
+            460.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "bNext0"
+          ],
+          "key": "bNext",
+          "operation": "clamp01",
+          "position": [
+            1800.0,
+            680.0
+          ],
+          "properties": {}
+        },
+        {
+          "inputs": [
+            "aNext",
+            "bNext"
+          ],
+          "key": "next",
+          "operation": "pack2",
+          "position": [
+            1980.0,
+            560.0
+          ],
+          "properties": {
+            "label": "Next State",
+            "role": "next"
+          }
+        },
+        {
+          "inputs": [
+            "bNext"
+          ],
+          "key": "outputImage",
+          "operation": "output",
+          "position": [
+            2160.0,
+            500.0
+          ],
+          "properties": {
+            "key": "image"
+          }
+        },
+        {
+          "inputs": [
+            "aNext"
+          ],
+          "key": "outputA",
+          "operation": "output",
+          "position": [
+            2160.0,
+            580.0
+          ],
+          "properties": {
+            "key": "a"
+          }
+        },
+        {
+          "inputs": [
+            "bNext"
+          ],
+          "key": "outputB",
+          "operation": "output",
+          "position": [
+            2160.0,
+            660.0
+          ],
+          "properties": {
+            "key": "b"
+          }
+        }
+      ],
+      "name": "Reaction Diffusion Copy 1",
+      "version": 1
+    }
+  ]
 }

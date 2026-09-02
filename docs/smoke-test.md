@@ -13,4 +13,6 @@
 7. Attempt to create a cycle and confirm the editor reports the graph error while preserving the last valid preview.
 8. Save, modify the graph, load the saved file, and confirm topology, values, positions, resolution, and target FPS restore while the simulation restarts.
 9. Close the preview, keep editing, and reopen it from Window → Open Preview.
-10. Set 1024×1024 at 60 FPS and observe per-node GPU timings and overall FPS. After warm-up there should be no recurring texture allocations or CPU image readback.
+10. Change the project to a non-square resolution, resize the preview, and confirm it remains constrained to the project aspect ratio without stretching.
+11. Start recording, let the project run, pause and resume once, then stop. Confirm the MP4 has the project resolution, excludes the editor UI, and does not advance while paused.
+12. Set 1024×1024 at 60 FPS and observe per-node GPU timings and overall FPS. Outside an active recording, after warm-up there should be no recurring texture allocations or CPU image readback.

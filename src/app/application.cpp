@@ -12,14 +12,22 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cctype>
+#include <cerrno>
+#include <csignal>
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 namespace reaction {
 namespace ed = ax::NodeEditor;
@@ -50,9 +58,79 @@ ImColor socketColor(ValueType type) {
     return ImColor(180, 180, 180);
 }
 
+std::string humanizeIdentifier(std::string_view value) {
+    std::string result;
+    result.reserve(value.size() + 8);
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        const unsigned char current = static_cast<unsigned char>(value[index]);
+        if (value[index] == '_' || value[index] == '-') {
+            if (!result.empty() && result.back() != ' ') result.push_back(' ');
+            continue;
+        }
+        if (index > 0 && std::isupper(current) && result.back() != ' ') result.push_back(' ');
+        result.push_back(value[index]);
+    }
+    bool capitalize = true;
+    for (char& character : result) {
+        if (character == ' ') capitalize = true;
+        else if (capitalize) {
+            character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+            capitalize = false;
+        }
+    }
+    return result;
+}
+
+std::string operationLabel(std::string_view operation) {
+    static const std::unordered_map<std::string_view, std::string_view> labels{
+        {"uv", "Canvas Coordinates"}, {"constant", "Number"}, {"constant2", "2D Value"},
+        {"previous_state", "Previous State"}, {"interface", "Subgraph Input"},
+        {"connected", "Input Connected"}, {"laplacian", "Laplacian"},
+        {"pack2", "Combine Channels"}, {"swizzle", "Extract Channel"},
+        {"clamp01", "Clamp 0–1"}, {"output", "Subgraph Output"}
+    };
+    const auto found = labels.find(operation);
+    return found == labels.end() ? humanizeIdentifier(operation) : std::string(found->second);
+}
+
+std::string kernelNodeLabel(const SubgraphKernelNode& node,
+                            const SubgraphDefinition& definition) {
+    if (node.properties.is_object()) {
+        const auto explicitLabel = node.properties.value("label", std::string{});
+        if (!explicitLabel.empty()) return explicitLabel;
+        if (node.operation == "interface" || node.operation == "connected" || node.operation == "output") {
+            const auto key = node.properties.value("key", std::string{});
+            const auto item = std::ranges::find(definition.interface, key, &SubgraphInterfaceItem::key);
+            if (item != definition.interface.end()) return item->label;
+        }
+    }
+    return humanizeIdentifier(node.key);
+}
+
+std::string kernelInputLabel(std::string_view operation, std::size_t input) {
+    if (operation == "select") {
+        static const std::array labels{"Condition", "True", "False"};
+        if (input < labels.size()) return labels[input];
+    }
+    if (operation == "clamp") {
+        static const std::array labels{"Value", "Minimum", "Maximum"};
+        if (input < labels.size()) return labels[input];
+    }
+    if (operation == "remap") {
+        static const std::array labels{"Value", "Input Min", "Input Max", "Output Min", "Output Max"};
+        if (input < labels.size()) return labels[input];
+    }
+    if (operation == "pack2") return input == 0 ? "Channel A" : "Channel B";
+    if (operation == "step") return input == 0 ? "Value" : "Edge";
+    if (operation == "subtract" || operation == "divide" || operation == "pow")
+        return input == 0 ? "A" : "B";
+    return input == 0 ? "Value" : "Value " + std::to_string(input + 1);
+}
+
 } // namespace
 
 Application::Application(std::filesystem::path startupProject) {
+    std::signal(SIGPIPE, SIG_IGN);
     glfwSetErrorCallback(glfwError);
     if (glfwInit() == GLFW_FALSE) throw std::runtime_error("Unable to initialize GLFW");
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -93,6 +171,7 @@ Application::Application(std::filesystem::path startupProject) {
 }
 
 Application::~Application() {
+    stopRecording(false);
     if (editorWindow_) glfwMakeContextCurrent(editorWindow_);
     runtime_.reset();
     gpu_.reset();
@@ -112,18 +191,37 @@ Application::~Application() {
 
 void Application::createPreviewWindow() {
     if (previewWindow_) return;
-    previewWindow_ = glfwCreateWindow(900, 900, "Reaction Studio — Preview", nullptr, editorWindow_);
+    constexpr int maximumSize = 900;
+    const double aspect = static_cast<double>(graph_.settings.width) /
+                          static_cast<double>(graph_.settings.height);
+    const int previewWidth = aspect >= 1.0 ? maximumSize :
+        std::max(1, static_cast<int>(std::lround(maximumSize * aspect)));
+    const int previewHeight = aspect >= 1.0 ?
+        std::max(1, static_cast<int>(std::lround(maximumSize / aspect))) : maximumSize;
+    previewWindow_ = glfwCreateWindow(previewWidth, previewHeight,
+                                      "Reaction Studio — Preview", nullptr, editorWindow_);
     if (!previewWindow_) throw std::runtime_error("Unable to create preview window");
     glfwMakeContextCurrent(previewWindow_);
     glfwSwapInterval(0);
+    updatePreviewAspectRatio();
     glGenVertexArrays(1, &previewVertexArray_);
     glfwMakeContextCurrent(editorWindow_);
 }
 
+void Application::updatePreviewAspectRatio() {
+    if (previewWindow_ && graph_.settings.width > 0 && graph_.settings.height > 0)
+        glfwSetWindowAspectRatio(previewWindow_, graph_.settings.width, graph_.settings.height);
+}
+
 void Application::newProject() {
+    stopRecording();
     if (runtime_) runtime_->clear();
+    editingSubgraphId_.clear();
+    editingSubgraphInstance_ = 0;
+    positionedSubgraphId_.clear();
     graph_.clear();
     graph_.settings = {};
+    updatePreviewAspectRatio();
     graph_.addNode("perlin", {40, 80});
     const auto reaction = graph_.addNode("reaction_diffusion", {360, 80});
     const auto ramp = graph_.addNode("color_ramp", {700, 80});
@@ -157,8 +255,13 @@ void Application::loadProjectDialog() {
 }
 
 void Application::loadProject(const std::filesystem::path& path) {
+    stopRecording();
     if (runtime_) runtime_->clear();
+    editingSubgraphId_.clear();
+    editingSubgraphInstance_ = 0;
+    positionedSubgraphId_.clear();
     graph_ = reaction::loadProject(path, registry_);
+    updatePreviewAspectRatio();
     currentPath_ = path;
     positioned_.clear();
     elapsed_ = 0;
@@ -231,6 +334,129 @@ void Application::exportFrameDialog() {
     } catch (const std::exception& error) {
         setStatus(error.what(), true);
     }
+}
+
+void Application::startRecordingDialog() {
+    const auto image = runtime_->outputImage();
+    if (image.texture == 0 || image.width <= 0 || image.height <= 0) {
+        setStatus("No output image to record", true);
+        return;
+    }
+    if ((image.width & 1) != 0 || (image.height & 1) != 0) {
+        setStatus("MP4 recording requires an even project width and height", true);
+        return;
+    }
+
+    auto filename = currentPath_.empty() ? std::filesystem::path("recording.mp4")
+                                         : currentPath_.filename().replace_extension().replace_extension(".mp4");
+    auto selected = pfd::save_file("Record Video", filename.string(),
+                                   {"MP4 video", "*.mp4"}).result();
+    if (selected.empty()) return;
+    recordingPath_ = std::move(selected);
+    if (recordingPath_.extension() != ".mp4") recordingPath_ += ".mp4";
+
+    int pipeEnds[2]{};
+    if (pipe(pipeEnds) != 0) {
+        setStatus(std::string("Cannot create video pipe: ") + std::strerror(errno), true);
+        recordingPath_.clear();
+        return;
+    }
+    const pid_t child = fork();
+    if (child == 0) {
+        close(pipeEnds[1]);
+        if (dup2(pipeEnds[0], STDIN_FILENO) < 0) _exit(127);
+        close(pipeEnds[0]);
+        const std::string videoSize = std::to_string(image.width) + "x" + std::to_string(image.height);
+        const std::string frameRate = std::to_string(graph_.settings.targetFps);
+        execlp("ffmpeg", "ffmpeg", "-loglevel", "error", "-y",
+               "-f", "rawvideo", "-pixel_format", "rgb24", "-video_size", videoSize.c_str(),
+               "-framerate", frameRate.c_str(), "-i", "pipe:0", "-an", "-c:v", "libx264",
+               "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+               recordingPath_.c_str(), static_cast<char*>(nullptr));
+        _exit(127);
+    }
+    close(pipeEnds[0]);
+    if (child < 0) {
+        close(pipeEnds[1]);
+        setStatus(std::string("Cannot start FFmpeg: ") + std::strerror(errno), true);
+        recordingPath_.clear();
+        return;
+    }
+    recordingPipe_ = pipeEnds[1];
+    recordingProcess_ = static_cast<int>(child);
+    recordingWidth_ = image.width;
+    recordingHeight_ = image.height;
+    recordedFrames_ = 0;
+    setStatus("Recording " + recordingPath_.filename().string());
+}
+
+void Application::stopRecording(bool reportStatus) {
+    if (recordingPipe_ < 0) return;
+    close(recordingPipe_);
+    recordingPipe_ = -1;
+    int processStatus = 0;
+    const pid_t result = waitpid(static_cast<pid_t>(recordingProcess_), &processStatus, 0);
+    const bool succeeded = result >= 0 && WIFEXITED(processStatus) && WEXITSTATUS(processStatus) == 0;
+    if (reportStatus) {
+        if (succeeded) {
+            const double seconds = static_cast<double>(recordedFrames_) /
+                                   static_cast<double>(std::max(graph_.settings.targetFps, 1));
+            char duration[32]{};
+            std::snprintf(duration, sizeof(duration), "%.1f", seconds);
+            setStatus("Saved " + recordingPath_.filename().string() + " (" + duration + "s)");
+        } else {
+            setStatus("FFmpeg could not finish the video; check that FFmpeg with libx264 is installed", true);
+        }
+    }
+    recordingProcess_ = -1;
+    recordingPath_.clear();
+    recordingWidth_ = 0;
+    recordingHeight_ = 0;
+    recordedFrames_ = 0;
+}
+
+void Application::recordFrame() {
+    if (recordingPipe_ < 0 || !playing_) return;
+    const auto image = runtime_->outputImage();
+    if (image.texture == 0) return;
+    if (image.width != recordingWidth_ || image.height != recordingHeight_) {
+        stopRecording(false);
+        setStatus("Recording stopped because the project resolution changed", true);
+        return;
+    }
+
+    std::vector<float> source(static_cast<std::size_t>(image.width) *
+                              static_cast<std::size_t>(image.height) * 4U);
+    std::vector<std::uint8_t> pixels(static_cast<std::size_t>(image.width) *
+                                     static_cast<std::size_t>(image.height) * 3U);
+    glBindTexture(GL_TEXTURE_2D, image.texture);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, source.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+    for (int y = 0; y < image.height; ++y) {
+        for (int x = 0; x < image.width; ++x) {
+            const auto sourceIndex = static_cast<std::size_t>((y * image.width + x) * 4);
+            const auto pixelIndex = static_cast<std::size_t>(((image.height - 1 - y) * image.width + x) * 3);
+            for (int channel = 0; channel < 3; ++channel) {
+                const float value = source[sourceIndex + static_cast<std::size_t>(channel)];
+                pixels[pixelIndex + static_cast<std::size_t>(channel)] = static_cast<std::uint8_t>(
+                    std::lround(std::clamp(std::isfinite(value) ? value : 0.0F, 0.0F, 1.0F) * 255.0F));
+            }
+        }
+    }
+
+    std::size_t written = 0;
+    while (written < pixels.size()) {
+        const ssize_t count = write(recordingPipe_, pixels.data() + written, pixels.size() - written);
+        if (count > 0) written += static_cast<std::size_t>(count);
+        else if (count < 0 && errno == EINTR) continue;
+        else {
+            stopRecording(false);
+            setStatus("Recording failed; check that FFmpeg with libx264 is installed", true);
+            return;
+        }
+    }
+    ++recordedFrames_;
 }
 
 void Application::setStatus(std::string message, bool error) {
@@ -557,6 +783,7 @@ void Application::renderGraph() {
                 if (selected && selected->type == "subgraph" &&
                     resolveSubgraph(graph_, selected->subgraphId)) {
                     editingSubgraphId_ = selected->subgraphId;
+                    editingSubgraphInstance_ = selected->id;
                     positionedSubgraphId_.clear();
                     setStatus("Entered subgraph — press Tab to return");
                 }
@@ -590,18 +817,45 @@ void Application::renderSubgraphEditor() {
     if (editingSubgraphId_.empty()) return;
     if (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
         editingSubgraphId_.clear();
+        editingSubgraphInstance_ = 0;
         positionedSubgraphId_.clear();
         setStatus("Returned to root graph");
         return;
     }
     const auto* resolved = resolveSubgraph(graph_, editingSubgraphId_);
-    if (!resolved) { editingSubgraphId_.clear(); return; }
+    if (!resolved) {
+        editingSubgraphId_.clear();
+        editingSubgraphInstance_ = 0;
+        return;
+    }
     const bool readOnly = resolved->immutable;
     SubgraphDefinition* definition = readOnly ? nullptr : graph_.findSubgraph(editingSubgraphId_);
     bool changed = false;
     ImGui::Text("Root / %s", resolved->name.c_str());
     ImGui::SameLine(); ImGui::TextDisabled("Tab: return to root");
-    if (readOnly) ImGui::TextColored(ImVec4(.85F, .7F, .25F, 1), "Built-in definition — read only");
+    if (readOnly) {
+        ImGui::TextColored(ImVec4(.85F, .7F, .25F, 1),
+                           "Built-in template — inspect it here or make an editable project copy.");
+        ImGui::SameLine();
+        if (ImGui::Button("Make Editable Copy")) {
+            if (auto* instance = graph_.findNode(editingSubgraphInstance_)) {
+                duplicateSubgraph(*instance);
+                editingSubgraphId_ = instance->subgraphId;
+                positionedSubgraphId_.clear();
+            }
+            return;
+        }
+    }
+    const auto& shown = readOnly ? *resolved : *definition;
+
+    const ImVec2 available = ImGui::GetContentRegionAvail();
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float leftWidth = std::min(260.0F, available.x * .23F);
+    const float rightWidth = std::min(300.0F, available.x * .27F);
+    const float canvasWidth = std::max(180.0F, available.x - leftWidth - rightWidth - spacing * 2.0F);
+
+    ImGui::BeginChild("SubgraphInterface", ImVec2(leftWidth, 0), true);
+    ImGui::SeparatorText("Interface");
     if (!readOnly) {
         char name[128]{};
         std::snprintf(name, sizeof(name), "%s", definition->name.c_str());
@@ -609,9 +863,32 @@ void Application::renderSubgraphEditor() {
             definition->name = name; changed = true;
         }
     }
-    const auto& shown = readOnly ? *resolved : *definition;
-    ImGui::SeparatorText("Kernel graph");
-    ImGui::BeginChild("KernelCanvas", ImVec2(0, 420), true);
+    for (std::size_t index = 0; index < shown.interface.size(); ++index) {
+        const auto& current = shown.interface[index];
+        ImGui::PushID(static_cast<int>(index));
+        ImGui::Separator();
+        ImGui::TextUnformatted(current.label.c_str());
+        ImGui::TextDisabled("%s · %s", current.kind == SubgraphInterfaceKind::Input ? "Input" :
+                                      current.kind == SubgraphInterfaceKind::Slider ? "Control" : "Output",
+                                      current.key.c_str());
+        if (!readOnly) {
+            auto& item = definition->interface[index];
+            char label[128]{}; std::snprintf(label, sizeof(label), "%s", item.label.c_str());
+            if (ImGui::InputText("Label", label, sizeof(label))) { item.label = label; changed = true; }
+            if (item.kind == SubgraphInterfaceKind::Slider) {
+                changed |= ImGui::DragFloat("Default", &item.defaultValue, .001F, item.minimum, item.maximum);
+                changed |= ImGui::DragFloat("Minimum", &item.minimum, .001F);
+                changed |= ImGui::DragFloat("Maximum", &item.maximum, .001F);
+                if (item.minimum > item.maximum) std::swap(item.minimum, item.maximum);
+                item.defaultValue = std::clamp(item.defaultValue, item.minimum, item.maximum);
+            }
+        }
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+    ImGui::SameLine();
+
+    ImGui::BeginChild("KernelCanvas", ImVec2(canvasWidth, 0), true);
     ed::SetCurrentEditor(subgraphEditor_);
     ed::Begin("Subgraph kernel");
     struct KernelPin { std::size_t node = 0, input = 0; bool output = false; };
@@ -624,16 +901,18 @@ void Application::renderSubgraphEditor() {
         return kernelNodeId(index) + 2 + input * 2;
     };
     const auto kernelOutputId = [&](std::size_t index) { return kernelNodeId(index) + 1; };
+    const bool navigateToGraph = positionedSubgraphId_ != editingSubgraphId_;
     for (std::size_t index = 0; index < shown.kernel.size(); ++index) {
         const auto& kernel = shown.kernel[index];
         ed::BeginNode(ed::NodeId(kernelNodeId(index)));
-        ImGui::TextUnformatted(kernel.key.c_str());
-        ImGui::TextDisabled("%s", kernel.operation.c_str());
+        ImGui::TextUnformatted(kernelNodeLabel(kernel, shown).c_str());
+        ImGui::TextDisabled("%s", operationLabel(kernel.operation).c_str());
+        ImGui::Separator();
         for (std::size_t input = 0; input < kernel.inputs.size(); ++input) {
             const auto pin = kernelInputId(index, input);
             kernelPins.emplace(pin, KernelPin{index, input, false});
             ed::BeginPin(ed::PinId(pin), ed::PinKind::Input);
-            ImGui::Text("○ %zu", input + 1);
+            ImGui::Text("○ %s", kernelInputLabel(kernel.operation, input).c_str());
             ed::EndPin();
         }
         const auto outputPin = kernelOutputId(index);
@@ -642,7 +921,7 @@ void Application::renderSubgraphEditor() {
         ImGui::TextUnformatted("● Value");
         ed::EndPin();
         ed::EndNode();
-        if (positionedSubgraphId_ != editingSubgraphId_)
+        if (navigateToGraph)
             ed::SetNodePosition(ed::NodeId(kernelNodeId(index)), ImVec2(kernel.position.x, kernel.position.y));
         else if (!readOnly) {
             const auto position = ed::GetNodePosition(ed::NodeId(kernelNodeId(index)));
@@ -676,76 +955,84 @@ void Application::renderSubgraphEditor() {
         }
         ed::EndCreate();
     }
+    int selectedKernelIndex = -1;
+    ed::NodeId selectedNode;
+    if (ed::GetSelectedNodes(&selectedNode, 1) == 1 && selectedNode.Get() >= 1000) {
+        const auto offset = selectedNode.Get() - 1000;
+        if (offset % 128 == 0 && offset / 128 < shown.kernel.size())
+            selectedKernelIndex = static_cast<int>(offset / 128);
+    }
+    if (navigateToGraph) ed::NavigateToContent(0.0F);
     ed::End();
     ed::SetCurrentEditor(nullptr);
     ImGui::EndChild();
-    if (ImGui::CollapsingHeader("Interface", ImGuiTreeNodeFlags_DefaultOpen)) {
-        for (std::size_t index = 0; index < shown.interface.size(); ++index) {
-            const auto& current = shown.interface[index];
-            ImGui::PushID(static_cast<int>(index));
-            ImGui::Separator(); ImGui::TextDisabled("%s", current.key.c_str());
-            ImGui::Text("%s", current.kind == SubgraphInterfaceKind::Input ? "Input" :
-                                  current.kind == SubgraphInterfaceKind::Slider ? "Slider" : "Output");
-            if (!readOnly) {
-                auto& item = definition->interface[index];
-                char label[128]{}; std::snprintf(label, sizeof(label), "%s", item.label.c_str());
-                if (ImGui::InputText("Label", label, sizeof(label))) { item.label = label; changed = true; }
-                if (item.kind == SubgraphInterfaceKind::Slider) {
-                    changed |= ImGui::DragFloat("Default", &item.defaultValue, .001F, item.minimum, item.maximum);
-                    changed |= ImGui::DragFloat("Minimum", &item.minimum, .001F);
-                    changed |= ImGui::DragFloat("Maximum", &item.maximum, .001F);
-                    if (item.minimum > item.maximum) std::swap(item.minimum, item.maximum);
-                    item.defaultValue = std::clamp(item.defaultValue, item.minimum, item.maximum);
-                }
-            } else ImGui::Text("%s", current.label.c_str());
-            ImGui::PopID();
-        }
-    }
-    if (ImGui::CollapsingHeader("Fused Kernel", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::TextDisabled("Nodes compile into one compute shader per iteration.");
+    ImGui::SameLine();
+
+    ImGui::BeginChild("KernelInspector", ImVec2(rightWidth, 0), true);
+    ImGui::SeparatorText("Node Inspector");
+    if (selectedKernelIndex < 0) {
+        ImGui::TextWrapped("Select a kernel node to inspect its stable key, operation, and inputs.");
+        ImGui::Spacing();
+        ImGui::TextDisabled("This graph is fused into one compute shader per simulation iteration.");
+    } else {
+        const auto index = static_cast<std::size_t>(selectedKernelIndex);
+        const auto& current = shown.kernel[index];
+        ImGui::TextUnformatted(kernelNodeLabel(current, shown).c_str());
+        ImGui::TextDisabled("Key: %s", current.key.c_str());
+        ImGui::TextDisabled("Operation: %s", operationLabel(current.operation).c_str());
         static const std::array operations{"add", "subtract", "multiply", "divide", "min", "max",
             "abs", "sin", "cos", "pow", "clamp01", "clamp", "remap", "pack2", "swizzle", "length", "step", "select"};
-        for (std::size_t index = 0; index < shown.kernel.size(); ++index) {
-            const auto& current = shown.kernel[index];
-            ImGui::PushID(1000 + static_cast<int>(index));
-            if (ImGui::TreeNode(current.key.c_str(), "%s — %s", current.key.c_str(), current.operation.c_str())) {
-                if (!readOnly) {
-                    auto& kernel = definition->kernel[index];
-                    if (kernel.operation != "uv" && kernel.operation != "previous_state" &&
-                        kernel.operation != "interface" && kernel.operation != "connected" &&
-                        kernel.operation != "laplacian" && kernel.operation != "output") {
-                        if (ImGui::BeginCombo("Operation", kernel.operation.c_str())) {
-                            for (const auto* operation : operations) if (ImGui::Selectable(operation, kernel.operation == operation)) {
-                                kernel.operation = operation; changed = true;
-                            }
-                            ImGui::EndCombo();
-                        }
-                    }
-                    for (std::size_t inputIndex = 0; inputIndex < kernel.inputs.size(); ++inputIndex) {
-                        ImGui::PushID(static_cast<int>(inputIndex));
-                        if (ImGui::BeginCombo("Input", kernel.inputs[inputIndex].c_str())) {
-                            for (std::size_t candidate = 0; candidate < index; ++candidate) {
-                                const auto& key = definition->kernel[candidate].key;
-                                if (ImGui::Selectable(key.c_str(), kernel.inputs[inputIndex] == key)) {
-                                    kernel.inputs[inputIndex] = key; changed = true;
-                                }
-                            }
-                            ImGui::EndCombo();
-                        }
-                        ImGui::PopID();
-                    }
-                    if (kernel.operation == "constant" && kernel.properties.contains("value")) {
-                        float value = kernel.properties.value("value", 0.0F);
-                        if (ImGui::DragFloat("Value", &value, .001F)) { kernel.properties["value"] = value; changed = true; }
-                    }
-                } else {
-                    for (const auto& input : current.inputs) ImGui::BulletText("%s", input.c_str());
-                }
-                ImGui::TreePop();
+        ImGui::PushID(1000 + selectedKernelIndex);
+        if (!readOnly) {
+            auto& kernel = definition->kernel[index];
+            char label[128]{};
+            const auto displayedLabel = kernelNodeLabel(kernel, shown);
+            std::snprintf(label, sizeof(label), "%s", displayedLabel.c_str());
+            if (ImGui::InputText("Label", label, sizeof(label))) {
+                kernel.properties["label"] = label; changed = true;
             }
-            ImGui::PopID();
+            if (kernel.operation != "uv" && kernel.operation != "previous_state" &&
+                kernel.operation != "interface" && kernel.operation != "connected" &&
+                kernel.operation != "laplacian" && kernel.operation != "output") {
+                if (ImGui::BeginCombo("Operation", operationLabel(kernel.operation).c_str())) {
+                    for (const auto* operation : operations) {
+                        if (ImGui::Selectable(operationLabel(operation).c_str(),
+                                              kernel.operation == operation)) {
+                            kernel.operation = operation; changed = true;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+            for (std::size_t inputIndex = 0; inputIndex < kernel.inputs.size(); ++inputIndex) {
+                ImGui::PushID(static_cast<int>(inputIndex));
+                const auto inputLabel = kernelInputLabel(kernel.operation, inputIndex);
+                if (ImGui::BeginCombo(inputLabel.c_str(), kernel.inputs[inputIndex].c_str())) {
+                    for (std::size_t candidate = 0; candidate < index; ++candidate) {
+                        const auto& candidateNode = definition->kernel[candidate];
+                        const auto& key = candidateNode.key;
+                        if (ImGui::Selectable(kernelNodeLabel(candidateNode, *definition).c_str(),
+                                              kernel.inputs[inputIndex] == key)) {
+                            kernel.inputs[inputIndex] = key; changed = true;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                ImGui::PopID();
+            }
+            if (kernel.operation == "constant" && kernel.properties.contains("value")) {
+                float value = kernel.properties.value("value", 0.0F);
+                if (ImGui::DragFloat("Value", &value, .001F)) { kernel.properties["value"] = value; changed = true; }
+            }
+        } else {
+            ImGui::Spacing();
+            for (std::size_t input = 0; input < current.inputs.size(); ++input)
+                ImGui::BulletText("%s: %s", kernelInputLabel(current.operation, input).c_str(),
+                                  current.inputs[input].c_str());
         }
+        ImGui::PopID();
     }
+    ImGui::EndChild();
     if (changed) {
         for (auto& node : graph_.nodes()) if (node.type == "subgraph" && node.subgraphId == editingSubgraphId_) {
             for (const auto& item : definition->interface) if (item.kind == SubgraphInterfaceKind::Slider) {
@@ -771,6 +1058,9 @@ void Application::renderEditor() {
             if (ImGui::MenuItem("Save", "Ctrl+S")) saveProjectDialog(false);
             if (ImGui::MenuItem("Save As…", "Ctrl+Shift+S")) saveProjectDialog(true);
             if (ImGui::MenuItem("Export Current Frame as PNG…")) exportFrameDialog();
+            if (recordingPipe_ < 0) {
+                if (ImGui::MenuItem("Start Video Recording…")) startRecordingDialog();
+            } else if (ImGui::MenuItem("Stop Video Recording")) stopRecording();
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Edit")) {
@@ -790,13 +1080,23 @@ void Application::renderEditor() {
     ImGui::Begin("Workspace", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
     if (ImGui::Button(playing_ ? "Pause" : "Play")) playing_ = !playing_;
     ImGui::SameLine(); if (ImGui::Button("Reset")) { runtime_->reset(); elapsed_ = 0; }
+    ImGui::SameLine();
+    if (recordingPipe_ < 0) {
+        if (ImGui::Button("Record")) startRecordingDialog();
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(.65F, .12F, .12F, 1));
+        if (ImGui::Button("Stop Recording")) stopRecording();
+        ImGui::PopStyleColor();
+    }
     ImGui::SameLine(); ImGui::Text("%.1f FPS", displayedFps_);
+    ImGui::BeginDisabled(recordingPipe_ >= 0);
     ImGui::SameLine(); ImGui::SetNextItemWidth(80);
     if (ImGui::SliderInt("Target", &graph_.settings.targetFps, 1, 240)) dirty_ = true;
     ImGui::SameLine(); ImGui::SetNextItemWidth(90); int width = graph_.settings.width;
-    if (ImGui::InputInt("W", &width, 0)) { graph_.settings.width = std::clamp(width, 16, 8192); runtime_->reset(); dirty_ = true; }
+    if (ImGui::InputInt("W", &width, 0)) { graph_.settings.width = std::clamp(width, 16, 8192); updatePreviewAspectRatio(); runtime_->reset(); dirty_ = true; }
     ImGui::SameLine(); ImGui::SetNextItemWidth(90); int height = graph_.settings.height;
-    if (ImGui::InputInt("H", &height, 0)) { graph_.settings.height = std::clamp(height, 16, 8192); runtime_->reset(); dirty_ = true; }
+    if (ImGui::InputInt("H", &height, 0)) { graph_.settings.height = std::clamp(height, 16, 8192); updatePreviewAspectRatio(); runtime_->reset(); dirty_ = true; }
+    ImGui::EndDisabled();
     ImGui::SameLine(); ImGui::TextColored(statusError_ ? ImVec4(1,.35F,.35F,1) : ImVec4(.55F,.8F,.55F,1), "%s%s", dirty_ ? "* " : "", status_.c_str());
     if (editingSubgraphId_.empty()) renderGraph();
     else renderSubgraphEditor();
@@ -838,6 +1138,8 @@ int Application::run() {
         glfwMakeContextCurrent(editorWindow_);
         runtime_->evaluate(elapsed_, playing_ ? delta : 0.0, playing_);
         renderEditor();
+        glfwMakeContextCurrent(editorWindow_);
+        recordFrame();
         renderPreview();
         fpsAccumulator += delta; ++fpsFrames;
         if (fpsAccumulator >= .5) { displayedFps_ = static_cast<double>(fpsFrames) / fpsAccumulator; fpsAccumulator = 0; fpsFrames = 0; }

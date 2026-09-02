@@ -27,6 +27,10 @@ private:
     void loadProjectDialog();
     void saveProjectDialog(bool forceDialog);
     void exportFrameDialog();
+    void startRecordingDialog();
+    void stopRecording(bool reportStatus = true);
+    void recordFrame();
+    void updatePreviewAspectRatio();
     void rebuildRuntime();
     void renderEditor();
     void renderGraph();
@@ -41,6 +45,12 @@ private:
     GLFWwindow* editorWindow_ = nullptr;
     GLFWwindow* previewWindow_ = nullptr;
     std::uint32_t previewVertexArray_ = 0;
+    int recordingPipe_ = -1;
+    int recordingProcess_ = -1;
+    std::filesystem::path recordingPath_;
+    int recordingWidth_ = 0;
+    int recordingHeight_ = 0;
+    std::uint64_t recordedFrames_ = 0;
     ax::NodeEditor::EditorContext* nodeEditor_ = nullptr;
     ax::NodeEditor::EditorContext* subgraphEditor_ = nullptr;
     NodeRegistry registry_;
@@ -61,6 +71,7 @@ private:
     std::vector<NodeId> pendingSelection_;
     std::string editingSubgraphId_;
     std::string positionedSubgraphId_;
+    NodeId editingSubgraphInstance_ = 0;
 };
 
 } // namespace reaction
