@@ -1,6 +1,6 @@
 # Reaction Studio
 
-Reaction Studio is a Linux-first, real-time 2D generative-art node editor. It combines GPU Perlin noise, Gray–Scott reaction diffusion, polymorphic scalar/image math, color mapping, and a separate live preview in a forward-only workflow.
+Reaction Studio is a Linux-first, real-time 2D generative-art node editor. It combines GPU Perlin noise, Gray–Scott reaction diffusion, polymorphic scalar/image math, color mapping, custom image convolution, and a separate live preview in a forward-only workflow.
 
 ## Build
 

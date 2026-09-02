@@ -112,6 +112,23 @@ TEST_CASE("threshold produces a binary scalar result") {
     REQUIRE(std::get<float>(low) == 0.0F);
 }
 
+TEST_CASE("convolution identity preserves its source image") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    REQUIRE(registry.descriptor("convolution") != nullptr);
+    Graph graph; graph.settings = {32, 24, 60};
+    const auto source = graph.addNode("perlin");
+    const auto convolution = graph.addNode("convolution");
+    const auto output = graph.addNode("output");
+    graph.addLink(source, "image", convolution, "image");
+    graph.addLink(convolution, "image", output, "image"); graph.activeOutput = output;
+    GpuRuntime gpu;
+    GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    const auto sourceImage = std::get<ImageHandle>(runtime.values().at(source).front());
+    REQUIRE(readImage(runtime.outputImage()) == readImage(sourceImage));
+}
+
 TEST_CASE("reaction diffusion evolves, resets, and reallocates on resize") {
     HiddenContext context;
     NodeRegistry registry; registerBuiltInNodes(registry);
