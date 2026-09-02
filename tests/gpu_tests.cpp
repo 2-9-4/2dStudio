@@ -93,6 +93,22 @@ TEST_CASE("float preview accepts and passes through float values") {
     REQUIRE(graph.compile(registry).valid);
 }
 
+TEST_CASE("image invert exposes image-only input and output") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* descriptor = registry.descriptor("invert");
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(descriptor->displayName == "Image Invert");
+    REQUIRE(descriptor->sockets.size() == 2);
+    REQUIRE(descriptor->sockets[0].type == ValueType::Image2D);
+    REQUIRE(descriptor->sockets[1].type == ValueType::Image2D);
+
+    Graph graph;
+    const auto source = graph.addNode("perlin");
+    const auto invert = graph.addNode("invert");
+    graph.addLink(source, "image", invert, "image");
+    REQUIRE(graph.compile(registry).valid);
+}
+
 TEST_CASE("convolution exposes bounded iteration control") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     const auto* descriptor = registry.descriptor("convolution");

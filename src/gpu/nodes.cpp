@@ -219,6 +219,31 @@ public:
     }
 };
 
+constexpr std::string_view kInvertShader = R"GLSL(#version 430
+layout(local_size_x=16,local_size_y=16)in;layout(rgba16f,binding=0)writeonly uniform image2D outImage;
+layout(binding=0)uniform sampler2D source;
+void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(outImage);if(any(greaterThanEqual(p,s)))return;vec4 value=texelFetch(source,p,0);imageStore(outImage,p,vec4(vec3(1.0)-value.rgb,value.a));})GLSL";
+
+class InvertNode final : public TextureNode {
+public:
+    static NodeDescriptor describe() { return {"invert", 1, "Image Invert", "Utility",
+        {{"image", "Image", ValueType::Image2D, SocketDirection::Input},
+         {"image", "Image", ValueType::Image2D, SocketDirection::Output}}, {}}; }
+    const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
+    void evaluate(EvaluationContext& context, std::span<const Value> inputs, std::span<Value> outputs) override {
+        const auto source = imageAt(inputs, 0);
+        if (!source) { outputs[0] = {}; return; }
+        ensure(context);
+        auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
+        if (!program_) program_ = gpu.compileCompute(kInvertShader);
+        glUseProgram(program_);
+        bindTexture(0, source.texture);
+        glBindImageTexture(0, texture_, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+        gpu.dispatch(program_, context.width, context.height);
+        outputs[0] = ImageHandle{texture_, context.width, context.height};
+    }
+};
+
 constexpr std::string_view kRampShader = R"GLSL(#version 430
 layout(local_size_x=16,local_size_y=16)in;layout(rgba16f,binding=0)writeonly uniform image2D outImage;
 layout(binding=0)uniform sampler2D source;uniform int hasSource;uniform float scalarValue,low,high;uniform vec4 colorA,colorB;
@@ -319,7 +344,7 @@ template <typename T> void addNode(NodeRegistry& registry) {
 void registerBuiltInNodes(NodeRegistry& registry) {
     registerInputNodes(registry);
     addNode<PerlinNode>(registry);
-    addNode<MathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<ColorRampNode>(registry);
+    addNode<MathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<InvertNode>(registry); addNode<ColorRampNode>(registry);
     registerConvolutionNode(registry);
     addNode<ReactionNode>(registry); addNode<OutputNode>(registry);
 }
