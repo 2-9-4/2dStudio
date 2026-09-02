@@ -3,8 +3,8 @@
 1. Launch `reaction_studio` on an OpenGL 4.3-capable desktop and confirm both windows open.
 2. Confirm the default noise-driven reaction-diffusion graph animates and the preview matches the Output node thumbnail.
 3. Right-click the canvas and confirm Simulation lists both monolithic and discrete reaction diffusion nodes.
-4. Add the discrete node, confirm its Image/A/B outputs and integer/boolean controls, then open its read-only subgraph view.
-5. Choose **Duplicate as Editable**, rename the copy, rewire an eligible primitive input, and confirm all instances of that copy reset and change together.
+4. Add and select the discrete node, confirm its Image/A/B outputs and integer/boolean controls, then press Tab and confirm its read-only graph completely replaces the root canvas.
+5. Press Tab to return, choose **Duplicate as Editable**, press Tab to enter the copy, rename it, rewire an eligible primitive input, and confirm all instances of that copy reset and change together.
 6. Save and reload the project; confirm the custom definition, instance controls, and external links survive.
 3. Change feed, kill, noise scale, and color ramp values and confirm the preview responds live.
 4. Pause and confirm Time and simulation state stop while node editing remains responsive; resume and confirm forward evolution continues.

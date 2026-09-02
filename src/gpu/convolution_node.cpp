@@ -53,7 +53,7 @@ public:
         auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
         gpu.ensureTexture(scratch_, scratchWidth_, scratchHeight_,
                           context.width, context.height, GL_RGBA16F);
-        if (!program_) program_ = gpu.compileCompute(kConvolutionShader);
+        if (!program_) program_ = gpu.compileCompute(kConvolutionShader, "Convolution / compute");
         const int requestedSize = static_cast<int>(parameter(parameters_, "kernelSize", 3));
         const int size = std::clamp(requestedSize | 1, 3, kMaximumKernelSize);
         std::array<float, kMaximumKernelSize * kMaximumKernelSize> kernel{};

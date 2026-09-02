@@ -34,16 +34,16 @@ public:
         statements_.str({}); statements_.clear(); mainValues_.clear();
         const auto expression = emit(endpoint->key, "uv");
         std::ostringstream source;
-        source << "#version 430\nlayout(local_size_x=16,local_size_y=16)in;"
-               << "layout(rg16f,binding=0)writeonly uniform image2D stateOut;"
-               << "layout(binding=0)uniform sampler2D stateIn;";
+        source << "#version 430\nlayout(local_size_x=16,local_size_y=16)in;\n"
+               << "layout(rg16f,binding=0)writeonly uniform image2D stateOut;\n"
+               << "layout(binding=0)uniform sampler2D stateIn;\n";
         declareInterface(source, 1);
-        source << "vec2 sampleState(vec2 q){return texture(stateIn,fract(q)).rg;}";
+        source << "vec2 sampleState(vec2 q){return texture(stateIn,fract(q)).rg;}\n";
         source << helpers_.str();
         source << "void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(stateOut);"
-               << "if(any(greaterThanEqual(p,s)))return;vec2 uv=(vec2(p)+.5)/vec2(s);"
+               << "if(any(greaterThanEqual(p,s)))return;vec2 uv=(vec2(p)+0.5)/vec2(s);\n"
                << statements_.str()
-               << "imageStore(stateOut,p,vec4(" << expression << ",0,1));}";
+               << "imageStore(stateOut,p,vec4(" << expression << ",0.0,1.0));}";
         return source.str();
     }
 
@@ -60,10 +60,10 @@ private:
         for (const auto& item : definition_.interface) {
             const auto name = identifier(item.key);
             if (item.kind == SubgraphInterfaceKind::Input) {
-                out << "layout(binding=" << binding++ << ")uniform sampler2D in_" << name << ";"
-                    << "uniform int mode_" << name << ";uniform float value_" << name << ";";
+                out << "layout(binding=" << binding++ << ")uniform sampler2D in_" << name << ";\n"
+                    << "uniform int mode_" << name << ";uniform float value_" << name << ";\n";
             } else if (item.kind == SubgraphInterfaceKind::Slider) {
-                out << "uniform float param_" << name << ";";
+                out << "uniform float param_" << name << ";\n";
             }
         }
     }
@@ -73,7 +73,7 @@ private:
         if (const auto found = mainValues_.find(key); found != mainValues_.end()) return found->second;
         const auto value = "v_" + identifier(key);
         const auto expression = emitInline(key, uv);
-        statements_ << typeOf(key) << " " << value << "=" << expression << ";";
+        statements_ << typeOf(key) << " " << value << "=" << expression << ";\n";
         mainValues_.emplace(key, value);
         return value;
     }
@@ -101,7 +101,7 @@ private:
             return "(mode_" + name + "==2?texture(in_" + name + "," + uv + ").r:(mode_" + name + "==1?value_" + name + ":" + fallback + "))";
         }
         if (node.operation == "connected") {
-            return "float(mode_" + identifier(node.properties.at("key").get<std::string>()) + "!=0)";
+            return "(mode_" + identifier(node.properties.at("key").get<std::string>()) + "!=0?1.0:0.0)";
         }
         if (node.operation == "add") return binary("+");
         if (node.operation == "multiply") return binary("*");
@@ -163,13 +163,13 @@ private:
             };
             const auto scaleKey = node.properties.value("scale", std::string("structureScale"));
             helpers_ << "vec2 " << functionName << "At(vec2 q,float r){vec2 pixel=1.0/vec2(textureSize(stateIn,0));return -"
-                     << emit(node.inputs.at(0), "q") << "+.2*(" << sample("vec2(-r,0)") << "+" << sample("vec2(r,0)")
-                     << "+" << sample("vec2(0,-r)") << "+" << sample("vec2(0,r)") << ")+.05*("
+                     << emit(node.inputs.at(0), "q") << "+0.2*(" << sample("vec2(-r,0.0)") << "+" << sample("vec2(r,0.0)")
+                     << "+" << sample("vec2(0.0,-r)") << "+" << sample("vec2(0.0,r)") << ")+0.05*("
                      << sample("vec2(-r,-r)") << "+" << sample("vec2(r,-r)") << "+" << sample("vec2(-r,r)")
-                     << "+" << sample("vec2(r,r)") << ");}"
+                     << "+" << sample("vec2(r,r)") << ");}\n"
                      << "vec2 " << functionName << "(vec2 q){float scale=param_" << identifier(scaleKey)
-                     << ";if(abs(scale-1.0)<.001)return " << functionName << "At(q,1.0);vec2 v=vec2(0);"
-                     << "for(int i=0;i<3;i++)v+=" << functionName << "At(q,mix(1.0,scale,float(i)/2.0))/3.0;return v;}";
+                     << ";if(abs(scale-1.0)<0.001)return " << functionName << "At(q,1.0);vec2 v=vec2(0.0);"
+                     << "for(int i=0;i<3;i++)v+=" << functionName << "At(q,mix(1.0,scale,float(i)/2.0))/3.0;return v;}\n";
         }
         return functionName + "(" + uv + ")";
     }
@@ -237,10 +237,10 @@ public:
         ensureResources(gpu, context.width, context.height);
         if (!initProgram_ || !stepProgram_) {
             KernelCompiler compiler(definition_);
-            initProgram_ = gpu.compileComputeCached(compiler.shader(true));
-            stepProgram_ = gpu.compileComputeCached(compiler.shader(false));
-            outputProgram_ = gpu.compileCompute(kOutputShader);
-            collapseProgram_ = gpu.compileCompute(kCollapseShader);
+            initProgram_ = gpu.compileComputeCached(compiler.shader(true), definition_.name + " / initialize");
+            stepProgram_ = gpu.compileComputeCached(compiler.shader(false), definition_.name + " / update");
+            outputProgram_ = gpu.compileCompute(kOutputShader, definition_.name + " / output");
+            collapseProgram_ = gpu.compileCompute(kCollapseShader, definition_.name + " / collapse check");
         }
         const auto initialize = [&] {
             glUseProgram(initProgram_);

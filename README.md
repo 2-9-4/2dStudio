@@ -23,7 +23,7 @@ The app opens an editor and a shared-context preview window. Right-click the can
 
 Projects use `*.reaction.json`. They store project settings, graph topology, parameters, and editor positions. Simulation buffers and elapsed time deliberately restart when a project loads.
 
-The add-node menu contains both **Reaction Diffusion (Monolithic)** and **Reaction Diffusion (Discrete)**. The discrete version is an immutable built-in subgraph with Image, A, and B outputs. Open it to inspect its primitive expression graph, or use **Duplicate as Editable** on an instance to create a shared project-local copy. Changes to that copy rebuild and reset all of its instances.
+The add-node menu contains both **Reaction Diffusion (Monolithic)** and **Reaction Diffusion (Discrete)**. The discrete version is an immutable built-in subgraph with Image, A, and B outputs. Select it and press **Tab** to replace the root canvas with its primitive expression graph; press **Tab** again to return. Use **Duplicate as Editable** on an instance to create a shared project-local copy. Changes to that copy rebuild and reset all of its instances.
 
 Use **File → Export Current Frame as PNG…** to write the graph output at its configured resolution. The export is an 8-bit RGB PNG and does not include the editor UI.
 

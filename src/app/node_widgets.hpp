@@ -7,6 +7,7 @@ namespace reaction::node_widgets {
 enum class PopupKind {
     None,
     MathOperation,
+    MixMode,
     ConvolutionPreset,
 };
 
@@ -23,6 +24,7 @@ struct PopupState {
 };
 
 void renderMathOperationSelector(NodeRecord& node, PopupState& popup);
+void renderMixModeSelector(NodeRecord& node, PopupState& popup);
 bool renderConvolutionEditor(NodeRecord& node, PopupState& popup);
 
 // Must be called while the node editor is suspended. Popups use ImGui screen

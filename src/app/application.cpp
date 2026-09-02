@@ -390,6 +390,9 @@ void Application::renderGraph() {
                 if (property.key == "operation" && node.type == "math") {
                     node_widgets::renderMathOperationSelector(node, nodePopup_);
                     continue;
+                } else if (property.key == "mode" && node.type == "mix") {
+                    node_widgets::renderMixModeSelector(node, nodePopup_);
+                    continue;
                 } else if (property.control == ParameterDescriptor::Control::Boolean) {
                     bool enabled = value > 0.5F;
                     changed = ImGui::Checkbox(property.label.c_str(), &enabled);
@@ -417,7 +420,7 @@ void Application::renderGraph() {
                 setStatus("Reset simulation node");
             }
             if (node.type == "subgraph") {
-                if (ImGui::Button("Open Subgraph")) editingSubgraphId_ = node.subgraphId;
+                ImGui::TextDisabled("Select + Tab to enter");
                 const auto* definition = resolveSubgraph(graph_, node.subgraphId);
                 if (definition && definition->immutable) {
                     if (ImGui::Button("Duplicate as Editable")) duplicateSubgraph(node);
@@ -544,6 +547,22 @@ void Application::renderGraph() {
         ImGui::EndPopup();
     }
     ed::Resume();
+    if (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
+        const int selectedCount = ed::GetSelectedObjectCount();
+        if (selectedCount == 1) {
+            ed::NodeId selectedUiId;
+            if (ed::GetSelectedNodes(&selectedUiId, 1) == 1) {
+                const auto selectedId = static_cast<NodeId>(selectedUiId.Get() / 128);
+                const auto* selected = graph_.findNode(selectedId);
+                if (selected && selected->type == "subgraph" &&
+                    resolveSubgraph(graph_, selected->subgraphId)) {
+                    editingSubgraphId_ = selected->subgraphId;
+                    positionedSubgraphId_.clear();
+                    setStatus("Entered subgraph — press Tab to return");
+                }
+            }
+        }
+    }
     ed::End();
     ed::SetCurrentEditor(nullptr);
 }
@@ -562,22 +581,26 @@ void Application::duplicateSubgraph(NodeRecord& node) {
     copy.name = "Reaction Diffusion Copy " + std::to_string(copyNumber);
     graph_.subgraphs().push_back(std::move(copy));
     node.subgraphId = graph_.subgraphs().back().id;
-    editingSubgraphId_ = node.subgraphId;
     dirty_ = true;
     rebuildRuntime();
-    setStatus("Created editable shared subgraph");
+    setStatus("Created editable shared subgraph — press Tab to enter");
 }
 
 void Application::renderSubgraphEditor() {
     if (editingSubgraphId_.empty()) return;
+    if (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
+        editingSubgraphId_.clear();
+        positionedSubgraphId_.clear();
+        setStatus("Returned to root graph");
+        return;
+    }
     const auto* resolved = resolveSubgraph(graph_, editingSubgraphId_);
     if (!resolved) { editingSubgraphId_.clear(); return; }
     const bool readOnly = resolved->immutable;
     SubgraphDefinition* definition = readOnly ? nullptr : graph_.findSubgraph(editingSubgraphId_);
-    bool open = true, changed = false;
-    ImGui::Begin("Subgraph Editor", &open);
-    if (ImGui::Button("Root Graph")) open = false;
-    ImGui::SameLine(); ImGui::Text("/ %s", resolved->name.c_str());
+    bool changed = false;
+    ImGui::Text("Root / %s", resolved->name.c_str());
+    ImGui::SameLine(); ImGui::TextDisabled("Tab: return to root");
     if (readOnly) ImGui::TextColored(ImVec4(.85F, .7F, .25F, 1), "Built-in definition — read only");
     if (!readOnly) {
         char name[128]{};
@@ -723,8 +746,6 @@ void Application::renderSubgraphEditor() {
             ImGui::PopID();
         }
     }
-    ImGui::End();
-    if (!open) editingSubgraphId_.clear();
     if (changed) {
         for (auto& node : graph_.nodes()) if (node.type == "subgraph" && node.subgraphId == editingSubgraphId_) {
             for (const auto& item : definition->interface) if (item.kind == SubgraphInterfaceKind::Slider) {
@@ -777,8 +798,8 @@ void Application::renderEditor() {
     ImGui::SameLine(); ImGui::SetNextItemWidth(90); int height = graph_.settings.height;
     if (ImGui::InputInt("H", &height, 0)) { graph_.settings.height = std::clamp(height, 16, 8192); runtime_->reset(); dirty_ = true; }
     ImGui::SameLine(); ImGui::TextColored(statusError_ ? ImVec4(1,.35F,.35F,1) : ImVec4(.55F,.8F,.55F,1), "%s%s", dirty_ ? "* " : "", status_.c_str());
-    renderGraph();
-    renderSubgraphEditor();
+    if (editingSubgraphId_.empty()) renderGraph();
+    else renderSubgraphEditor();
     ImGui::End();
 
     ImGui::Render();

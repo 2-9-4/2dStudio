@@ -74,7 +74,7 @@ public:
     void evaluate(EvaluationContext& context, std::span<const Value>, std::span<Value> outputs) override {
         ensure(context);
         auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
-        if (!program_) program_ = gpu.compileCompute(kPerlinShader);
+        if (!program_) program_ = gpu.compileCompute(kPerlinShader, "Perlin Noise / compute");
         glUseProgram(program_);
         glBindImageTexture(0, texture_, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
         uniform(program_, "seed", static_cast<int>(parameter(parameters_, "seed", 1)));
@@ -143,7 +143,7 @@ public:
         if (!imageA && !imageB && !imageC) { outputs[0] = applyMath(operation, a, b, c, parameters_); return; }
         ensure(context);
         auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
-        if (!program_) program_ = gpu.compileCompute(kMathShader);
+        if (!program_) program_ = gpu.compileCompute(kMathShader, "Math / compute");
         glUseProgram(program_);
         glBindImageTexture(0, texture_, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
         const std::array images{imageA, imageB, imageC};
@@ -165,26 +165,55 @@ public:
 constexpr std::string_view kMixShader = R"GLSL(#version 430
 layout(local_size_x=16,local_size_y=16)in;layout(rgba16f,binding=0)writeonly uniform image2D outImage;
 layout(binding=0)uniform sampler2D texA;layout(binding=1)uniform sampler2D texB;layout(binding=2)uniform sampler2D texF;
-uniform int hasA,hasB,hasF;uniform vec4 valA,valB;uniform float valF;
+uniform int hasA,hasB,hasF,mixMode;uniform vec4 valA,valB;uniform float valF;
+vec3 blend(vec3 a,vec3 b){
+ if(mixMode==1)return a+b;
+ if(mixMode==2)return a*b;
+ if(mixMode==3)return a+b-a*b;
+ if(mixMode==4)return mix(2.0*a*b,1.0-2.0*(1.0-a)*(1.0-b),step(vec3(.5),a));
+ if(mixMode==5)return abs(a-b);
+ if(mixMode==6)return min(a,b);
+ if(mixMode==7)return max(a,b);
+ if(mixMode==8)return a/max(vec3(1e-6),1.0-b);
+ if(mixMode==9)return 1.0-(1.0-a)/max(vec3(1e-6),b);
+ return b;
+}
 void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(outImage);if(any(greaterThanEqual(p,s)))return;vec2 uv=(vec2(p)+.5)/vec2(s);
-vec4 a=hasA!=0?texture(texA,uv):valA,b=hasB!=0?texture(texB,uv):valB;float f=hasF!=0?texture(texF,uv).r:valF;imageStore(outImage,p,mix(a,b,clamp(f,0,1)));})GLSL";
+vec4 a=hasA!=0?texture(texA,uv):valA,b=hasB!=0?texture(texB,uv):valB;float f=hasF!=0?texture(texF,uv).r:valF;
+imageStore(outImage,p,vec4(mix(a.rgb,blend(a.rgb,b.rgb),clamp(f,0,1)),mix(a.a,b.a,clamp(f,0,1))));})GLSL";
+
+float applyMix(int mode, float a, float b) {
+    switch (mode) {
+    case 1: return a + b;
+    case 2: return a * b;
+    case 3: return a + b - a * b;
+    case 4: return a < .5F ? 2.0F * a * b : 1.0F - 2.0F * (1.0F - a) * (1.0F - b);
+    case 5: return std::abs(a - b);
+    case 6: return std::min(a, b);
+    case 7: return std::max(a, b);
+    case 8: return a / std::max(1.0e-6F, 1.0F - b);
+    case 9: return 1.0F - (1.0F - a) / std::max(1.0e-6F, b);
+    default: return b;
+    }
+}
 
 class MixNode final : public TextureNode {
 public:
     static NodeDescriptor describe() { return {"mix",1,"Mix","Color",
         {{"a","A",ValueType::AnyNumeric,SocketDirection::Input,true},{"b","B",ValueType::AnyNumeric,SocketDirection::Input,true},
          {"factor","Factor",ValueType::AnyNumeric,SocketDirection::Input,true},{"result","Result",ValueType::AnyNumeric,SocketDirection::Output}},
-        {{"a","A",0,0,1},{"b","B",1,0,1},{"factor","Factor",0.5F,0,1}}}; }
+        {{"mode","Mode",0,0,9,ParameterDescriptor::Control::Integer},{"a","A",0,0,1},{"b","B",1,0,1},{"factor","Factor",0.5F,0,1}}}; }
     const NodeDescriptor& descriptor() const override { static const auto value=describe();return value; }
     void evaluate(EvaluationContext& context,std::span<const Value> inputs,std::span<Value> outputs) override {
         const auto ia=imageAt(inputs,0),ib=imageAt(inputs,1),iff=imageAt(inputs,2);
         const float a=floatAt(inputs,0,parameter(parameters_,"a",0)),b=floatAt(inputs,1,parameter(parameters_,"b",1)),f=floatAt(inputs,2,parameter(parameters_,"factor",.5F));
-        if(!ia&&!ib&&!iff){outputs[0]=std::lerp(a,b,std::clamp(f,0.0F,1.0F));return;}
-        ensure(context);auto& gpu=*static_cast<GpuRuntime*>(context.gpu);if(!program_)program_=gpu.compileCompute(kMixShader);glUseProgram(program_);
+        const int mode=std::clamp(static_cast<int>(parameter(parameters_,"mode",0)),0,9);
+        if(!ia&&!ib&&!iff){outputs[0]=std::lerp(a,applyMix(mode,a,b),std::clamp(f,0.0F,1.0F));return;}
+        ensure(context);auto& gpu=*static_cast<GpuRuntime*>(context.gpu);if(!program_)program_=gpu.compileCompute(kMixShader,"Mix / compute");glUseProgram(program_);
         glBindImageTexture(0,texture_,0,GL_FALSE,0,GL_WRITE_ONLY,GL_RGBA16F);const std::array imgs{ia,ib,iff};
         for(int i=0;i<3;++i)if(imgs[static_cast<std::size_t>(i)])bindTexture(i,imgs[static_cast<std::size_t>(i)].texture);
         uniform(program_,"hasA",ia?1:0);uniform(program_,"hasB",ib?1:0);uniform(program_,"hasF",iff?1:0);
-        glUniform4f(glGetUniformLocation(program_,"valA"),a,a,a,a);glUniform4f(glGetUniformLocation(program_,"valB"),b,b,b,b);uniform(program_,"valF",f);
+        glUniform4f(glGetUniformLocation(program_,"valA"),a,a,a,a);glUniform4f(glGetUniformLocation(program_,"valB"),b,b,b,b);uniform(program_,"valF",f);uniform(program_,"mixMode",mode);
         gpu.dispatch(program_,context.width,context.height);outputs[0]=ImageHandle{texture_,context.width,context.height};
     }
 };
@@ -209,7 +238,7 @@ public:
         if (!source) { outputs[0] = value >= cutoff ? 1.0F : 0.0F; return; }
         ensure(context);
         auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
-        if (!program_) program_ = gpu.compileCompute(kThresholdShader);
+        if (!program_) program_ = gpu.compileCompute(kThresholdShader, "Threshold / compute");
         glUseProgram(program_);
         glBindImageTexture(0, texture_, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
         bindTexture(0, source.texture);
@@ -235,7 +264,7 @@ public:
         if (!source) { outputs[0] = {}; return; }
         ensure(context);
         auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
-        if (!program_) program_ = gpu.compileCompute(kInvertShader);
+        if (!program_) program_ = gpu.compileCompute(kInvertShader, "Image Invert / compute");
         glUseProgram(program_);
         bindTexture(0, source.texture);
         glBindImageTexture(0, texture_, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
@@ -258,7 +287,7 @@ public:
          {"r1","End R",1,0,1},{"g1","End G",.35F,0,1},{"b1","End B",.08F,0,1}}};}
     const NodeDescriptor& descriptor()const override{static const auto value=describe();return value;}
     void evaluate(EvaluationContext& context,std::span<const Value> inputs,std::span<Value> outputs)override{
-        ensure(context);auto& gpu=*static_cast<GpuRuntime*>(context.gpu);if(!program_)program_=gpu.compileCompute(kRampShader);const auto source=imageAt(inputs,0);
+        ensure(context);auto& gpu=*static_cast<GpuRuntime*>(context.gpu);if(!program_)program_=gpu.compileCompute(kRampShader,"Color Ramp / compute");const auto source=imageAt(inputs,0);
         glUseProgram(program_);glBindImageTexture(0,texture_,0,GL_FALSE,0,GL_WRITE_ONLY,GL_RGBA16F);if(source)bindTexture(0,source.texture);
         uniform(program_,"hasSource",source?1:0);uniform(program_,"scalarValue",floatAt(inputs,0,parameter(parameters_,"value",.5F)));
         uniform(program_,"low",parameter(parameters_,"low",.02F));uniform(program_,"high",parameter(parameters_,"high",.4F));
@@ -309,10 +338,10 @@ public:
     void evaluate(EvaluationContext& context,std::span<const Value> inputs,std::span<Value> outputs)override{
         auto& gpu=*static_cast<GpuRuntime*>(context.gpu);ensure(context);
         if(stateWidth_!=context.width||stateHeight_!=context.height){if(state_[0])glDeleteTextures(2,state_.data());state_[0]=gpu.createTexture(context.width,context.height,GL_RG16F);state_[1]=gpu.createTexture(context.width,context.height,GL_RG16F);stateWidth_=context.width;stateHeight_=context.height;resetPending_=true;}
-        if (!initProgram_) initProgram_ = gpu.compileCompute(kReactionInit);
-        if (!program_) program_ = gpu.compileCompute(kReactionStep);
-        if (!outputProgram_) outputProgram_ = gpu.compileCompute(kReactionOutput);
-        if (!collapseProgram_) collapseProgram_ = gpu.compileCompute(kReactionCollapse);
+        if (!initProgram_) initProgram_ = gpu.compileCompute(kReactionInit,"Reaction Diffusion (Monolithic) / initialize");
+        if (!program_) program_ = gpu.compileCompute(kReactionStep,"Reaction Diffusion (Monolithic) / update");
+        if (!outputProgram_) outputProgram_ = gpu.compileCompute(kReactionOutput,"Reaction Diffusion (Monolithic) / output");
+        if (!collapseProgram_) collapseProgram_ = gpu.compileCompute(kReactionCollapse,"Reaction Diffusion (Monolithic) / collapse check");
         if (!collapseBuffer_) {glGenBuffers(1,&collapseBuffer_);glBindBuffer(GL_SHADER_STORAGE_BUFFER,collapseBuffer_);const GLuint zero=0;glBufferData(GL_SHADER_STORAGE_BUFFER,sizeof(zero),&zero,GL_DYNAMIC_READ);}
         const auto initialize=[&]{const auto seed=imageAt(inputs,2);glUseProgram(initProgram_);glBindImageTexture(0,state_[0],0,GL_FALSE,0,GL_WRITE_ONLY,GL_RG16F);if(seed)bindTexture(0,seed.texture);uniform(initProgram_,"hasSeed",seed?1:0);gpu.dispatch(initProgram_,context.width,context.height);index_=0;resetPending_=false;};
         if(resetPending_)initialize();

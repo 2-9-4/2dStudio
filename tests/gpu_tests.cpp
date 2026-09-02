@@ -171,6 +171,42 @@ TEST_CASE("scalar Math protects division and remains on CPU") {
     REQUIRE(std::get<float>(value) == 1'000'000.0F);
 }
 
+TEST_CASE("Mix exposes blend modes and applies the selected mode to scalar inputs") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* descriptor = registry.descriptor("mix");
+    REQUIRE(descriptor != nullptr);
+    const auto mode = std::ranges::find(descriptor->parameters, "mode", &ParameterDescriptor::key);
+    REQUIRE(mode != descriptor->parameters.end());
+    REQUIRE(mode->minimum == 0.0F);
+    REQUIRE(mode->maximum == 9.0F);
+
+    Graph graph; graph.settings = {16, 16, 60};
+    const auto mix = graph.addNode("mix");
+    graph.findNode(mix)->parameters = {{"mode", 2.0F}, {"a", .25F}, {"b", .8F}, {"factor", 1.0F}};
+    GpuRuntime gpu;
+    GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    const auto& value = runtime.values().at(mix).front();
+    REQUIRE(std::holds_alternative<float>(value));
+    REQUIRE(std::get<float>(value) == Catch::Approx(.2F));
+}
+
+TEST_CASE("Mix image path compiles and produces a GPU image") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {16, 16, 60};
+    const auto source = graph.addNode("perlin");
+    const auto mix = graph.addNode("mix");
+    graph.findNode(mix)->parameters = {{"mode", 4}, {"b", .75F}, {"factor", .5F}};
+    graph.addLink(source, "image", mix, "a");
+    GpuRuntime gpu; GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    const auto& value = runtime.values().at(mix).front();
+    REQUIRE(std::holds_alternative<ImageHandle>(value));
+    REQUIRE(std::get<ImageHandle>(value).texture != 0);
+}
+
 TEST_CASE("threshold produces a binary scalar result") {
     HiddenContext context;
     NodeRegistry registry; registerBuiltInNodes(registry);

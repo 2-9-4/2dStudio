@@ -1,6 +1,8 @@
 #include "reaction/gpu/gpu_runtime.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -9,7 +11,46 @@
 namespace reaction {
 namespace {
 
-GLuint compile(GLenum kind, std::string_view source) {
+std::size_t reportedLine(std::string_view log) {
+    const auto colon = log.find(':');
+    if (colon != std::string_view::npos) {
+        std::size_t end = colon + 1;
+        while (end < log.size() && std::isdigit(static_cast<unsigned char>(log[end]))) ++end;
+        if (end > colon + 1)
+            return static_cast<std::size_t>(std::stoul(std::string(log.substr(colon + 1, end - colon - 1))));
+    }
+    const auto open = log.find('(');
+    if (open != std::string_view::npos) {
+        std::size_t end = open + 1;
+        while (end < log.size() && std::isdigit(static_cast<unsigned char>(log[end]))) ++end;
+        if (end > open + 1 && end < log.size() && log[end] == ')')
+            return static_cast<std::size_t>(std::stoul(std::string(log.substr(open + 1, end - open - 1))));
+    }
+    return 0;
+}
+
+std::string sourceExcerpt(std::string_view source, std::size_t reported) {
+    std::vector<std::string_view> lines;
+    std::size_t begin = 0;
+    while (begin <= source.size()) {
+        const auto end = source.find('\n', begin);
+        lines.push_back(source.substr(begin, end == std::string_view::npos ? source.size() - begin : end - begin));
+        if (end == std::string_view::npos) break;
+        begin = end + 1;
+    }
+    if (lines.empty()) return {};
+    const std::size_t center = reported > 0 ? std::min(reported, lines.size()) : 1;
+    const std::size_t first = center > 3 ? center - 3 : 1;
+    const std::size_t last = std::min(lines.size(), center + 3);
+    std::string result;
+    for (std::size_t line = first; line <= last; ++line) {
+        result += line == center ? "> " : "  ";
+        result += std::to_string(line) + ": " + std::string(lines[line - 1]) + "\n";
+    }
+    return result;
+}
+
+GLuint compile(GLenum kind, std::string_view source, std::string_view label) {
     const auto shader = glCreateShader(kind);
     const auto* text = source.data();
     const auto length = static_cast<GLint>(source.size());
@@ -20,15 +61,20 @@ GLuint compile(GLenum kind, std::string_view source) {
     if (ok == GL_FALSE) {
         GLint size = 0;
         glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &size);
-        std::string log(static_cast<std::size_t>(size), '\0');
-        glGetShaderInfoLog(shader, size, nullptr, log.data());
+        std::string log(static_cast<std::size_t>(std::max(size, 1)), '\0');
+        GLsizei written = 0;
+        glGetShaderInfoLog(shader, size, &written, log.data());
+        log.resize(static_cast<std::size_t>(std::max(written, 0)));
+        while (!log.empty() && log.back() == '\0') log.pop_back();
         glDeleteShader(shader);
-        throw std::runtime_error("Shader compilation failed: " + log);
+        const auto line = reportedLine(log);
+        throw std::runtime_error("Shader compilation failed [" + std::string(label) + "]:\n" + log +
+                                 "\nSource excerpt:\n" + sourceExcerpt(source, line));
     }
     return shader;
 }
 
-GLuint link(std::initializer_list<GLuint> shaders) {
+GLuint link(std::initializer_list<GLuint> shaders, std::string_view label) {
     const auto program = glCreateProgram();
     for (const auto shader : shaders) glAttachShader(program, shader);
     glLinkProgram(program);
@@ -41,10 +87,13 @@ GLuint link(std::initializer_list<GLuint> shaders) {
     if (ok == GL_FALSE) {
         GLint size = 0;
         glGetProgramiv(program, GL_INFO_LOG_LENGTH, &size);
-        std::string log(static_cast<std::size_t>(size), '\0');
-        glGetProgramInfoLog(program, size, nullptr, log.data());
+        std::string log(static_cast<std::size_t>(std::max(size, 1)), '\0');
+        GLsizei written = 0;
+        glGetProgramInfoLog(program, size, &written, log.data());
+        log.resize(static_cast<std::size_t>(std::max(written, 0)));
+        while (!log.empty() && log.back() == '\0') log.pop_back();
         glDeleteProgram(program);
-        throw std::runtime_error("Program linking failed: " + log);
+        throw std::runtime_error("Program linking failed [" + std::string(label) + "]: " + log);
     }
     return program;
 }
@@ -67,8 +116,9 @@ void main() { color = vec4(texture(sourceImage, uv).rgb, 1.0); }
 } // namespace
 
 GpuRuntime::GpuRuntime() {
-    previewProgram_ = link({compile(GL_VERTEX_SHADER, kPreviewVertex),
-                            compile(GL_FRAGMENT_SHADER, kPreviewFragment)});
+    previewProgram_ = link({compile(GL_VERTEX_SHADER, kPreviewVertex, "Preview / vertex"),
+                            compile(GL_FRAGMENT_SHADER, kPreviewFragment, "Preview / fragment")},
+                           "Preview");
 }
 
 GpuRuntime::~GpuRuntime() {
@@ -76,14 +126,14 @@ GpuRuntime::~GpuRuntime() {
     if (previewProgram_) glDeleteProgram(previewProgram_);
 }
 
-GLuint GpuRuntime::compileCompute(std::string_view source) const {
-    return link({compile(GL_COMPUTE_SHADER, source)});
+GLuint GpuRuntime::compileCompute(std::string_view source, std::string_view label) const {
+    return link({compile(GL_COMPUTE_SHADER, source, label)}, label);
 }
 
-GLuint GpuRuntime::compileComputeCached(std::string_view source) {
+GLuint GpuRuntime::compileComputeCached(std::string_view source, std::string_view label) {
     const std::string key(source);
     if (const auto found = computeCache_.find(key); found != computeCache_.end()) return found->second;
-    const auto program = compileCompute(source);
+    const auto program = compileCompute(source, label);
     computeCache_.emplace(key, program);
     return program;
 }

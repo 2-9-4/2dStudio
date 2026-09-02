@@ -13,9 +13,14 @@ constexpr std::array<const char*, 12> kMathOperationNames = {
     "Add", "Subtract", "Multiply", "Divide", "Power", "Minimum",
     "Maximum", "Absolute", "Sine", "Cosine", "Clamp", "Remap"};
 
+constexpr std::array<const char*, 10> kMixModeNames = {
+    "Mix", "Add", "Multiply", "Screen", "Overlay", "Difference", "Darken",
+    "Lighten", "Color Dodge", "Color Burn"};
+
 constexpr const char* popupName(PopupKind kind) {
     switch (kind) {
     case PopupKind::MathOperation: return "Math operation";
+    case PopupKind::MixMode: return "Mix mode";
     case PopupKind::ConvolutionPreset: return "Convolution preset";
     case PopupKind::None: return "";
     }
@@ -31,6 +36,15 @@ void renderMathOperationSelector(NodeRecord& node, PopupState& popup) {
     ImGui::SameLine();
     if (ImGui::Button(kMathOperationNames[static_cast<std::size_t>(operation)], ImVec2(150, 0))) {
         popup.request(PopupKind::MathOperation, node.id);
+    }
+}
+
+void renderMixModeSelector(NodeRecord& node, PopupState& popup) {
+    const int mode = std::clamp(static_cast<int>(node.parameters.value("mode", 0.0F)), 0, 9);
+    ImGui::TextUnformatted("Mode");
+    ImGui::SameLine();
+    if (ImGui::Button(kMixModeNames[static_cast<std::size_t>(mode)], ImVec2(150, 0))) {
+        popup.request(PopupKind::MixMode, node.id);
     }
 }
 
@@ -106,6 +120,15 @@ bool renderPopup(PopupState& popup, Graph& graph) {
                 if (ImGui::Selectable(kMathOperationNames[static_cast<std::size_t>(operation)],
                                       operation == current)) {
                     node->parameters["operation"] = static_cast<float>(operation);
+                    changed = true;
+                }
+            }
+        } else if (popup.kind == PopupKind::MixMode) {
+            const int current = std::clamp(
+                static_cast<int>(node->parameters.value("mode", 0.0F)), 0, 9);
+            for (int mode = 0; mode < static_cast<int>(kMixModeNames.size()); ++mode) {
+                if (ImGui::Selectable(kMixModeNames[static_cast<std::size_t>(mode)], mode == current)) {
+                    node->parameters["mode"] = static_cast<float>(mode);
                     changed = true;
                 }
             }

@@ -17,8 +17,10 @@ public:
     GpuRuntime(const GpuRuntime&) = delete;
     GpuRuntime& operator=(const GpuRuntime&) = delete;
 
-    [[nodiscard]] GLuint compileCompute(std::string_view source) const;
-    [[nodiscard]] GLuint compileComputeCached(std::string_view source);
+    [[nodiscard]] GLuint compileCompute(std::string_view source,
+                                        std::string_view label = "compute shader") const;
+    [[nodiscard]] GLuint compileComputeCached(std::string_view source,
+                                              std::string_view label = "cached compute shader");
     [[nodiscard]] GLuint createTexture(int width, int height, GLenum format = GL_RGBA16F) const;
     void ensureTexture(GLuint& texture, int& currentWidth, int& currentHeight,
                        int width, int height, GLenum format = GL_RGBA16F) const;
