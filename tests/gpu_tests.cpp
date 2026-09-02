@@ -58,6 +58,18 @@ TEST_CASE("reaction defaults use the sustained classic Gray-Scott region") {
     REQUIRE(defaultFor("autoReset") == Catch::Approx(0.0F));
 }
 
+TEST_CASE("convolution exposes bounded iteration control") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* descriptor = registry.descriptor("convolution");
+    REQUIRE(descriptor != nullptr);
+    const auto iteration = std::ranges::find(
+        descriptor->parameters, "iterations", &ParameterDescriptor::key);
+    REQUIRE(iteration != descriptor->parameters.end());
+    REQUIRE(iteration->defaultValue == 1.0F);
+    REQUIRE(iteration->minimum == 1.0F);
+    REQUIRE(iteration->maximum == 32.0F);
+}
+
 TEST_CASE("Perlin compute is stable, bounded, and reuses its texture") {
     HiddenContext context;
     NodeRegistry registry; registerBuiltInNodes(registry);
@@ -119,6 +131,7 @@ TEST_CASE("convolution identity preserves its source image") {
     Graph graph; graph.settings = {32, 24, 60};
     const auto source = graph.addNode("perlin");
     const auto convolution = graph.addNode("convolution");
+    graph.findNode(convolution)->parameters["iterations"] = 4;
     const auto output = graph.addNode("output");
     graph.addLink(source, "image", convolution, "image");
     graph.addLink(convolution, "image", output, "image"); graph.activeOutput = output;
@@ -127,6 +140,35 @@ TEST_CASE("convolution identity preserves its source image") {
     REQUIRE(runtime.evaluate(0, 0, false));
     const auto sourceImage = std::get<ImageHandle>(runtime.values().at(source).front());
     REQUIRE(readImage(runtime.outputImage()) == readImage(sourceImage));
+}
+
+TEST_CASE("erosion and dilation bound the source image") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {24, 20, 60};
+    const auto source = graph.addNode("perlin");
+    const auto erosion = graph.addNode("convolution");
+    const auto dilation = graph.addNode("convolution");
+    const std::vector<float> footprint(9, 1.0F);
+    graph.findNode(erosion)->parameters = {
+        {"kernelSize", 3}, {"kernel", footprint}, {"operation", 1}, {"iterations", 2}};
+    graph.findNode(dilation)->parameters = {
+        {"kernelSize", 3}, {"kernel", footprint}, {"operation", 2}, {"iterations", 2}};
+    graph.addLink(source, "image", erosion, "image");
+    graph.addLink(source, "image", dilation, "image");
+    GpuRuntime gpu;
+    GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0, 0, false));
+
+    const auto sourcePixels = readImage(std::get<ImageHandle>(runtime.values().at(source).front()));
+    const auto erosionPixels = readImage(std::get<ImageHandle>(runtime.values().at(erosion).front()));
+    const auto dilationPixels = readImage(std::get<ImageHandle>(runtime.values().at(dilation).front()));
+    REQUIRE(sourcePixels.size() == erosionPixels.size());
+    REQUIRE(sourcePixels.size() == dilationPixels.size());
+    for (std::size_t index = 0; index < sourcePixels.size(); ++index) {
+        REQUIRE(erosionPixels[index] <= sourcePixels[index] + 0.0001F);
+        REQUIRE(dilationPixels[index] + 0.0001F >= sourcePixels[index]);
+    }
 }
 
 TEST_CASE("reaction diffusion evolves, resets, and reallocates on resize") {

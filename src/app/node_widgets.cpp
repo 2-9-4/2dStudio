@@ -1,11 +1,10 @@
 #include "node_widgets.hpp"
+#include "convolution_presets.hpp"
 
 #include <imgui.h>
 
 #include <algorithm>
 #include <array>
-#include <string>
-#include <vector>
 
 namespace reaction::node_widgets {
 namespace {
@@ -14,9 +13,6 @@ constexpr std::array<const char*, 12> kMathOperationNames = {
     "Add", "Subtract", "Multiply", "Divide", "Power", "Minimum",
     "Maximum", "Absolute", "Sine", "Cosine", "Clamp", "Remap"};
 
-constexpr std::array<const char*, 7> kKernelPresetNames = {
-    "Custom", "Identity", "Box Blur", "Gaussian Blur", "Sharpen", "Edge Detect", "Emboss"};
-
 constexpr const char* popupName(PopupKind kind) {
     switch (kind) {
     case PopupKind::MathOperation: return "Math operation";
@@ -24,66 +20,6 @@ constexpr const char* popupName(PopupKind kind) {
     case PopupKind::None: return "";
     }
     return "";
-}
-
-int kernelSize(const nlohmann::json& parameters) {
-    return std::clamp(static_cast<int>(parameters.value("kernelSize", 3.0F)) | 1, 3, 15);
-}
-
-std::vector<float> kernelValues(const nlohmann::json& parameters, int size) {
-    std::vector<float> values(static_cast<std::size_t>(size * size), 0.0F);
-    values[static_cast<std::size_t>((size / 2) * size + size / 2)] = 1.0F;
-    if (const auto it = parameters.find("kernel"); it != parameters.end() && it->is_array()) {
-        const auto count = std::min(values.size(), it->size());
-        for (std::size_t index = 0; index < count; ++index) {
-            if ((*it)[index].is_number()) values[index] = (*it)[index].get<float>();
-        }
-    }
-    return values;
-}
-
-void writeKernel(nlohmann::json& parameters, const std::vector<float>& values, int size) {
-    parameters["kernelSize"] = size;
-    parameters["kernel"] = values;
-}
-
-void resizeKernel(nlohmann::json& parameters, int size) {
-    const int previousSize = kernelSize(parameters);
-    const auto previous = kernelValues(parameters, previousSize);
-    std::vector<float> resized(static_cast<std::size_t>(size * size), 0.0F);
-    const int overlap = std::min(previousSize, size) / 2;
-    for (int y = -overlap; y <= overlap; ++y) {
-        for (int x = -overlap; x <= overlap; ++x) {
-            resized[static_cast<std::size_t>((y + size / 2) * size + x + size / 2)] =
-                previous[static_cast<std::size_t>((y + previousSize / 2) * previousSize + x + previousSize / 2)];
-        }
-    }
-    writeKernel(parameters, resized, size);
-}
-
-void applyKernelPreset(nlohmann::json& parameters, int preset) {
-    constexpr std::array<std::array<float, 9>, 6> presets = {{
-        {{0, 0, 0, 0, 1, 0, 0, 0, 0}},
-        {{1, 1, 1, 1, 1, 1, 1, 1, 1}},
-        {{1, 2, 1, 2, 4, 2, 1, 2, 1}},
-        {{0, -1, 0, -1, 5, -1, 0, -1, 0}},
-        {{-1, -1, -1, -1, 8, -1, -1, -1, -1}},
-        {{-2, -1, 0, -1, 1, 1, 0, 1, 2}}
-    }};
-    if (preset < 1 || preset >= static_cast<int>(kKernelPresetNames.size())) return;
-    const auto& values = presets[static_cast<std::size_t>(preset - 1)];
-    writeKernel(parameters, std::vector<float>(values.begin(), values.end()), 3);
-    parameters["normalize"] = (preset == 2 || preset == 3) ? 1.0F : 0.0F;
-    parameters["bias"] = 0.0F;
-    parameters["preset"] = kKernelPresetNames[static_cast<std::size_t>(preset)];
-}
-
-int currentPreset(const nlohmann::json& parameters) {
-    const auto name = parameters.value("preset", std::string("Custom"));
-    for (int index = 1; index < static_cast<int>(kKernelPresetNames.size()); ++index) {
-        if (name == kKernelPresetNames[static_cast<std::size_t>(index)]) return index;
-    }
-    return 0;
 }
 
 } // namespace
@@ -101,24 +37,24 @@ void renderMathOperationSelector(NodeRecord& node, PopupState& popup) {
 bool renderConvolutionEditor(NodeRecord& node, PopupState& popup) {
     auto& parameters = node.parameters;
     bool changed = false;
-    const int preset = currentPreset(parameters);
+    const auto& presetNames = convolution_presets::names();
+    const int preset = convolution_presets::current(parameters);
     ImGui::TextUnformatted("Preset");
     ImGui::SameLine();
-    if (ImGui::Button(kKernelPresetNames[static_cast<std::size_t>(preset)], ImVec2(150, 0))) {
+    if (ImGui::Button(presetNames[static_cast<std::size_t>(preset)], ImVec2(150, 0))) {
         popup.request(PopupKind::ConvolutionPreset, node.id);
     }
 
-    int size = kernelSize(parameters);
+    int size = convolution_presets::kernelSize(parameters);
     ImGui::SetNextItemWidth(150);
     if (ImGui::SliderInt("Kernel size", &size, 3, 15, "%d")) {
         size |= 1;
-        resizeKernel(parameters, size);
-        parameters["preset"] = "Custom";
+        convolution_presets::resize(parameters, size);
         changed = true;
     }
     ImGui::SameLine();
     ImGui::Text("%d x %d", size, size);
-    auto values = kernelValues(parameters, size);
+    auto values = convolution_presets::values(parameters, size);
     ImGui::TextUnformatted("Kernel (center is the current pixel)");
     for (int y = 0; y < size; ++y) {
         for (int x = 0; x < size; ++x) {
@@ -127,8 +63,9 @@ bool renderConvolutionEditor(NodeRecord& node, PopupState& popup) {
             ImGui::PushID(static_cast<int>(index));
             ImGui::SetNextItemWidth(30);
             if (ImGui::DragFloat("##weight", &values[index], 0.02F, -100.0F, 100.0F, "%.2g")) {
-                writeKernel(parameters, values, size);
+                convolution_presets::write(parameters, values, size);
                 parameters["preset"] = "Custom";
+                parameters["operation"] = 0.0F;
                 changed = true;
             }
             ImGui::PopID();
@@ -173,12 +110,12 @@ bool renderPopup(PopupState& popup, Graph& graph) {
                 }
             }
         } else if (popup.kind == PopupKind::ConvolutionPreset) {
-            const int current = currentPreset(node->parameters);
-            for (int preset = 0; preset < static_cast<int>(kKernelPresetNames.size()); ++preset) {
-                if (ImGui::Selectable(kKernelPresetNames[static_cast<std::size_t>(preset)],
+            const auto& presetNames = convolution_presets::names();
+            const int current = convolution_presets::current(node->parameters);
+            for (int preset = 0; preset < convolution_presets::kPresetCount; ++preset) {
+                if (ImGui::Selectable(presetNames[static_cast<std::size_t>(preset)],
                                       preset == current)) {
-                    if (preset == 0) node->parameters["preset"] = "Custom";
-                    else applyKernelPreset(node->parameters, preset);
+                    convolution_presets::apply(node->parameters, preset);
                     changed = true;
                 }
             }

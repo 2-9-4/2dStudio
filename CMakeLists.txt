@@ -73,6 +73,7 @@ if(REACTION_BUILD_APP)
 
     add_executable(reaction_studio
         src/app/application.cpp
+        src/app/convolution_presets.cpp
         src/app/node_widgets.cpp
         src/app/main.cpp)
     target_include_directories(reaction_studio PRIVATE
@@ -95,8 +96,15 @@ if(REACTION_BUILD_TESTS)
     FetchContent_MakeAvailable(Catch2)
     add_executable(reaction_core_tests tests/core_tests.cpp)
     target_link_libraries(reaction_core_tests PRIVATE reaction_core Catch2::Catch2WithMain)
+    add_executable(reaction_convolution_preset_tests
+        tests/convolution_preset_tests.cpp
+        src/app/convolution_presets.cpp)
+    target_include_directories(reaction_convolution_preset_tests PRIVATE src/app)
+    target_link_libraries(reaction_convolution_preset_tests PRIVATE
+        nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
     include(${catch2_SOURCE_DIR}/extras/Catch.cmake)
     catch_discover_tests(reaction_core_tests)
+    catch_discover_tests(reaction_convolution_preset_tests)
     if(REACTION_BUILD_APP)
         add_executable(reaction_gpu_tests tests/gpu_tests.cpp)
         target_link_libraries(reaction_gpu_tests PRIVATE
