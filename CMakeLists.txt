@@ -64,6 +64,8 @@ if(REACTION_BUILD_APP)
 
     add_library(reaction_gpu
         src/gpu/gpu_runtime.cpp
+        src/gpu/input_nodes.cpp
+        src/gpu/convolution_node.cpp
         src/gpu/nodes.cpp)
     target_include_directories(reaction_gpu PUBLIC include PRIVATE shaders)
     target_link_libraries(reaction_gpu PUBLIC reaction_core glad OpenGL::GL)
@@ -71,6 +73,7 @@ if(REACTION_BUILD_APP)
 
     add_executable(reaction_studio
         src/app/application.cpp
+        src/app/node_widgets.cpp
         src/app/main.cpp)
     target_include_directories(reaction_studio PRIVATE
         include

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "reaction/gpu/gpu_runtime.hpp"
+#include "node_widgets.hpp"
 
 #include <filesystem>
 #include <memory>
@@ -51,8 +52,7 @@ private:
     std::string status_ = "Ready";
     double elapsed_ = 0.0;
     double displayedFps_ = 0.0;
-    NodeId mathOperationPopupNode_ = 0;
-    bool openMathOperationPopup_ = false;
+    node_widgets::PopupState nodePopup_;
     bool copyRequested_ = false;
     bool pasteRequested_ = false;
     std::vector<NodeId> pendingSelection_;
