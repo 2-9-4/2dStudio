@@ -4,6 +4,80 @@
 #include <stdexcept>
 
 namespace reaction {
+namespace {
+
+std::string valueTypeName(ValueType value) { return toString(value); }
+ValueType valueType(const std::string& value) {
+    if (value == "image2d") return ValueType::Image2D;
+    if (value == "numeric") return ValueType::AnyNumeric;
+    return ValueType::Float;
+}
+
+nlohmann::json serializeSubgraph(const SubgraphDefinition& definition) {
+    nlohmann::json interface = nlohmann::json::array();
+    for (const auto& item : definition.interface) {
+        const char* kind = item.kind == SubgraphInterfaceKind::Input ? "input" :
+                           item.kind == SubgraphInterfaceKind::Slider ? "slider" : "output";
+        const char* control = item.control == ParameterDescriptor::Control::Integer ? "integer" :
+                              item.control == ParameterDescriptor::Control::Boolean ? "boolean" : "float";
+        interface.push_back({{"key", item.key}, {"label", item.label}, {"kind", kind},
+            {"type", valueTypeName(item.type)}, {"optional", item.optional},
+            {"default", item.defaultValue}, {"minimum", item.minimum}, {"maximum", item.maximum},
+            {"control", control}, {"role", item.role}});
+    }
+    nlohmann::json kernel = nlohmann::json::array();
+    for (const auto& item : definition.kernel) {
+        kernel.push_back({{"key", item.key}, {"operation", item.operation}, {"inputs", item.inputs},
+                          {"properties", item.properties},
+                          {"position", {item.position.x, item.position.y}}});
+    }
+    return {{"id", definition.id}, {"version", definition.version}, {"name", definition.name},
+            {"category", definition.category},
+            {"execution", definition.execution == SubgraphExecution::Simulation ? "simulation" : "pipeline"},
+            {"interface", std::move(interface)}, {"kernel", std::move(kernel)}};
+}
+
+SubgraphDefinition deserializeSubgraph(const nlohmann::json& value) {
+    SubgraphDefinition result;
+    result.id = value.at("id").get<std::string>();
+    result.version = value.value("version", 1);
+    result.name = value.at("name").get<std::string>();
+    result.category = value.value("category", std::string("Subgraphs"));
+    result.execution = value.value("execution", std::string("pipeline")) == "simulation"
+        ? SubgraphExecution::Simulation : SubgraphExecution::Pipeline;
+    for (const auto& entry : value.value("interface", nlohmann::json::array())) {
+        SubgraphInterfaceItem item;
+        item.key = entry.at("key").get<std::string>();
+        item.label = entry.value("label", item.key);
+        const auto kind = entry.value("kind", std::string("input"));
+        item.kind = kind == "slider" ? SubgraphInterfaceKind::Slider :
+                    kind == "output" ? SubgraphInterfaceKind::Output : SubgraphInterfaceKind::Input;
+        item.type = valueType(entry.value("type", std::string("float")));
+        item.optional = entry.value("optional", false);
+        item.defaultValue = entry.value("default", 0.0F);
+        item.minimum = entry.value("minimum", 0.0F);
+        item.maximum = entry.value("maximum", 1.0F);
+        const auto control = entry.value("control", std::string("float"));
+        item.control = control == "integer" ? ParameterDescriptor::Control::Integer :
+                       control == "boolean" ? ParameterDescriptor::Control::Boolean :
+                       ParameterDescriptor::Control::Float;
+        item.role = entry.value("role", std::string{});
+        result.interface.push_back(std::move(item));
+    }
+    for (const auto& entry : value.value("kernel", nlohmann::json::array())) {
+        SubgraphKernelNode item;
+        item.key = entry.at("key").get<std::string>();
+        item.operation = entry.at("operation").get<std::string>();
+        item.inputs = entry.value("inputs", std::vector<std::string>{});
+        item.properties = entry.value("properties", nlohmann::json::object());
+        const auto position = entry.value("position", nlohmann::json::array({0, 0}));
+        item.position = {position.at(0).get<float>(), position.at(1).get<float>()};
+        result.kernel.push_back(std::move(item));
+    }
+    return result;
+}
+
+} // namespace
 
 nlohmann::json serializeProject(const Graph& graph) {
     nlohmann::json nodes = nlohmann::json::array();
@@ -16,6 +90,7 @@ nlohmann::json serializeProject(const Graph& graph) {
                 {"parameters", node.parameters}};
         value["id"] = node.id;
         value["position"] = {node.position.x, node.position.y};
+        if (!node.subgraphId.empty()) value["subgraphId"] = node.subgraphId;
         nodes.push_back(std::move(value));
     }
 
@@ -25,16 +100,19 @@ nlohmann::json serializeProject(const Graph& graph) {
                          {"from", {{"node", link.fromNode}, {"socket", link.fromSocket}}},
                          {"to", {{"node", link.toNode}, {"socket", link.toSocket}}}});
     }
+    nlohmann::json subgraphs = nlohmann::json::array();
+    for (const auto& definition : graph.subgraphs()) subgraphs.push_back(serializeSubgraph(definition));
     return {{"formatVersion", kProjectFormatVersion},
             {"project", {{"width", graph.settings.width},
                          {"height", graph.settings.height},
                          {"targetFps", graph.settings.targetFps}}},
-            {"nodes", std::move(nodes)}, {"links", std::move(links)},
+            {"subgraphs", std::move(subgraphs)}, {"nodes", std::move(nodes)}, {"links", std::move(links)},
             {"activeOutput", graph.activeOutput}};
 }
 
 Graph deserializeProject(const nlohmann::json& document, const NodeRegistry& registry) {
-    if (!document.is_object() || document.value("formatVersion", 0) != kProjectFormatVersion) {
+    const int format = document.value("formatVersion", 0);
+    if (!document.is_object() || (format != 1 && format != kProjectFormatVersion)) {
         throw std::runtime_error("Unsupported or missing project formatVersion");
     }
     Graph graph;
@@ -47,15 +125,21 @@ Graph deserializeProject(const nlohmann::json& document, const NodeRegistry& reg
         throw std::runtime_error("Project settings are out of range");
     }
 
+    if (format >= 2) {
+        for (const auto& value : document.value("subgraphs", nlohmann::json::array()))
+            graph.subgraphs().push_back(deserializeSubgraph(value));
+    }
     for (const auto& value : document.at("nodes")) {
         NodeRecord node;
         node.id = value.at("id").get<NodeId>();
         node.type = value.at("type").get<std::string>();
+        node.subgraphId = value.value("subgraphId", std::string{});
         node.typeVersion = value.value("typeVersion", 1);
         const auto& position = value.at("position");
         node.position = {position.at(0).get<float>(), position.at(1).get<float>()};
         node.parameters = value.value("parameters", nlohmann::json::object());
-        node.missing = !registry.contains(node.type);
+        NodeDescriptor descriptorStorage;
+        node.missing = resolveDescriptor(graph, node, registry, descriptorStorage) == nullptr;
         if (node.missing) node.preservedJson = value;
         graph.nodes().push_back(std::move(node));
         graph.nextNodeId = std::max(graph.nextNodeId, graph.nodes().back().id + 1);

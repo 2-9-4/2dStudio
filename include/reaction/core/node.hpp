@@ -22,11 +22,13 @@ struct SocketDescriptor {
 };
 
 struct ParameterDescriptor {
+    enum class Control { Float, Integer, Boolean };
     std::string key;
     std::string label;
     float defaultValue = 0.0F;
     float minimum = 0.0F;
     float maximum = 1.0F;
+    Control control = Control::Float;
 };
 
 struct NodeDescriptor {
@@ -77,4 +79,3 @@ private:
 };
 
 } // namespace reaction
-

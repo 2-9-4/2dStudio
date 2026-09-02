@@ -39,6 +39,14 @@ private:
 
 Register the descriptor and factory in the node family's registration function. Socket keys and the node type are serialized API: never rename them without a type-version migration. A stateful node must set `NodeDescriptor::stateful`, own its persistent textures, and implement `reset`. It must not expose a graph-level feedback edge.
 
+## Editable simulation subgraphs
+
+Subgraph instances use the node type `subgraph` and a stable `subgraphId`. Their node descriptor is derived from `SubgraphInterfaceItem` records rather than the static registry. Interface keys are serialized identities; labels can be edited safely. Float, integer, and boolean control metadata drives the corresponding node widget without type-specific UI code.
+
+The bundled discrete reaction-diffusion definition demonstrates simulation kernels. Its serialized `SubgraphKernelNode` DAG has explicit initial-state and next-state endpoints. `KernelCompiler` fuses the reachable primitive operations into an initialization shader and a single update shader, while the node owns its private RG16F ping-pong state. Do not introduce a graph-level feedback edge for simulation state.
+
+Built-in definitions live in `builtInSubgraphs()` and are immutable. Editable copies belong to `Graph::subgraphs()` and are serialized once at project level; any number of instances may reference the same definition.
+
 Node controls that open popups must request them through `node_widgets::PopupState` and
 render them through `node_widgets::renderPopup`. That function is called only while the
 node editor is suspended, so popup layout and hit testing remain in ImGui screen space.

@@ -72,11 +72,20 @@ GpuRuntime::GpuRuntime() {
 }
 
 GpuRuntime::~GpuRuntime() {
+    for (const auto& [_, program] : computeCache_) glDeleteProgram(program);
     if (previewProgram_) glDeleteProgram(previewProgram_);
 }
 
 GLuint GpuRuntime::compileCompute(std::string_view source) const {
     return link({compile(GL_COMPUTE_SHADER, source)});
+}
+
+GLuint GpuRuntime::compileComputeCached(std::string_view source) {
+    const std::string key(source);
+    if (const auto found = computeCache_.find(key); found != computeCache_.end()) return found->second;
+    const auto program = compileCompute(source);
+    computeCache_.emplace(key, program);
+    return program;
 }
 
 GLuint GpuRuntime::createTexture(int width, int height, GLenum format) const {
@@ -149,8 +158,15 @@ void GraphRuntime::rebuild() {
     std::unordered_map<NodeId, std::unique_ptr<NodeInstance>> next;
     for (const auto& node : graph_.nodes()) {
         auto found = instances_.find(node.id);
-        if (found != instances_.end() && found->second->descriptor().type == node.type) {
+        if (found != instances_.end() && node.type != "subgraph" &&
+            found->second->descriptor().type == node.type) {
             next.emplace(node.id, std::move(found->second));
+        } else if (node.type == "subgraph") {
+            if (const auto* definition = resolveSubgraph(graph_, node.subgraphId)) {
+                auto instance = createSubgraphInstance(*definition);
+                pendingResets_.insert(node.id);
+                next.emplace(node.id, std::move(instance));
+            }
         } else if (auto instance = registry_.create(node.type)) {
             if (instance->descriptor().stateful) pendingResets_.insert(node.id);
             next.emplace(node.id, std::move(instance));
@@ -215,7 +231,8 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
             for (const auto& link : graph_.links()) {
                 if (link.toNode != id || link.toSocket != inputKeys[i]) continue;
                 const auto* source = graph_.findNode(link.fromNode);
-                const auto* sourceDesc = source ? registry_.descriptor(source->type) : nullptr;
+                NodeDescriptor sourceStorage;
+                const auto* sourceDesc = source ? resolveDescriptor(graph_, *source, registry_, sourceStorage) : nullptr;
                 if (!sourceDesc) continue;
                 std::size_t outputIndex = 0;
                 for (const auto& socket : sourceDesc->sockets) {

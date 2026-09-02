@@ -1,0 +1,552 @@
+{
+  "activeOutput": 4,
+  "formatVersion": 1,
+  "links": [
+    {
+      "from": {
+        "node": 2,
+        "socket": "image"
+      },
+      "id": 1,
+      "to": {
+        "node": 3,
+        "socket": "value"
+      }
+    },
+    {
+      "from": {
+        "node": 1,
+        "socket": "image"
+      },
+      "id": 3,
+      "to": {
+        "node": 5,
+        "socket": "value"
+      }
+    },
+    {
+      "from": {
+        "node": 5,
+        "socket": "result"
+      },
+      "id": 4,
+      "to": {
+        "node": 6,
+        "socket": "image"
+      }
+    },
+    {
+      "from": {
+        "node": 6,
+        "socket": "image"
+      },
+      "id": 7,
+      "to": {
+        "node": 7,
+        "socket": "image"
+      }
+    },
+    {
+      "from": {
+        "node": 7,
+        "socket": "image"
+      },
+      "id": 11,
+      "to": {
+        "node": 8,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 7,
+        "socket": "image"
+      },
+      "id": 13,
+      "to": {
+        "node": 9,
+        "socket": "image"
+      }
+    },
+    {
+      "from": {
+        "node": 8,
+        "socket": "result"
+      },
+      "id": 26,
+      "to": {
+        "node": 14,
+        "socket": "b"
+      }
+    },
+    {
+      "from": {
+        "node": 16,
+        "socket": "image"
+      },
+      "id": 36,
+      "to": {
+        "node": 18,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 9,
+        "socket": "image"
+      },
+      "id": 38,
+      "to": {
+        "node": 19,
+        "socket": "b"
+      }
+    },
+    {
+      "from": {
+        "node": 18,
+        "socket": "result"
+      },
+      "id": 39,
+      "to": {
+        "node": 19,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 14,
+        "socket": "result"
+      },
+      "id": 55,
+      "to": {
+        "node": 21,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 19,
+        "socket": "result"
+      },
+      "id": 56,
+      "to": {
+        "node": 21,
+        "socket": "b"
+      }
+    },
+    {
+      "from": {
+        "node": 21,
+        "socket": "result"
+      },
+      "id": 58,
+      "to": {
+        "node": 2,
+        "socket": "feedMultiplier"
+      }
+    },
+    {
+      "from": {
+        "node": 7,
+        "socket": "image"
+      },
+      "id": 60,
+      "to": {
+        "node": 23,
+        "socket": "value"
+      }
+    },
+    {
+      "from": {
+        "node": 3,
+        "socket": "image"
+      },
+      "id": 62,
+      "to": {
+        "node": 22,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 23,
+        "socket": "image"
+      },
+      "id": 63,
+      "to": {
+        "node": 22,
+        "socket": "b"
+      }
+    },
+    {
+      "from": {
+        "node": 22,
+        "socket": "result"
+      },
+      "id": 64,
+      "to": {
+        "node": 4,
+        "socket": "image"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": 1,
+      "parameters": {
+        "lacunarity": 1.0,
+        "octaves": 1.0,
+        "persistence": 0.0
+      },
+      "position": [
+        -719.0,
+        -4.0
+      ],
+      "type": "perlin",
+      "typeVersion": 1
+    },
+    {
+      "id": 2,
+      "parameters": {
+        "autoReset": 1.0,
+        "diffA": 1.0240000486373901,
+        "diffB": 0.3799999952316284,
+        "feed": 0.08020000159740448,
+        "iterations": 64.0,
+        "kill": 0.06199999898672104,
+        "structureScale": 0.25
+      },
+      "position": [
+        700.0,
+        121.0
+      ],
+      "type": "reaction_diffusion",
+      "typeVersion": 1
+    },
+    {
+      "id": 3,
+      "parameters": {},
+      "position": [
+        1023.0,
+        59.0
+      ],
+      "type": "color_ramp",
+      "typeVersion": 1
+    },
+    {
+      "id": 4,
+      "parameters": {},
+      "position": [
+        1647.0,
+        -211.0
+      ],
+      "type": "output",
+      "typeVersion": 1
+    },
+    {
+      "id": 5,
+      "parameters": {},
+      "position": [
+        -464.0,
+        -20.0
+      ],
+      "type": "threshold",
+      "typeVersion": 1
+    },
+    {
+      "id": 6,
+      "parameters": {
+        "bias": 0.0,
+        "iterations": 1.0,
+        "kernel": [
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          8.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0
+        ],
+        "kernelSize": 3,
+        "normalize": 1.0,
+        "operation": 0.0,
+        "preset": "Edge Detect"
+      },
+      "position": [
+        -208.0,
+        -35.0
+      ],
+      "type": "convolution",
+      "typeVersion": 1
+    },
+    {
+      "id": 7,
+      "parameters": {
+        "bias": 0.0,
+        "iterations": 5.0,
+        "kernel": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "kernelSize": 11,
+        "normalize": 0.0,
+        "operation": 2.0,
+        "preset": "Dilation"
+      },
+      "position": [
+        79.0,
+        -148.0
+      ],
+      "type": "convolution",
+      "typeVersion": 1
+    },
+    {
+      "id": 8,
+      "parameters": {
+        "operation": 11.0,
+        "outMin": 0.4000000059604645
+      },
+      "position": [
+        269.0,
+        460.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 9,
+      "parameters": {},
+      "position": [
+        1023.0,
+        1131.0
+      ],
+      "type": "invert",
+      "typeVersion": 1
+    },
+    {
+      "id": 14,
+      "parameters": {
+        "a": 1.0,
+        "operation": 2.0,
+        "outMin": 0.4000000059604645
+      },
+      "position": [
+        541.0,
+        555.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 16,
+      "parameters": {
+        "octaves": 1.0,
+        "scale": 0.6026999950408936
+      },
+      "position": [
+        399.0,
+        1116.0
+      ],
+      "type": "perlin",
+      "typeVersion": 1
+    },
+    {
+      "id": 18,
+      "parameters": {
+        "a": 1.0,
+        "b": 0.07999999821186066,
+        "operation": 2.0,
+        "outMin": 0.0
+      },
+      "position": [
+        764.0,
+        1033.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 19,
+      "parameters": {
+        "a": 1.0,
+        "b": 0.6800000071525574,
+        "operation": 2.0,
+        "outMax": 1.0,
+        "outMin": 0.0
+      },
+      "position": [
+        1196.0,
+        1051.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 21,
+      "parameters": {
+        "inMax": 10.0,
+        "inMin": -10.0,
+        "operation": 0.0,
+        "outMax": 10.0,
+        "outMin": -10.0
+      },
+      "position": [
+        925.0,
+        540.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 22,
+      "parameters": {
+        "factor": 0.0
+      },
+      "position": [
+        1260.0,
+        -179.0
+      ],
+      "type": "mix",
+      "typeVersion": 1
+    },
+    {
+      "id": 23,
+      "parameters": {
+        "r0": 0.0,
+        "r1": 0.0
+      },
+      "position": [
+        975.0,
+        -420.0
+      ],
+      "type": "color_ramp",
+      "typeVersion": 1
+    }
+  ],
+  "project": {
+    "height": 1024,
+    "targetFps": 60,
+    "width": 1024
+  }
+}

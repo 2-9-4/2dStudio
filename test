@@ -301,10 +301,10 @@
     },
     {
       "from": {
-        "node": 36,
-        "socket": "image"
+        "node": 37,
+        "socket": "result"
       },
-      "id": 105,
+      "id": 106,
       "to": {
         "node": 4,
         "socket": "image"

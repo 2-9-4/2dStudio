@@ -6,7 +6,7 @@
 
 namespace reaction {
 
-inline constexpr int kProjectFormatVersion = 1;
+inline constexpr int kProjectFormatVersion = 2;
 
 [[nodiscard]] nlohmann::json serializeProject(const Graph& graph);
 [[nodiscard]] Graph deserializeProject(const nlohmann::json& document,

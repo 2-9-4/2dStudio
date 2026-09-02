@@ -15,7 +15,8 @@ find_package(nlohmann_json 3.11 REQUIRED)
 add_library(reaction_core
     src/core/graph.cpp
     src/core/persistence.cpp
-    src/core/registry.cpp)
+    src/core/registry.cpp
+    src/core/subgraph.cpp)
 target_include_directories(reaction_core PUBLIC include)
 target_link_libraries(reaction_core PUBLIC nlohmann_json::nlohmann_json)
 target_compile_options(reaction_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
@@ -66,6 +67,7 @@ if(REACTION_BUILD_APP)
         src/gpu/gpu_runtime.cpp
         src/gpu/input_nodes.cpp
         src/gpu/convolution_node.cpp
+        src/gpu/subgraph_node.cpp
         src/gpu/nodes.cpp)
     target_include_directories(reaction_gpu PUBLIC include PRIVATE shaders)
     target_link_libraries(reaction_gpu PUBLIC reaction_core glad OpenGL::GL)

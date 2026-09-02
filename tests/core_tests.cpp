@@ -128,4 +128,78 @@ TEST_CASE("unsupported schema and invalid project settings fail clearly") {
     REQUIRE_THROWS_WITH(deserializeProject(document, nodes), "Project settings are out of range");
 }
 
+TEST_CASE("built-in discrete reaction exposes a stable dynamic interface") {
+    auto nodes = registry();
+    REQUIRE(validateSubgraph(builtInSubgraphs().front()).empty());
+    Graph graph;
+    const auto id = graph.addNode("subgraph");
+    graph.findNode(id)->subgraphId = "builtin.reaction_diffusion.discrete";
+    NodeDescriptor storage;
+    const auto* descriptor = resolveDescriptor(graph, *graph.findNode(id), nodes, storage);
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(descriptor->displayName == "Reaction Diffusion (Discrete)");
+    REQUIRE(descriptor->stateful);
+    REQUIRE(std::ranges::count_if(descriptor->sockets, [](const auto& socket) {
+        return socket.direction == SocketDirection::Output;
+    }) == 3);
+    REQUIRE(graph.compile(nodes).valid);
+}
+
+TEST_CASE("custom shared subgraphs round trip once with per-instance values") {
+    auto nodes = registry();
+    Graph graph;
+    auto definition = builtInSubgraphs().front();
+    definition.id = "project.gray_scott.custom";
+    definition.name = "My Gray Scott";
+    definition.immutable = false;
+    graph.subgraphs().push_back(definition);
+    const auto first = graph.addNode("subgraph");
+    const auto second = graph.addNode("subgraph");
+    graph.findNode(first)->subgraphId = definition.id;
+    graph.findNode(second)->subgraphId = definition.id;
+    graph.findNode(first)->parameters["feed"] = .04F;
+    graph.findNode(second)->parameters["feed"] = .07F;
+
+    const auto json = serializeProject(graph);
+    REQUIRE(json["formatVersion"] == 2);
+    REQUIRE(json["subgraphs"].size() == 1);
+    const auto restored = deserializeProject(json, nodes);
+    REQUIRE(restored.subgraphs().size() == 1);
+    REQUIRE(restored.findNode(first)->subgraphId == definition.id);
+    REQUIRE(restored.findNode(first)->parameters["feed"] != restored.findNode(second)->parameters["feed"]);
+    REQUIRE(restored.compile(nodes).valid);
+}
+
+TEST_CASE("subgraph labels may change without changing serialized socket keys") {
+    auto definition = builtInSubgraphs().front();
+    const auto originalKey = definition.interface.front().key;
+    definition.interface.front().label = "Painted Feed";
+    const auto descriptor = describeSubgraph(definition);
+    REQUIRE(descriptor.sockets.front().key == originalKey);
+    REQUIRE(descriptor.sockets.front().label == "Painted Feed");
+}
+
+TEST_CASE("subgraph validation catches ranges cycles endpoints and nesting") {
+    auto definition = builtInSubgraphs().front();
+    definition.interface[3].minimum = 1.0F;
+    definition.interface[3].maximum = 0.0F;
+    definition.kernel.push_back({"cycleA", "add", {"cycleB", "a0"}});
+    definition.kernel.push_back({"cycleB", "add", {"cycleA", "b0"}});
+    definition.kernel.push_back({"nested", "subgraph", {}});
+    const auto errors = validateSubgraph(definition);
+    REQUIRE(std::ranges::any_of(errors, [](const auto& error) { return error.find("range") != std::string::npos; }));
+    REQUIRE(std::ranges::any_of(errors, [](const auto& error) { return error.find("cycle") != std::string::npos; }));
+    REQUIRE(std::ranges::any_of(errors, [](const auto& error) { return error.find("Nested") != std::string::npos; }));
+}
+
+TEST_CASE("missing subgraph definitions fail graph compilation") {
+    auto nodes = registry();
+    Graph graph;
+    const auto id = graph.addNode("subgraph");
+    graph.findNode(id)->subgraphId = "project.missing";
+    const auto result = graph.compile(nodes);
+    REQUIRE_FALSE(result.valid);
+    REQUIRE(result.errors.front().find("Missing subgraph") != std::string::npos);
+}
+
 } // namespace reaction

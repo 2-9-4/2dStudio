@@ -10,8 +10,10 @@
 #include <portable-file-dialogs.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <stdexcept>
 #include <thread>
@@ -79,6 +81,9 @@ Application::Application(std::filesystem::path startupProject) {
     ImGui_ImplGlfw_InitForOpenGL(editorWindow_, true);
     ImGui_ImplOpenGL3_Init("#version 430");
     nodeEditor_ = ed::CreateEditor();
+    ed::Config subgraphEditorConfig;
+    subgraphEditorConfig.SettingsFile = nullptr;
+    subgraphEditor_ = ed::CreateEditor(&subgraphEditorConfig);
 
     registerBuiltInNodes(registry_);
     gpu_ = std::make_unique<GpuRuntime>();
@@ -92,6 +97,7 @@ Application::~Application() {
     runtime_.reset();
     gpu_.reset();
     if (nodeEditor_) ed::DestroyEditor(nodeEditor_);
+    if (subgraphEditor_) ed::DestroyEditor(subgraphEditor_);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -248,6 +254,7 @@ void Application::copySelectedNodes() {
     std::vector<ed::NodeId> selectedUiIds(static_cast<std::size_t>(selectedCount));
     const int nodeCount = ed::GetSelectedNodes(selectedUiIds.data(), selectedCount);
     std::unordered_set<NodeId> selected;
+    std::unordered_set<std::string> selectedSubgraphs;
     nlohmann::json nodes = nlohmann::json::array();
     for (int index = 0; index < nodeCount; ++index) {
         const auto id = static_cast<NodeId>(selectedUiIds[static_cast<std::size_t>(index)].Get() / 128);
@@ -256,8 +263,11 @@ void Application::copySelectedNodes() {
         selected.insert(id);
         nodes.push_back({{"sourceId", id}, {"type", node->type},
                          {"typeVersion", node->typeVersion},
+                         {"subgraphId", node->subgraphId},
                          {"position", {node->position.x, node->position.y}},
                          {"parameters", node->parameters}});
+        if (node->type == "subgraph" && graph_.findSubgraph(node->subgraphId))
+            selectedSubgraphs.insert(node->subgraphId);
     }
     if (nodes.empty()) { setStatus("No nodes selected", true); return; }
     nlohmann::json links = nlohmann::json::array();
@@ -267,8 +277,12 @@ void Application::copySelectedNodes() {
                              {"toNode", link.toNode}, {"toSocket", link.toSocket}});
         }
     }
-    const auto payload = nlohmann::json{{"kind", "reaction.nodes"}, {"version", 1},
-                                        {"nodes", std::move(nodes)}, {"links", std::move(links)}}.dump();
+    nlohmann::json subgraphs = nlohmann::json::array();
+    const auto projectJson = serializeProject(graph_);
+    for (const auto& definition : projectJson.value("subgraphs", nlohmann::json::array()))
+        if (selectedSubgraphs.contains(definition.value("id", std::string{}))) subgraphs.push_back(definition);
+    const auto payload = nlohmann::json{{"kind", "reaction.nodes"}, {"version", 2},
+        {"subgraphs", std::move(subgraphs)}, {"nodes", std::move(nodes)}, {"links", std::move(links)}}.dump();
     ImGui::SetClipboardText(payload.c_str());
     setStatus("Copied " + std::to_string(selected.size()) + " node(s)");
 }
@@ -278,9 +292,36 @@ void Application::pasteNodes() {
     if (!clipboard) { setStatus("Clipboard is empty", true); return; }
     try {
         const auto payload = nlohmann::json::parse(clipboard);
-        if (payload.value("kind", "") != "reaction.nodes" || payload.value("version", 0) != 1) {
+        const int clipboardVersion = payload.value("version", 0);
+        if (payload.value("kind", "") != "reaction.nodes" ||
+            (clipboardVersion != 1 && clipboardVersion != 2)) {
             setStatus("Clipboard does not contain Reaction nodes", true);
             return;
+        }
+        std::unordered_map<std::string, std::string> remappedSubgraphs;
+        if (clipboardVersion >= 2) {
+            const auto settings = nlohmann::json{{"width", graph_.settings.width},
+                {"height", graph_.settings.height}, {"targetFps", graph_.settings.targetFps}};
+            for (const auto& definitionJson : payload.value("subgraphs", nlohmann::json::array())) {
+                nlohmann::json document{{"formatVersion", 2}, {"project", settings},
+                    {"subgraphs", nlohmann::json::array({definitionJson})},
+                    {"nodes", nlohmann::json::array()}, {"links", nlohmann::json::array()}, {"activeOutput", 0}};
+                auto parsed = deserializeProject(document, registry_).subgraphs().front();
+                const std::string sourceId = parsed.id;
+                std::string targetId = sourceId;
+                if (const auto* existing = graph_.findSubgraph(parsed.id)) {
+                    Graph existingGraph; existingGraph.subgraphs().push_back(*existing);
+                    Graph parsedGraph; parsedGraph.subgraphs().push_back(parsed);
+                    if (serializeProject(existingGraph)["subgraphs"] != serializeProject(parsedGraph)["subgraphs"]) {
+                        int suffix = 2; const std::string base = parsed.id;
+                        do parsed.id = base + ".copy" + std::to_string(suffix++);
+                        while (resolveSubgraph(graph_, parsed.id));
+                        targetId = parsed.id;
+                        graph_.subgraphs().push_back(std::move(parsed));
+                    }
+                } else graph_.subgraphs().push_back(std::move(parsed));
+                remappedSubgraphs[sourceId] = targetId;
+            }
         }
         std::unordered_map<NodeId, NodeId> remapped;
         pendingSelection_.clear();
@@ -291,8 +332,12 @@ void Application::pasteNodes() {
                                             position.at(1).get<float>() + 30.0F});
             auto* node = graph_.findNode(id);
             node->typeVersion = value.value("typeVersion", 1);
+            node->subgraphId = value.value("subgraphId", std::string{});
+            if (const auto mapping = remappedSubgraphs.find(node->subgraphId); mapping != remappedSubgraphs.end())
+                node->subgraphId = mapping->second;
             node->parameters = value.value("parameters", nlohmann::json::object());
-            node->missing = !registry_.contains(node->type);
+            NodeDescriptor storage;
+            node->missing = resolveDescriptor(graph_, *node, registry_, storage) == nullptr;
             remapped.emplace(value.at("sourceId").get<NodeId>(), id);
             positioned_[id] = false;
             pendingSelection_.push_back(id);
@@ -321,7 +366,8 @@ void Application::renderGraph() {
     std::unordered_map<std::uintptr_t, PinTarget> pins;
 
     for (auto& node : graph_.nodes()) {
-        const auto* descriptor = registry_.descriptor(node.type);
+        NodeDescriptor descriptorStorage;
+        const auto* descriptor = resolveDescriptor(graph_, node, registry_, descriptorStorage);
         ed::BeginNode(ed::NodeId(nodeUiId(node.id)));
         ImGui::PushID(static_cast<int>(node.id));
         if (!descriptor) {
@@ -344,11 +390,12 @@ void Application::renderGraph() {
                 if (property.key == "operation" && node.type == "math") {
                     node_widgets::renderMathOperationSelector(node, nodePopup_);
                     continue;
-                } else if (property.key == "autoReset" && node.type == "reaction_diffusion") {
+                } else if (property.control == ParameterDescriptor::Control::Boolean) {
                     bool enabled = value > 0.5F;
                     changed = ImGui::Checkbox(property.label.c_str(), &enabled);
                     value = enabled ? 1.0F : 0.0F;
-                } else if (property.key == "iterations" || property.key == "octaves" || property.key == "seed") {
+                } else if (property.control == ParameterDescriptor::Control::Integer ||
+                           property.key == "iterations" || property.key == "octaves" || property.key == "seed") {
                     int integer = static_cast<int>(value);
                     changed = ImGui::SliderInt(property.label.c_str(), &integer, static_cast<int>(property.minimum), static_cast<int>(property.maximum));
                     value = static_cast<float>(integer);
@@ -365,9 +412,17 @@ void Application::renderGraph() {
             }
             if (node.type == "convolution" &&
                 node_widgets::renderConvolutionEditor(node, nodePopup_)) dirty_ = true;
-            if (node.type == "reaction_diffusion" && ImGui::Button("Reset Simulation")) {
+            if (descriptor->stateful && ImGui::Button("Reset Simulation")) {
                 runtime_->resetNode(node.id);
-                setStatus("Reset reaction-diffusion node");
+                setStatus("Reset simulation node");
+            }
+            if (node.type == "subgraph") {
+                if (ImGui::Button("Open Subgraph")) editingSubgraphId_ = node.subgraphId;
+                const auto* definition = resolveSubgraph(graph_, node.subgraphId);
+                if (definition && definition->immutable) {
+                    if (ImGui::Button("Duplicate as Editable")) duplicateSubgraph(node);
+                    ImGui::TextDisabled("Built-in (read-only)");
+                }
             }
             if (node.type == "output") {
                 const bool active = graph_.activeOutput == node.id;
@@ -411,7 +466,9 @@ void Application::renderGraph() {
 
     for (const auto& link : graph_.links()) {
         const auto* from = graph_.findNode(link.fromNode); const auto* to = graph_.findNode(link.toNode);
-        const auto* fromDesc = from ? registry_.descriptor(from->type) : nullptr; const auto* toDesc = to ? registry_.descriptor(to->type) : nullptr;
+        NodeDescriptor fromStorage, toStorage;
+        const auto* fromDesc = from ? resolveDescriptor(graph_, *from, registry_, fromStorage) : nullptr;
+        const auto* toDesc = to ? resolveDescriptor(graph_, *to, registry_, toStorage) : nullptr;
         if (!fromDesc || !toDesc) continue;
         std::size_t fromIndex = 0, toIndex = 0; bool foundFrom = false, foundTo = false;
         for (const auto& socket : fromDesc->sockets) { if (socket.key == link.fromSocket && socket.direction == SocketDirection::Output) { foundFrom = true; break; } ++fromIndex; }
@@ -468,11 +525,215 @@ void Application::renderGraph() {
                 dirty_ = true; rebuildRuntime();
             }
         }
+        const auto addSubgraph = [&](const SubgraphDefinition& definition) {
+            const std::string label = definition.category + " / " + definition.name;
+            if (!filter.empty() && label.find(filter) == std::string::npos) return;
+            if (ImGui::MenuItem(label.c_str())) {
+                const auto id = graph_.addNode("subgraph", {addNodeCanvasPosition.x, addNodeCanvasPosition.y});
+                auto* record = graph_.findNode(id);
+                record->subgraphId = definition.id;
+                record->typeVersion = definition.version;
+                for (const auto& item : definition.interface)
+                    if (item.kind == SubgraphInterfaceKind::Slider)
+                        record->parameters[item.key] = item.defaultValue;
+                positioned_[id] = false; dirty_ = true; rebuildRuntime();
+            }
+        };
+        for (const auto& definition : builtInSubgraphs()) addSubgraph(definition);
+        for (const auto& definition : graph_.subgraphs()) addSubgraph(definition);
         ImGui::EndPopup();
     }
     ed::Resume();
     ed::End();
     ed::SetCurrentEditor(nullptr);
+}
+
+void Application::duplicateSubgraph(NodeRecord& node) {
+    const auto* source = resolveSubgraph(graph_, node.subgraphId);
+    if (!source) return;
+    SubgraphDefinition copy = *source;
+    copy.immutable = false;
+    int suffix = 1;
+    do {
+        copy.id = "project.reaction_diffusion." + std::to_string(graph_.nextNodeId) + "." +
+                  std::to_string(suffix++);
+    } while (resolveSubgraph(graph_, copy.id));
+    const int copyNumber = static_cast<int>(graph_.subgraphs().size()) + 1;
+    copy.name = "Reaction Diffusion Copy " + std::to_string(copyNumber);
+    graph_.subgraphs().push_back(std::move(copy));
+    node.subgraphId = graph_.subgraphs().back().id;
+    editingSubgraphId_ = node.subgraphId;
+    dirty_ = true;
+    rebuildRuntime();
+    setStatus("Created editable shared subgraph");
+}
+
+void Application::renderSubgraphEditor() {
+    if (editingSubgraphId_.empty()) return;
+    const auto* resolved = resolveSubgraph(graph_, editingSubgraphId_);
+    if (!resolved) { editingSubgraphId_.clear(); return; }
+    const bool readOnly = resolved->immutable;
+    SubgraphDefinition* definition = readOnly ? nullptr : graph_.findSubgraph(editingSubgraphId_);
+    bool open = true, changed = false;
+    ImGui::Begin("Subgraph Editor", &open);
+    if (ImGui::Button("Root Graph")) open = false;
+    ImGui::SameLine(); ImGui::Text("/ %s", resolved->name.c_str());
+    if (readOnly) ImGui::TextColored(ImVec4(.85F, .7F, .25F, 1), "Built-in definition — read only");
+    if (!readOnly) {
+        char name[128]{};
+        std::snprintf(name, sizeof(name), "%s", definition->name.c_str());
+        if (ImGui::InputText("Name", name, sizeof(name))) {
+            definition->name = name; changed = true;
+        }
+    }
+    const auto& shown = readOnly ? *resolved : *definition;
+    ImGui::SeparatorText("Kernel graph");
+    ImGui::BeginChild("KernelCanvas", ImVec2(0, 420), true);
+    ed::SetCurrentEditor(subgraphEditor_);
+    ed::Begin("Subgraph kernel");
+    struct KernelPin { std::size_t node = 0, input = 0; bool output = false; };
+    std::unordered_map<std::uintptr_t, KernelPin> kernelPins;
+    std::unordered_map<std::string, std::size_t> kernelIndices;
+    for (std::size_t index = 0; index < shown.kernel.size(); ++index)
+        kernelIndices.emplace(shown.kernel[index].key, index);
+    const auto kernelNodeId = [](std::size_t index) { return std::uintptr_t{1000} + index * 128; };
+    const auto kernelInputId = [&](std::size_t index, std::size_t input) {
+        return kernelNodeId(index) + 2 + input * 2;
+    };
+    const auto kernelOutputId = [&](std::size_t index) { return kernelNodeId(index) + 1; };
+    for (std::size_t index = 0; index < shown.kernel.size(); ++index) {
+        const auto& kernel = shown.kernel[index];
+        ed::BeginNode(ed::NodeId(kernelNodeId(index)));
+        ImGui::TextUnformatted(kernel.key.c_str());
+        ImGui::TextDisabled("%s", kernel.operation.c_str());
+        for (std::size_t input = 0; input < kernel.inputs.size(); ++input) {
+            const auto pin = kernelInputId(index, input);
+            kernelPins.emplace(pin, KernelPin{index, input, false});
+            ed::BeginPin(ed::PinId(pin), ed::PinKind::Input);
+            ImGui::Text("○ %zu", input + 1);
+            ed::EndPin();
+        }
+        const auto outputPin = kernelOutputId(index);
+        kernelPins.emplace(outputPin, KernelPin{index, 0, true});
+        ed::BeginPin(ed::PinId(outputPin), ed::PinKind::Output);
+        ImGui::TextUnformatted("● Value");
+        ed::EndPin();
+        ed::EndNode();
+        if (positionedSubgraphId_ != editingSubgraphId_)
+            ed::SetNodePosition(ed::NodeId(kernelNodeId(index)), ImVec2(kernel.position.x, kernel.position.y));
+        else if (!readOnly) {
+            const auto position = ed::GetNodePosition(ed::NodeId(kernelNodeId(index)));
+            definition->kernel[index].position = {position.x, position.y};
+        }
+    }
+    positionedSubgraphId_ = editingSubgraphId_;
+    std::uintptr_t linkId = std::uintptr_t{1} << 56U;
+    for (std::size_t target = 0; target < shown.kernel.size(); ++target) {
+        for (std::size_t input = 0; input < shown.kernel[target].inputs.size(); ++input) {
+            const auto source = kernelIndices.find(shown.kernel[target].inputs[input]);
+            if (source != kernelIndices.end())
+                ed::Link(ed::LinkId(linkId++), ed::PinId(kernelOutputId(source->second)),
+                         ed::PinId(kernelInputId(target, input)));
+        }
+    }
+    if (!readOnly && ed::BeginCreate()) {
+        ed::PinId first, second;
+        if (ed::QueryNewLink(&first, &second) && first && second) {
+            auto from = kernelPins.find(first.Get()), to = kernelPins.find(second.Get());
+            if (from != kernelPins.end() && to != kernelPins.end()) {
+                if (!from->second.output) std::swap(from, to);
+                const bool valid = from->second.output && !to->second.output &&
+                                   from->second.node < to->second.node;
+                if (valid && ed::AcceptNewItem()) {
+                    definition->kernel[to->second.node].inputs[to->second.input] =
+                        definition->kernel[from->second.node].key;
+                    changed = true;
+                }
+            }
+        }
+        ed::EndCreate();
+    }
+    ed::End();
+    ed::SetCurrentEditor(nullptr);
+    ImGui::EndChild();
+    if (ImGui::CollapsingHeader("Interface", ImGuiTreeNodeFlags_DefaultOpen)) {
+        for (std::size_t index = 0; index < shown.interface.size(); ++index) {
+            const auto& current = shown.interface[index];
+            ImGui::PushID(static_cast<int>(index));
+            ImGui::Separator(); ImGui::TextDisabled("%s", current.key.c_str());
+            ImGui::Text("%s", current.kind == SubgraphInterfaceKind::Input ? "Input" :
+                                  current.kind == SubgraphInterfaceKind::Slider ? "Slider" : "Output");
+            if (!readOnly) {
+                auto& item = definition->interface[index];
+                char label[128]{}; std::snprintf(label, sizeof(label), "%s", item.label.c_str());
+                if (ImGui::InputText("Label", label, sizeof(label))) { item.label = label; changed = true; }
+                if (item.kind == SubgraphInterfaceKind::Slider) {
+                    changed |= ImGui::DragFloat("Default", &item.defaultValue, .001F, item.minimum, item.maximum);
+                    changed |= ImGui::DragFloat("Minimum", &item.minimum, .001F);
+                    changed |= ImGui::DragFloat("Maximum", &item.maximum, .001F);
+                    if (item.minimum > item.maximum) std::swap(item.minimum, item.maximum);
+                    item.defaultValue = std::clamp(item.defaultValue, item.minimum, item.maximum);
+                }
+            } else ImGui::Text("%s", current.label.c_str());
+            ImGui::PopID();
+        }
+    }
+    if (ImGui::CollapsingHeader("Fused Kernel", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::TextDisabled("Nodes compile into one compute shader per iteration.");
+        static const std::array operations{"add", "subtract", "multiply", "divide", "min", "max",
+            "abs", "sin", "cos", "pow", "clamp01", "clamp", "remap", "pack2", "swizzle", "length", "step", "select"};
+        for (std::size_t index = 0; index < shown.kernel.size(); ++index) {
+            const auto& current = shown.kernel[index];
+            ImGui::PushID(1000 + static_cast<int>(index));
+            if (ImGui::TreeNode(current.key.c_str(), "%s — %s", current.key.c_str(), current.operation.c_str())) {
+                if (!readOnly) {
+                    auto& kernel = definition->kernel[index];
+                    if (kernel.operation != "uv" && kernel.operation != "previous_state" &&
+                        kernel.operation != "interface" && kernel.operation != "connected" &&
+                        kernel.operation != "laplacian" && kernel.operation != "output") {
+                        if (ImGui::BeginCombo("Operation", kernel.operation.c_str())) {
+                            for (const auto* operation : operations) if (ImGui::Selectable(operation, kernel.operation == operation)) {
+                                kernel.operation = operation; changed = true;
+                            }
+                            ImGui::EndCombo();
+                        }
+                    }
+                    for (std::size_t inputIndex = 0; inputIndex < kernel.inputs.size(); ++inputIndex) {
+                        ImGui::PushID(static_cast<int>(inputIndex));
+                        if (ImGui::BeginCombo("Input", kernel.inputs[inputIndex].c_str())) {
+                            for (std::size_t candidate = 0; candidate < index; ++candidate) {
+                                const auto& key = definition->kernel[candidate].key;
+                                if (ImGui::Selectable(key.c_str(), kernel.inputs[inputIndex] == key)) {
+                                    kernel.inputs[inputIndex] = key; changed = true;
+                                }
+                            }
+                            ImGui::EndCombo();
+                        }
+                        ImGui::PopID();
+                    }
+                    if (kernel.operation == "constant" && kernel.properties.contains("value")) {
+                        float value = kernel.properties.value("value", 0.0F);
+                        if (ImGui::DragFloat("Value", &value, .001F)) { kernel.properties["value"] = value; changed = true; }
+                    }
+                } else {
+                    for (const auto& input : current.inputs) ImGui::BulletText("%s", input.c_str());
+                }
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+    }
+    ImGui::End();
+    if (!open) editingSubgraphId_.clear();
+    if (changed) {
+        for (auto& node : graph_.nodes()) if (node.type == "subgraph" && node.subgraphId == editingSubgraphId_) {
+            for (const auto& item : definition->interface) if (item.kind == SubgraphInterfaceKind::Slider) {
+                const float value = node.parameters.value(item.key, item.defaultValue);
+                node.parameters[item.key] = std::clamp(value, item.minimum, item.maximum);
+            }
+        }
+        dirty_ = true; rebuildRuntime();
+    }
 }
 
 void Application::renderEditor() {
@@ -517,6 +778,7 @@ void Application::renderEditor() {
     if (ImGui::InputInt("H", &height, 0)) { graph_.settings.height = std::clamp(height, 16, 8192); runtime_->reset(); dirty_ = true; }
     ImGui::SameLine(); ImGui::TextColored(statusError_ ? ImVec4(1,.35F,.35F,1) : ImVec4(.55F,.8F,.55F,1), "%s%s", dirty_ ? "* " : "", status_.c_str());
     renderGraph();
+    renderSubgraphEditor();
     ImGui::End();
 
     ImGui::Render();

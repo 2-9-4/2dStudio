@@ -18,6 +18,7 @@ public:
     GpuRuntime& operator=(const GpuRuntime&) = delete;
 
     [[nodiscard]] GLuint compileCompute(std::string_view source) const;
+    [[nodiscard]] GLuint compileComputeCached(std::string_view source);
     [[nodiscard]] GLuint createTexture(int width, int height, GLenum format = GL_RGBA16F) const;
     void ensureTexture(GLuint& texture, int& currentWidth, int& currentHeight,
                        int width, int height, GLenum format = GL_RGBA16F) const;
@@ -27,9 +28,12 @@ public:
 
 private:
     GLuint previewProgram_ = 0;
+    std::unordered_map<std::string, GLuint> computeCache_;
 };
 
 void registerBuiltInNodes(NodeRegistry& registry);
+[[nodiscard]] std::unique_ptr<NodeInstance> createSubgraphInstance(
+    const SubgraphDefinition& definition);
 
 class GraphRuntime {
 public:

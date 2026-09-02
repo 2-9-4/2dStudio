@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <vector>
 
 namespace reaction {
@@ -37,6 +38,21 @@ std::vector<float> readImage(ImageHandle image) {
     glBindTexture(GL_TEXTURE_2D, image.texture);
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, values.data());
     return values;
+}
+
+NodeId addDiscreteReaction(Graph& graph) {
+    const auto id = graph.addNode("subgraph");
+    graph.findNode(id)->subgraphId = "builtin.reaction_diffusion.discrete";
+    graph.findNode(id)->parameters = {{"feed", .055F}, {"kill", .062F}, {"diffA", 1.0F},
+        {"diffB", .5F}, {"structureScale", 1.0F}, {"dt", 1.0F},
+        {"iterations", 8.0F}, {"autoReset", 0.0F}};
+    return id;
+}
+
+double median(std::vector<double> values) {
+    std::ranges::sort(values);
+    const auto middle = values.size() / 2;
+    return values.size() % 2 ? values[middle] : (values[middle - 1] + values[middle]) * .5;
 }
 
 } // namespace
@@ -268,6 +284,107 @@ TEST_CASE("disconnected reaction multipliers are equivalent to solid white") {
     const auto unmappedImage = std::get<ImageHandle>(values.at(unmapped).front());
     const auto mappedImage = std::get<ImageHandle>(values.at(mapped).front());
     REQUIRE(readImage(unmappedImage) == readImage(mappedImage));
+}
+
+TEST_CASE("discrete reaction evolves, pauses, resets, resizes, and exposes A and B") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {32, 32, 60};
+    const auto reaction = addDiscreteReaction(graph);
+    GpuRuntime gpu; GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    const auto initialValues = runtime.values().at(reaction);
+    REQUIRE(initialValues.size() == 3);
+    const auto initial = readImage(std::get<ImageHandle>(initialValues[0]));
+    const auto initialA = readImage(std::get<ImageHandle>(initialValues[1]));
+    const auto initialB = readImage(std::get<ImageHandle>(initialValues[2]));
+    const auto cachedTexture = std::get<ImageHandle>(initialValues[0]).texture;
+    REQUIRE(initial == initialB);
+    REQUIRE(initialA != initialB);
+    for (int frame = 0; frame < 20; ++frame) REQUIRE(runtime.evaluate(frame / 60.0, 1.0 / 60.0, true));
+    const auto evolved = readImage(std::get<ImageHandle>(runtime.values().at(reaction)[0]));
+    REQUIRE(evolved != initial);
+    REQUIRE(runtime.evaluate(1, 0, false));
+    REQUIRE(std::get<ImageHandle>(runtime.values().at(reaction)[0]).texture == cachedTexture);
+    REQUIRE(readImage(std::get<ImageHandle>(runtime.values().at(reaction)[0])) == evolved);
+    runtime.resetNode(reaction); REQUIRE(runtime.evaluate(0, 0, false));
+    REQUIRE(readImage(std::get<ImageHandle>(runtime.values().at(reaction)[0])) == initial);
+    graph.settings = {40, 24, 60}; REQUIRE(runtime.evaluate(0, 0, false));
+    REQUIRE(std::get<ImageHandle>(runtime.values().at(reaction)[0]).width == 40);
+}
+
+TEST_CASE("discrete reaction accepts scalar and image multiplier inputs") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {24, 24, 60};
+    const auto scalar = graph.addNode("float");
+    graph.findNode(scalar)->parameters["value"] = 1.0F;
+    const auto white = graph.addNode("color_ramp");
+    graph.findNode(white)->parameters["value"] = 1.0F;
+    const auto baseline = addDiscreteReaction(graph);
+    const auto scalarMapped = addDiscreteReaction(graph);
+    const auto imageMapped = addDiscreteReaction(graph);
+    graph.findNode(baseline)->parameters["iterations"] = 3;
+    graph.findNode(scalarMapped)->parameters["iterations"] = 3;
+    graph.findNode(imageMapped)->parameters["iterations"] = 3;
+    graph.addLink(scalar, "value", scalarMapped, "feedMultiplier");
+    graph.addLink(scalar, "value", scalarMapped, "killMultiplier");
+    graph.addLink(white, "image", imageMapped, "feedMultiplier");
+    graph.addLink(white, "image", imageMapped, "killMultiplier");
+    GpuRuntime gpu; GraphRuntime runtime(graph, registry, gpu);
+    for (int frame = 0; frame < 5; ++frame) REQUIRE(runtime.evaluate(frame / 60.0, 1.0 / 60.0, true));
+    const auto expected = readImage(std::get<ImageHandle>(runtime.values().at(baseline)[0]));
+    REQUIRE(readImage(std::get<ImageHandle>(runtime.values().at(scalarMapped)[0])) == expected);
+    REQUIRE(readImage(std::get<ImageHandle>(runtime.values().at(imageMapped)[0])) == expected);
+}
+
+TEST_CASE("discrete reaction default B agrees with the monolithic implementation") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {32, 32, 60};
+    const auto monolithic = graph.addNode("reaction_diffusion");
+    const auto discrete = addDiscreteReaction(graph);
+    graph.findNode(monolithic)->parameters["iterations"] = 8;
+    GpuRuntime gpu; GraphRuntime runtime(graph, registry, gpu);
+    for (int frame = 0; frame < 12; ++frame) REQUIRE(runtime.evaluate(frame / 60.0, 1.0 / 60.0, true));
+    const auto expected = readImage(std::get<ImageHandle>(runtime.values().at(monolithic)[0]));
+    const auto actual = readImage(std::get<ImageHandle>(runtime.values().at(discrete)[0]));
+    REQUIRE(expected.size() == actual.size());
+    for (std::size_t index = 0; index < expected.size(); ++index)
+        REQUIRE(actual[index] == Catch::Approx(expected[index]).margin(.003F));
+}
+
+TEST_CASE("discrete reaction stays within twice monolithic GPU time") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph monolithicGraph; monolithicGraph.settings = {512, 512, 60};
+    Graph discreteGraph; discreteGraph.settings = {512, 512, 60};
+    const auto monolithic = monolithicGraph.addNode("reaction_diffusion");
+    const auto discrete = addDiscreteReaction(discreteGraph);
+    monolithicGraph.findNode(monolithic)->parameters["iterations"] = 8;
+    GpuRuntime gpu;
+    GraphRuntime monolithicRuntime(monolithicGraph, registry, gpu);
+    GraphRuntime discreteRuntime(discreteGraph, registry, gpu);
+    for (int frame = 0; frame < 20; ++frame) {
+        REQUIRE(monolithicRuntime.evaluate(frame / 60.0, 1.0 / 60.0, true));
+        REQUIRE(discreteRuntime.evaluate(frame / 60.0, 1.0 / 60.0, true));
+    }
+    std::vector<double> monolithicTimes, discreteTimes;
+    for (int frame = 0; frame < 50; ++frame) {
+        if (frame % 2 == 0) {
+            REQUIRE(monolithicRuntime.evaluate((frame + 20) / 60.0, 1.0 / 60.0, true));
+            REQUIRE(discreteRuntime.evaluate((frame + 20) / 60.0, 1.0 / 60.0, true));
+        } else {
+            REQUIRE(discreteRuntime.evaluate((frame + 20) / 60.0, 1.0 / 60.0, true));
+            REQUIRE(monolithicRuntime.evaluate((frame + 20) / 60.0, 1.0 / 60.0, true));
+        }
+        monolithicTimes.push_back(monolithicRuntime.gpuMilliseconds().at(monolithic));
+        discreteTimes.push_back(discreteRuntime.gpuMilliseconds().at(discrete));
+    }
+    const double baseline = median(monolithicTimes);
+    INFO("monolithic median=" << baseline << " ms, discrete median=" << median(discreteTimes) << " ms");
+    REQUIRE(baseline > 0.0);
+    REQUIRE(median(discreteTimes) <= baseline * 2.0);
 }
 
 } // namespace reaction

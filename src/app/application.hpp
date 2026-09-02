@@ -30,6 +30,8 @@ private:
     void rebuildRuntime();
     void renderEditor();
     void renderGraph();
+    void renderSubgraphEditor();
+    void duplicateSubgraph(NodeRecord& node);
     void renderPreview();
     void handleShortcuts();
     void copySelectedNodes();
@@ -40,6 +42,7 @@ private:
     GLFWwindow* previewWindow_ = nullptr;
     std::uint32_t previewVertexArray_ = 0;
     ax::NodeEditor::EditorContext* nodeEditor_ = nullptr;
+    ax::NodeEditor::EditorContext* subgraphEditor_ = nullptr;
     NodeRegistry registry_;
     Graph graph_;
     std::unique_ptr<GpuRuntime> gpu_;
@@ -56,6 +59,8 @@ private:
     bool copyRequested_ = false;
     bool pasteRequested_ = false;
     std::vector<NodeId> pendingSelection_;
+    std::string editingSubgraphId_;
+    std::string positionedSubgraphId_;
 };
 
 } // namespace reaction

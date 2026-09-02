@@ -62,6 +62,7 @@ bool Graph::removeLink(LinkId id) {
 void Graph::clear() {
     nodes_.clear();
     links_.clear();
+    subgraphs_.clear();
     activeOutput = 0;
     nextNodeId = 1;
     nextLinkId = 1;
@@ -77,6 +78,16 @@ NodeRecord* Graph::findNode(NodeId id) {
     return it == nodes_.end() ? nullptr : &*it;
 }
 
+const SubgraphDefinition* Graph::findSubgraph(std::string_view id) const {
+    const auto it = std::ranges::find(subgraphs_, id, &SubgraphDefinition::id);
+    return it == subgraphs_.end() ? nullptr : &*it;
+}
+
+SubgraphDefinition* Graph::findSubgraph(std::string_view id) {
+    const auto it = std::ranges::find(subgraphs_, id, &SubgraphDefinition::id);
+    return it == subgraphs_.end() ? nullptr : &*it;
+}
+
 CompileResult Graph::compile(const NodeRegistry& registry) const {
     CompileResult result;
     std::unordered_map<NodeId, int> indegree;
@@ -85,8 +96,12 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
 
     for (const auto& node : nodes_) {
         indegree[node.id] = 0;
-        if (!registry.contains(node.type) && !node.missing) {
-            result.errors.push_back("Unknown node type '" + node.type + "'");
+        NodeDescriptor descriptorStorage;
+        if (!resolveDescriptor(*this, node, registry, descriptorStorage)) {
+            if (node.type == "subgraph")
+                result.errors.push_back("Missing subgraph definition '" + node.subgraphId + "'");
+            else if (!node.missing)
+                result.errors.push_back("Unknown node type '" + node.type + "'");
         }
     }
 
@@ -97,8 +112,9 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
             result.errors.push_back("Link " + std::to_string(link.id) + " has a missing endpoint");
             continue;
         }
-        const auto* fromDesc = registry.descriptor(from->type);
-        const auto* toDesc = registry.descriptor(to->type);
+        NodeDescriptor fromStorage, toStorage;
+        const auto* fromDesc = resolveDescriptor(*this, *from, registry, fromStorage);
+        const auto* toDesc = resolveDescriptor(*this, *to, registry, toStorage);
         if (!fromDesc || !toDesc) {
             result.errors.push_back("Link " + std::to_string(link.id) + " touches a missing node type");
             continue;
@@ -134,7 +150,8 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
 
     for (const auto id : result.order) {
         const auto* node = findNode(id);
-        const auto* descriptor = node ? registry.descriptor(node->type) : nullptr;
+        NodeDescriptor descriptorStorage;
+        const auto* descriptor = node ? resolveDescriptor(*this, *node, registry, descriptorStorage) : nullptr;
         if (!descriptor) continue;
         ValueType inferred = ValueType::Float;
         for (const auto& port : descriptor->sockets) {
@@ -147,6 +164,12 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
             if (result.inferredOutputs[link.fromNode] == ValueType::Image2D) inferred = ValueType::Image2D;
         }
         result.inferredOutputs[id] = inferred;
+    }
+
+    for (const auto& definition : subgraphs_) {
+        for (const auto& error : validateSubgraph(definition)) {
+            result.errors.push_back("Subgraph '" + definition.name + "': " + error);
+        }
     }
 
     if (activeOutput != 0) {

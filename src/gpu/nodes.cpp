@@ -297,13 +297,13 @@ void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=textureSize(stateIn,0);if(
 class ReactionNode final : public TextureNode {
 public:
     ~ReactionNode()override{if(state_[0])glDeleteTextures(2,state_.data());if(initProgram_)glDeleteProgram(initProgram_);if(outputProgram_)glDeleteProgram(outputProgram_);if(collapseProgram_)glDeleteProgram(collapseProgram_);if(collapseBuffer_)glDeleteBuffers(1,&collapseBuffer_);}
-    static NodeDescriptor describe(){auto result=NodeDescriptor{"reaction_diffusion",1,"Reaction Diffusion","Simulation",
+    static NodeDescriptor describe(){auto result=NodeDescriptor{"reaction_diffusion",1,"Reaction Diffusion (Monolithic)","Simulation",
         {{"feedMultiplier","Feed Multiplier",ValueType::AnyNumeric,SocketDirection::Input,true},{"killMultiplier","Kill Multiplier",ValueType::AnyNumeric,SocketDirection::Input,true},
          {"seed","Seed",ValueType::Image2D,SocketDirection::Input,true},{"image","Image",ValueType::Image2D,SocketDirection::Output}},
         {{"feed","Feed",.055F,0,.1F},{"kill","Kill",.062F,0,.1F},{"diffA","Diffusion A",1,0,2},{"diffB","Diffusion B",.5F,0,2},
          {"structureScale","Structure Scale",1,.25F,8},
-         {"dt","Timestep",1,0.01F,2},{"iterations","Iterations",8,1,64},
-         {"autoReset","Auto Reset",0,0,1}}};result.timeDependent=true;result.stateful=true;return result;}
+         {"dt","Timestep",1,0.01F,2},{"iterations","Iterations",8,1,64,ParameterDescriptor::Control::Integer},
+         {"autoReset","Auto Reset",0,0,1,ParameterDescriptor::Control::Boolean}}};result.timeDependent=true;result.stateful=true;return result;}
     const NodeDescriptor& descriptor()const override{static const auto value=describe();return value;}
     void reset(EvaluationContext&)override{resetPending_=true;collapseCheckCounter_=0;}
     void evaluate(EvaluationContext& context,std::span<const Value> inputs,std::span<Value> outputs)override{
