@@ -273,7 +273,7 @@ class ReactionNode final : public TextureNode {
 public:
     ~ReactionNode()override{if(state_[0])glDeleteTextures(2,state_.data());if(initProgram_)glDeleteProgram(initProgram_);if(outputProgram_)glDeleteProgram(outputProgram_);if(collapseProgram_)glDeleteProgram(collapseProgram_);if(collapseBuffer_)glDeleteBuffers(1,&collapseBuffer_);}
     static NodeDescriptor describe(){auto result=NodeDescriptor{"reaction_diffusion",1,"Reaction Diffusion","Simulation",
-        {{"feedMultiplier","Feed Multiplier",ValueType::Image2D,SocketDirection::Input,true},{"killMultiplier","Kill Multiplier",ValueType::Image2D,SocketDirection::Input,true},
+        {{"feedMultiplier","Feed Multiplier",ValueType::AnyNumeric,SocketDirection::Input,true},{"killMultiplier","Kill Multiplier",ValueType::AnyNumeric,SocketDirection::Input,true},
          {"seed","Seed",ValueType::Image2D,SocketDirection::Input,true},{"image","Image",ValueType::Image2D,SocketDirection::Output}},
         {{"feed","Feed",.055F,0,.1F},{"kill","Kill",.062F,0,.1F},{"diffA","Diffusion A",1,0,2},{"diffB","Diffusion B",.5F,0,2},
          {"structureScale","Structure Scale",1,.25F,8},
@@ -291,10 +291,10 @@ public:
         if (!collapseBuffer_) {glGenBuffers(1,&collapseBuffer_);glBindBuffer(GL_SHADER_STORAGE_BUFFER,collapseBuffer_);const GLuint zero=0;glBufferData(GL_SHADER_STORAGE_BUFFER,sizeof(zero),&zero,GL_DYNAMIC_READ);}
         const auto initialize=[&]{const auto seed=imageAt(inputs,2);glUseProgram(initProgram_);glBindImageTexture(0,state_[0],0,GL_FALSE,0,GL_WRITE_ONLY,GL_RG16F);if(seed)bindTexture(0,seed.texture);uniform(initProgram_,"hasSeed",seed?1:0);gpu.dispatch(initProgram_,context.width,context.height);index_=0;resetPending_=false;};
         if(resetPending_)initialize();
-        if(context.playing){const auto feedImage=imageAt(inputs,0),killImage=imageAt(inputs,1);const int iterations=std::clamp(static_cast<int>(parameter(parameters_,"iterations",8)),1,64);
+        if(context.playing){const auto feedImage=imageAt(inputs,0),killImage=imageAt(inputs,1);const auto feedMultiplier=floatAt(inputs,0,1),killMultiplier=floatAt(inputs,1,1);const int iterations=std::clamp(static_cast<int>(parameter(parameters_,"iterations",8)),1,64);
             for(int i=0;i<iterations;++i){const int next=1-index_;glUseProgram(program_);bindTexture(0,state_[index_]);if(feedImage)bindTexture(1,feedImage.texture);if(killImage)bindTexture(2,killImage.texture);
                 glBindImageTexture(0,state_[next],0,GL_FALSE,0,GL_WRITE_ONLY,GL_RG16F);uniform(program_,"hasFeed",feedImage?1:0);uniform(program_,"hasKill",killImage?1:0);
-                uniform(program_,"feed",parameter(parameters_,"feed",.055F));uniform(program_,"kill",parameter(parameters_,"kill",.062F));uniform(program_,"diffA",parameter(parameters_,"diffA",1));uniform(program_,"diffB",parameter(parameters_,"diffB",.5F));uniform(program_,"structureScale",parameter(parameters_,"structureScale",1));uniform(program_,"dt",parameter(parameters_,"dt",1));
+                uniform(program_,"feed",parameter(parameters_,"feed",.055F)*feedMultiplier);uniform(program_,"kill",parameter(parameters_,"kill",.062F)*killMultiplier);uniform(program_,"diffA",parameter(parameters_,"diffA",1));uniform(program_,"diffB",parameter(parameters_,"diffB",.5F));uniform(program_,"structureScale",parameter(parameters_,"structureScale",1));uniform(program_,"dt",parameter(parameters_,"dt",1));
                 gpu.dispatch(program_,context.width,context.height);index_=next;}}
         const bool autoReset=parameter(parameters_,"autoReset",0)>.5F;
         if(autoReset&&++collapseCheckCounter_>=8){collapseCheckCounter_=0;const GLuint zero=0;glBindBuffer(GL_SHADER_STORAGE_BUFFER,collapseBuffer_);glBufferSubData(GL_SHADER_STORAGE_BUFFER,0,sizeof(zero),&zero);glBindBufferBase(GL_SHADER_STORAGE_BUFFER,0,collapseBuffer_);glUseProgram(collapseProgram_);bindTexture(0,state_[index_]);uniform(collapseProgram_,"threshold",.001F);gpu.dispatch(collapseProgram_,context.width,context.height);GLuint active=0;glGetBufferSubData(GL_SHADER_STORAGE_BUFFER,0,sizeof(active),&active);if(active==0)initialize();}

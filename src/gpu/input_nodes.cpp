@@ -7,6 +7,7 @@ namespace reaction {
 namespace {
 
 using node_support::ParameterNode;
+using node_support::floatAt;
 using node_support::parameter;
 
 class FloatNode final : public ParameterNode {
@@ -40,6 +41,20 @@ public:
     }
 };
 
+class FloatPreviewNode final : public ParameterNode {
+public:
+    static NodeDescriptor describe() {
+        return {"float_preview", 1, "Float Preview", "Utility",
+                {{"value", "Value", ValueType::Float, SocketDirection::Input, true},
+                 {"value", "Value", ValueType::Float, SocketDirection::Output}},
+                {{"value", "Value", 0.0F, -10.0F, 10.0F}}};
+    }
+    const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
+    void evaluate(EvaluationContext&, std::span<const Value> inputs, std::span<Value> outputs) override {
+        outputs[0] = floatAt(inputs, 0, parameter(parameters_, "value", 0.0F));
+    }
+};
+
 template <typename T> void addNode(NodeRegistry& registry) {
     registry.add(T::describe(), [] { return std::make_unique<T>(); });
 }
@@ -49,6 +64,7 @@ template <typename T> void addNode(NodeRegistry& registry) {
 void registerInputNodes(NodeRegistry& registry) {
     addNode<FloatNode>(registry);
     addNode<TimeNode>(registry);
+    addNode<FloatPreviewNode>(registry);
 }
 
 } // namespace reaction

@@ -58,6 +58,41 @@ TEST_CASE("reaction defaults use the sustained classic Gray-Scott region") {
     REQUIRE(defaultFor("autoReset") == Catch::Approx(0.0F));
 }
 
+TEST_CASE("reaction multiplier inputs accept both scalar and image values") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* descriptor = registry.descriptor("reaction_diffusion");
+    REQUIRE(descriptor != nullptr);
+    const auto typeFor = [&](std::string_view key) {
+        return std::ranges::find(descriptor->sockets, key, &SocketDescriptor::key)->type;
+    };
+    REQUIRE(typeFor("feedMultiplier") == ValueType::AnyNumeric);
+    REQUIRE(typeFor("killMultiplier") == ValueType::AnyNumeric);
+
+    Graph graph;
+    const auto feed = graph.addNode("float");
+    const auto kill = graph.addNode("float");
+    const auto reaction = graph.addNode("reaction_diffusion");
+    graph.addLink(feed, "value", reaction, "feedMultiplier");
+    graph.addLink(kill, "value", reaction, "killMultiplier");
+    REQUIRE(graph.compile(registry).valid);
+}
+
+TEST_CASE("float preview accepts and passes through float values") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* descriptor = registry.descriptor("float_preview");
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(descriptor->displayName == "Float Preview");
+    REQUIRE(descriptor->sockets.size() == 2);
+    REQUIRE(descriptor->sockets[0].type == ValueType::Float);
+    REQUIRE(descriptor->sockets[1].type == ValueType::Float);
+
+    Graph graph;
+    const auto source = graph.addNode("float");
+    const auto preview = graph.addNode("float_preview");
+    graph.addLink(source, "value", preview, "value");
+    REQUIRE(graph.compile(registry).valid);
+}
+
 TEST_CASE("convolution exposes bounded iteration control") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     const auto* descriptor = registry.descriptor("convolution");

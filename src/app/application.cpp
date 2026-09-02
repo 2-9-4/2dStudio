@@ -379,7 +379,11 @@ void Application::renderGraph() {
             }
             const auto values = runtime_->values().find(node.id);
             if (values != runtime_->values().end() && !values->second.empty()) {
-                if (const auto* image = std::get_if<ImageHandle>(&values->second.front()); image && *image) {
+                if (node.type == "float_preview") {
+                    if (const auto* value = std::get_if<float>(&values->second.front())) {
+                        ImGui::Text("Live value: %.6g", *value);
+                    }
+                } else if (const auto* image = std::get_if<ImageHandle>(&values->second.front()); image && *image) {
                     ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<std::intptr_t>(image->texture)),
                                  ImVec2(150, 100), ImVec2(0, 1), ImVec2(1, 0));
                 }
