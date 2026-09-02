@@ -23,6 +23,7 @@ target_compile_options(reaction_core PRIVATE -Wall -Wextra -Wpedantic -Wconversi
 if(REACTION_BUILD_APP)
     find_package(OpenGL REQUIRED)
     find_package(glfw3 3.3 REQUIRED)
+    find_package(PNG REQUIRED)
 
     FetchContent_Declare(glad
         GIT_REPOSITORY https://github.com/Dav1dde/glad.git
@@ -74,7 +75,7 @@ if(REACTION_BUILD_APP)
     target_include_directories(reaction_studio PRIVATE
         include
         ${portable_file_dialogs_SOURCE_DIR})
-    target_link_libraries(reaction_studio PRIVATE reaction_core reaction_gpu reaction_imgui)
+    target_link_libraries(reaction_studio PRIVATE reaction_core reaction_gpu reaction_imgui PNG::PNG)
     target_compile_options(reaction_studio PRIVATE -Wall -Wextra -Wpedantic)
     add_custom_command(TARGET reaction_studio POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory

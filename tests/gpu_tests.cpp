@@ -92,6 +92,26 @@ TEST_CASE("scalar Math protects division and remains on CPU") {
     REQUIRE(std::get<float>(value) == 1'000'000.0F);
 }
 
+TEST_CASE("threshold produces a binary scalar result") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {16, 16, 60};
+    const auto threshold = graph.addNode("threshold");
+    graph.findNode(threshold)->parameters = {{"value", 0.6F}, {"threshold", 0.5F}};
+    GpuRuntime gpu;
+    GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    const auto& high = runtime.values().at(threshold).front();
+    REQUIRE(std::holds_alternative<float>(high));
+    REQUIRE(std::get<float>(high) == 1.0F);
+
+    graph.findNode(threshold)->parameters["value"] = 0.4F;
+    REQUIRE(runtime.evaluate(0, 0, false));
+    const auto& low = runtime.values().at(threshold).front();
+    REQUIRE(std::holds_alternative<float>(low));
+    REQUIRE(std::get<float>(low) == 0.0F);
+}
+
 TEST_CASE("reaction diffusion evolves, resets, and reallocates on resize") {
     HiddenContext context;
     NodeRegistry registry; registerBuiltInNodes(registry);

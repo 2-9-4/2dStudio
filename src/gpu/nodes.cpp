@@ -265,6 +265,36 @@ public:
     }
 };
 
+constexpr std::string_view kThresholdShader = R"GLSL(#version 430
+layout(local_size_x=16,local_size_y=16)in;layout(rgba16f,binding=0)writeonly uniform image2D outImage;
+layout(binding=0)uniform sampler2D source;uniform float threshold;
+void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(outImage);if(any(greaterThanEqual(p,s)))return;
+vec2 uv=(vec2(p)+.5)/vec2(s);float value=texture(source,uv).r;float result=value>=threshold?1.0:0.0;imageStore(outImage,p,vec4(result,result,result,1));})GLSL";
+
+class ThresholdNode final : public TextureNode {
+public:
+    static NodeDescriptor describe() { return {"threshold", 1, "Threshold", "Math",
+        {{"value", "Value", ValueType::AnyNumeric, SocketDirection::Input, true},
+         {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
+        {{"value", "Value", 0.5F, 0, 1}, {"threshold", "Threshold", 0.5F, 0, 1}}}; }
+    const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
+    void evaluate(EvaluationContext& context, std::span<const Value> inputs, std::span<Value> outputs) override {
+        const auto source = imageAt(inputs, 0);
+        const float value = floatAt(inputs, 0, parameter(parameters_, "value", 0.5F));
+        const float cutoff = parameter(parameters_, "threshold", 0.5F);
+        if (!source) { outputs[0] = value >= cutoff ? 1.0F : 0.0F; return; }
+        ensure(context);
+        auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
+        if (!program_) program_ = gpu.compileCompute(kThresholdShader);
+        glUseProgram(program_);
+        glBindImageTexture(0, texture_, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+        bindTexture(0, source.texture);
+        uniform(program_, "threshold", cutoff);
+        gpu.dispatch(program_, context.width, context.height);
+        outputs[0] = ImageHandle{texture_, context.width, context.height};
+    }
+};
+
 constexpr std::string_view kRampShader = R"GLSL(#version 430
 layout(local_size_x=16,local_size_y=16)in;layout(rgba16f,binding=0)writeonly uniform image2D outImage;
 layout(binding=0)uniform sampler2D source;uniform int hasSource;uniform float scalarValue,low,high;uniform vec4 colorA,colorB;
@@ -364,7 +394,7 @@ template <typename T> void addNode(NodeRegistry& registry) {
 
 void registerBuiltInNodes(NodeRegistry& registry) {
     addNode<FloatNode>(registry); addNode<TimeNode>(registry); addNode<PerlinNode>(registry);
-    addNode<MathNode>(registry); addNode<MixNode>(registry); addNode<ColorRampNode>(registry);
+    addNode<MathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<ColorRampNode>(registry);
     addNode<ReactionNode>(registry); addNode<OutputNode>(registry);
 }
 

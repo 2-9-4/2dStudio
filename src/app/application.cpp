@@ -6,16 +6,19 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <imgui_node_editor.h>
+#include <png.h>
 #include <portable-file-dialogs.h>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace reaction {
 namespace ed = ax::NodeEditor;
@@ -52,7 +55,7 @@ ImColor socketColor(ValueType type) {
 
 } // namespace
 
-Application::Application() {
+Application::Application(std::filesystem::path startupProject) {
     glfwSetErrorCallback(glfwError);
     if (glfwInit() == GLFW_FALSE) throw std::runtime_error("Unable to initialize GLFW");
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
@@ -85,7 +88,8 @@ Application::Application() {
     registerBuiltInNodes(registry_);
     gpu_ = std::make_unique<GpuRuntime>();
     createPreviewWindow();
-    newProject();
+    if (startupProject.empty()) newProject();
+    else loadProject(startupProject);
 }
 
 Application::~Application() {
@@ -147,15 +151,19 @@ void Application::loadProjectDialog() {
                                          {"Reaction project", "*.reaction.json", "JSON", "*.json"}).result();
     if (selected.empty()) return;
     try {
-        if (runtime_) runtime_->clear();
-        graph_ = loadProject(selected.front(), registry_);
-        currentPath_ = selected.front();
-        positioned_.clear();
-        elapsed_ = 0;
-        rebuildRuntime();
-        dirty_ = false;
-        setStatus("Loaded " + currentPath_.filename().string());
+        loadProject(selected.front());
     } catch (const std::exception& error) { setStatus(error.what(), true); }
+}
+
+void Application::loadProject(const std::filesystem::path& path) {
+    if (runtime_) runtime_->clear();
+    graph_ = reaction::loadProject(path, registry_);
+    currentPath_ = path;
+    positioned_.clear();
+    elapsed_ = 0;
+    rebuildRuntime();
+    dirty_ = false;
+    setStatus("Loaded " + currentPath_.filename().string());
 }
 
 void Application::saveProjectDialog(bool forceDialog) {
@@ -170,6 +178,58 @@ void Application::saveProjectDialog(bool forceDialog) {
         dirty_ = false;
         setStatus("Saved " + currentPath_.filename().string());
     } catch (const std::exception& error) { setStatus(error.what(), true); }
+}
+
+void Application::exportFrameDialog() {
+    const auto image = runtime_->outputImage();
+    if (image.texture == 0 || image.width <= 0 || image.height <= 0) {
+        setStatus("No output image to export", true);
+        return;
+    }
+
+    auto filename = currentPath_.empty() ? std::filesystem::path("frame.png")
+                                         : currentPath_.filename().replace_extension().replace_extension(".png");
+    auto selected = pfd::save_file("Export Current Frame", filename.string(),
+                                   {"PNG image", "*.png"}).result();
+    if (selected.empty()) return;
+    std::filesystem::path path = std::move(selected);
+    if (path.extension() != ".png") path += ".png";
+
+    try {
+        std::vector<float> source(static_cast<std::size_t>(image.width) *
+                                  static_cast<std::size_t>(image.height) * 4U);
+        std::vector<png_byte> pixels(static_cast<std::size_t>(image.width) *
+                                     static_cast<std::size_t>(image.height) * 3U);
+        glBindTexture(GL_TEXTURE_2D, image.texture);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, source.data());
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        for (int y = 0; y < image.height; ++y) {
+            for (int x = 0; x < image.width; ++x) {
+                const auto sourceIndex = static_cast<std::size_t>((y * image.width + x) * 4);
+                const auto pixelIndex = static_cast<std::size_t>(((image.height - 1 - y) * image.width + x) * 3);
+                for (int channel = 0; channel < 3; ++channel) {
+                    const float value = source[sourceIndex + static_cast<std::size_t>(channel)];
+                    pixels[pixelIndex + static_cast<std::size_t>(channel)] = static_cast<png_byte>(
+                        std::lround(std::clamp(std::isfinite(value) ? value : 0.0F, 0.0F, 1.0F) * 255.0F));
+                }
+            }
+        }
+
+        png_image png{};
+        png.version = PNG_IMAGE_VERSION;
+        png.width = static_cast<png_uint_32>(image.width);
+        png.height = static_cast<png_uint_32>(image.height);
+        png.format = PNG_FORMAT_RGB;
+        if (!png_image_write_to_file(&png, path.string().c_str(), 0, pixels.data(),
+                                     image.width * 3, nullptr)) {
+            throw std::runtime_error(std::string("Cannot write PNG: ") + png.message);
+        }
+        setStatus("Exported " + path.filename().string());
+    } catch (const std::exception& error) {
+        setStatus(error.what(), true);
+    }
 }
 
 void Application::setStatus(std::string message, bool error) {
@@ -453,6 +513,7 @@ void Application::renderEditor() {
             if (ImGui::MenuItem("Open…", "Ctrl+O")) loadProjectDialog();
             if (ImGui::MenuItem("Save", "Ctrl+S")) saveProjectDialog(false);
             if (ImGui::MenuItem("Save As…", "Ctrl+Shift+S")) saveProjectDialog(true);
+            if (ImGui::MenuItem("Export Current Frame as PNG…")) exportFrameDialog();
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Edit")) {

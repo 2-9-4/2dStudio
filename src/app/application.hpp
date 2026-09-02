@@ -15,15 +15,17 @@ namespace reaction {
 
 class Application {
 public:
-    Application();
+    explicit Application(std::filesystem::path startupProject = {});
     ~Application();
     int run();
 
 private:
     void createPreviewWindow();
     void newProject();
+    void loadProject(const std::filesystem::path& path);
     void loadProjectDialog();
     void saveProjectDialog(bool forceDialog);
+    void exportFrameDialog();
     void rebuildRuntime();
     void renderEditor();
     void renderGraph();
