@@ -2,9 +2,11 @@
 #include "convolution_presets.hpp"
 
 #include <imgui.h>
+#include <portable-file-dialogs.h>
 
 #include <algorithm>
 #include <array>
+#include <filesystem>
 
 namespace reaction::node_widgets {
 namespace {
@@ -98,6 +100,21 @@ bool renderConvolutionEditor(NodeRecord& node, PopupState& popup) {
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Added to every output channel after convolution");
     return changed;
+}
+
+bool renderImagePicker(NodeRecord& node) {
+    const auto path = node.parameters.value("path", std::string{});
+    const auto label = path.empty() ? std::string("Choose PNG…")
+                                    : std::filesystem::path(path).filename().string();
+    if (!ImGui::Button(label.c_str(), ImVec2(180, 0))) return false;
+
+    const auto initialDirectory = path.empty()
+        ? std::string{} : std::filesystem::path(path).parent_path().string();
+    const auto selected = pfd::open_file("Import PNG image", initialDirectory,
+                                         {"PNG image", "*.png"}, pfd::opt::none).result();
+    if (selected.empty()) return false;
+    node.parameters["path"] = selected.front();
+    return true;
 }
 
 bool renderPopup(PopupState& popup, Graph& graph) {

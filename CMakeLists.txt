@@ -70,7 +70,7 @@ if(REACTION_BUILD_APP)
         src/gpu/subgraph_node.cpp
         src/gpu/nodes.cpp)
     target_include_directories(reaction_gpu PUBLIC include PRIVATE shaders)
-    target_link_libraries(reaction_gpu PUBLIC reaction_core glad OpenGL::GL)
+    target_link_libraries(reaction_gpu PUBLIC reaction_core glad OpenGL::GL PNG::PNG)
     target_compile_options(reaction_gpu PRIVATE -Wall -Wextra -Wpedantic)
 
     add_executable(reaction_studio
@@ -81,7 +81,7 @@ if(REACTION_BUILD_APP)
     target_include_directories(reaction_studio PRIVATE
         include
         ${portable_file_dialogs_SOURCE_DIR})
-    target_link_libraries(reaction_studio PRIVATE reaction_core reaction_gpu reaction_imgui PNG::PNG)
+    target_link_libraries(reaction_studio PRIVATE reaction_core reaction_gpu reaction_imgui)
     target_compile_options(reaction_studio PRIVATE -Wall -Wextra -Wpedantic)
     add_custom_command(TARGET reaction_studio POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory

@@ -3,9 +3,12 @@
 #include <GLFW/glfw3.h>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <png.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <filesystem>
 #include <numeric>
 #include <vector>
 
@@ -56,6 +59,49 @@ double median(std::vector<double> values) {
 }
 
 } // namespace
+
+TEST_CASE("image input exposes a PNG-backed image output") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* descriptor = registry.descriptor("image");
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(descriptor->displayName == "Image");
+    REQUIRE(descriptor->category == "Input");
+    REQUIRE(descriptor->sockets.size() == 1);
+    REQUIRE(descriptor->sockets[0].direction == SocketDirection::Output);
+    REQUIRE(descriptor->sockets[0].type == ValueType::Image2D);
+}
+
+TEST_CASE("image input loads PNG pixels with the graph image orientation") {
+    HiddenContext window;
+    GpuRuntime gpu;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    auto node = registry.create("image");
+
+    const auto path = std::filesystem::temp_directory_path() / "reaction-image-node-test.png";
+    const std::array<png_byte, 8> pixels = {
+        255, 0, 0, 255, // top: red
+        0, 0, 255, 128  // bottom: blue
+    };
+    png_image png{};
+    png.version = PNG_IMAGE_VERSION;
+    png.width = 1;
+    png.height = 2;
+    png.format = PNG_FORMAT_RGBA;
+    REQUIRE(png_image_write_to_file(&png, path.string().c_str(), 0, pixels.data(), 4, nullptr));
+
+    node->setParameters({{"path", path.string()}});
+    EvaluationContext context{1, 2, 0.0, 0.0, false, &gpu};
+    std::array<Value, 1> outputs;
+    node->evaluate(context, {}, outputs);
+    const auto image = std::get<ImageHandle>(outputs[0]);
+    const auto values = readImage(image);
+    REQUIRE(values[0] == Catch::Approx(0.0F).margin(.002F));
+    REQUIRE(values[2] == Catch::Approx(1.0F).margin(.002F));
+    REQUIRE(values[3] == Catch::Approx(128.0F / 255.0F).margin(.002F));
+    REQUIRE(values[4] == Catch::Approx(1.0F).margin(.002F));
+    REQUIRE(values[6] == Catch::Approx(0.0F).margin(.002F));
+    std::filesystem::remove(path);
+}
 
 TEST_CASE("reaction defaults use the sustained classic Gray-Scott region") {
     NodeRegistry registry; registerBuiltInNodes(registry);

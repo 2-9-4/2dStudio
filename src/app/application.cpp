@@ -641,6 +641,7 @@ void Application::renderGraph() {
             }
             if (node.type == "convolution" &&
                 node_widgets::renderConvolutionEditor(node, nodePopup_)) dirty_ = true;
+            if (node.type == "image" && node_widgets::renderImagePicker(node)) dirty_ = true;
             if (descriptor->stateful && ImGui::Button("Reset Simulation")) {
                 runtime_->resetNode(node.id);
                 setStatus("Reset simulation node");

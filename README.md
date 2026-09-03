@@ -19,7 +19,7 @@ Pass a project path to open it immediately at launch:
 ./build/reaction_studio examples/benchmark.reaction.json
 ```
 
-The app opens an editor and a shared-context preview window. Right-click the canvas to add nodes. Drag between pins to link them; select links or nodes and press Delete to remove them. The default project is immediately animated.
+The app opens an editor and a shared-context preview window. Right-click the canvas to add nodes. Drag between pins to link them; select links or nodes and press Delete to remove them. Add **Input / Image** and choose a PNG to use an external image in the graph. The default project is immediately animated.
 
 Projects use `*.reaction.json`. They store project settings, graph topology, parameters, and editor positions. Simulation buffers and elapsed time deliberately restart when a project loads.
 
@@ -34,7 +34,7 @@ Use **Record** in the toolbar or **File → Start Video Recording…** to captur
 - Linux and OpenGL 4.3 compute are the supported first target.
 - Graphs are acyclic; simulation subgraphs contain a controlled private feedback boundary.
 - Custom subgraphs are currently created by duplicating a built-in definition. Blank creation, wrapping selections, nesting, and recursion are not supported yet.
-- There is no timeline, undo/redo, external image input, runtime plugin ABI, or saved simulation state yet.
+- There is no timeline, undo/redo, runtime plugin ABI, or saved simulation state yet.
 - Images are linear RGBA16F GPU textures. Reaction state uses RG16F textures.
 
 See [docs/adding-a-node.md](docs/adding-a-node.md) for the node extension interface and [docs/smoke-test.md](docs/smoke-test.md) for the interactive acceptance pass.

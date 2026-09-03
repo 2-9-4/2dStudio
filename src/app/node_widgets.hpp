@@ -26,6 +26,7 @@ struct PopupState {
 void renderMathOperationSelector(NodeRecord& node, PopupState& popup);
 void renderMixModeSelector(NodeRecord& node, PopupState& popup);
 bool renderConvolutionEditor(NodeRecord& node, PopupState& popup);
+bool renderImagePicker(NodeRecord& node);
 
 // Must be called while the node editor is suspended. Popups use ImGui screen
 // coordinates and must never be rendered inside the transformed node canvas.
