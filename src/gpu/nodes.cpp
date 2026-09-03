@@ -82,7 +82,11 @@ public:
         uniform(program_, "octaves", static_cast<int>(parameter(parameters_, "octaves", 4)));
         uniform(program_, "persistence", parameter(parameters_, "persistence", 0.5F));
         uniform(program_, "lacunarity", parameter(parameters_, "lacunarity", 2));
-        uniform(program_, "timeValue", static_cast<float>(context.time) * parameter(parameters_, "speed", 0.08F));
+        // Frame-derived animation is deterministic even when rendering or encoding stalls.
+        // The 60 FPS baseline preserves the established meaning of existing Speed values.
+        constexpr float baselineFps = 60.0F;
+        uniform(program_, "timeValue", static_cast<float>(context.frame) /
+                                       baselineFps * parameter(parameters_, "speed", 0.08F));
         glUniform2f(glGetUniformLocation(program_, "offset"), parameter(parameters_, "offsetX", 0), parameter(parameters_, "offsetY", 0));
         gpu.dispatch(program_, context.width, context.height);
         outputs[0] = ImageHandle{texture_, context.width, context.height};

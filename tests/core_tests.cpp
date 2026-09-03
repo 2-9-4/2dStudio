@@ -142,6 +142,8 @@ TEST_CASE("built-in discrete reaction exposes a stable dynamic interface") {
     REQUIRE(std::ranges::count_if(descriptor->sockets, [](const auto& socket) {
         return socket.direction == SocketDirection::Output;
     }) == 3);
+    REQUIRE(descriptor->sockets[4].label == "Chemical A");
+    REQUIRE(descriptor->sockets[5].label == "Chemical B");
     REQUIRE(graph.compile(nodes).valid);
 }
 

@@ -47,6 +47,7 @@ struct EvaluationContext {
     int height = 1024;
     double time = 0.0;
     double deltaTime = 0.0;
+    std::uint64_t frame = 0;
     bool playing = true;
     void* gpu = nullptr;
 };

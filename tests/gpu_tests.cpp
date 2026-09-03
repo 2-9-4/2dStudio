@@ -90,7 +90,7 @@ TEST_CASE("image input loads PNG pixels with the graph image orientation") {
     REQUIRE(png_image_write_to_file(&png, path.string().c_str(), 0, pixels.data(), 4, nullptr));
 
     node->setParameters({{"path", path.string()}});
-    EvaluationContext context{1, 2, 0.0, 0.0, false, &gpu};
+    EvaluationContext context{1, 2, 0.0, 0.0, 0, false, &gpu};
     std::array<Value, 1> outputs;
     node->evaluate(context, {}, outputs);
     const auto image = std::get<ImageHandle>(outputs[0]);
@@ -183,7 +183,7 @@ TEST_CASE("convolution exposes bounded iteration control") {
     REQUIRE(iteration->maximum == 32.0F);
 }
 
-TEST_CASE("Perlin compute is stable, bounded, and reuses its texture") {
+TEST_CASE("Perlin advances by evaluated frame rather than wall time") {
     HiddenContext context;
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph; graph.settings = {32, 24, 60};
@@ -196,8 +196,11 @@ TEST_CASE("Perlin compute is stable, bounded, and reuses its texture") {
     const auto firstHandle = runtime.outputImage();
     const auto first = readImage(firstHandle);
     REQUIRE(std::ranges::all_of(first, [](float value) { return std::isfinite(value) && value >= 0.0F && value <= 1.0F; }));
-    REQUIRE(runtime.evaluate(1.25, 1.0 / 60.0, true));
+    REQUIRE(runtime.evaluate(25.0, 1.0 / 60.0, true));
     REQUIRE(runtime.outputImage().texture == firstHandle.texture);
+    REQUIRE(readImage(runtime.outputImage()) != first);
+    runtime.reset();
+    REQUIRE(runtime.evaluate(100.0, 1.0 / 60.0, true));
     REQUIRE(readImage(runtime.outputImage()) == first);
 }
 

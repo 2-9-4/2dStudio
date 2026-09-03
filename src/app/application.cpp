@@ -159,9 +159,6 @@ Application::Application(std::filesystem::path startupProject) {
     ImGui_ImplGlfw_InitForOpenGL(editorWindow_, true);
     ImGui_ImplOpenGL3_Init("#version 430");
     nodeEditor_ = ed::CreateEditor();
-    ed::Config subgraphEditorConfig;
-    subgraphEditorConfig.SettingsFile = nullptr;
-    subgraphEditor_ = ed::CreateEditor(&subgraphEditorConfig);
 
     registerBuiltInNodes(registry_);
     gpu_ = std::make_unique<GpuRuntime>();
@@ -176,7 +173,6 @@ Application::~Application() {
     runtime_.reset();
     gpu_.reset();
     if (nodeEditor_) ed::DestroyEditor(nodeEditor_);
-    if (subgraphEditor_) ed::DestroyEditor(subgraphEditor_);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -371,7 +367,7 @@ void Application::startRecordingDialog() {
         execlp("ffmpeg", "ffmpeg", "-loglevel", "error", "-y",
                "-f", "rawvideo", "-pixel_format", "rgb24", "-video_size", videoSize.c_str(),
                "-framerate", frameRate.c_str(), "-i", "pipe:0", "-an", "-c:v", "libx264",
-               "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
+               "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
                recordingPath_.c_str(), static_cast<char*>(nullptr));
         _exit(127);
     }
@@ -413,6 +409,8 @@ void Application::stopRecording(bool reportStatus) {
     recordingWidth_ = 0;
     recordingHeight_ = 0;
     recordedFrames_ = 0;
+    recordingReadback_.clear();
+    recordingPixels_.clear();
 }
 
 void Application::recordFrame() {
@@ -425,29 +423,25 @@ void Application::recordFrame() {
         return;
     }
 
-    std::vector<float> source(static_cast<std::size_t>(image.width) *
-                              static_cast<std::size_t>(image.height) * 4U);
-    std::vector<std::uint8_t> pixels(static_cast<std::size_t>(image.width) *
-                                     static_cast<std::size_t>(image.height) * 3U);
+    const std::size_t rowBytes = static_cast<std::size_t>(image.width) * 3U;
+    const std::size_t frameBytes = rowBytes * static_cast<std::size_t>(image.height);
+    recordingReadback_.resize(frameBytes);
+    recordingPixels_.resize(frameBytes);
     glBindTexture(GL_TEXTURE_2D, image.texture);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, source.data());
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, recordingReadback_.data());
     glBindTexture(GL_TEXTURE_2D, 0);
     for (int y = 0; y < image.height; ++y) {
-        for (int x = 0; x < image.width; ++x) {
-            const auto sourceIndex = static_cast<std::size_t>((y * image.width + x) * 4);
-            const auto pixelIndex = static_cast<std::size_t>(((image.height - 1 - y) * image.width + x) * 3);
-            for (int channel = 0; channel < 3; ++channel) {
-                const float value = source[sourceIndex + static_cast<std::size_t>(channel)];
-                pixels[pixelIndex + static_cast<std::size_t>(channel)] = static_cast<std::uint8_t>(
-                    std::lround(std::clamp(std::isfinite(value) ? value : 0.0F, 0.0F, 1.0F) * 255.0F));
-            }
-        }
+        const std::size_t sourceOffset = static_cast<std::size_t>(y) * rowBytes;
+        const std::size_t targetOffset = static_cast<std::size_t>(image.height - 1 - y) * rowBytes;
+        std::copy_n(recordingReadback_.data() + sourceOffset, rowBytes,
+                    recordingPixels_.data() + targetOffset);
     }
 
     std::size_t written = 0;
-    while (written < pixels.size()) {
-        const ssize_t count = write(recordingPipe_, pixels.data() + written, pixels.size() - written);
+    while (written < recordingPixels_.size()) {
+        const ssize_t count = write(recordingPipe_, recordingPixels_.data() + written,
+                                    recordingPixels_.size() - written);
         if (count > 0) written += static_cast<std::size_t>(count);
         else if (count < 0 && errno == EINTR) continue;
         else {
@@ -791,6 +785,10 @@ void Application::renderGraph() {
             }
         }
     }
+    if (navigateToRoot_) {
+        ed::NavigateToContent(0.0F);
+        navigateToRoot_ = false;
+    }
     ed::End();
     ed::SetCurrentEditor(nullptr);
 }
@@ -820,6 +818,7 @@ void Application::renderSubgraphEditor() {
         editingSubgraphId_.clear();
         editingSubgraphInstance_ = 0;
         positionedSubgraphId_.clear();
+        navigateToRoot_ = true;
         setStatus("Returned to root graph");
         return;
     }
@@ -827,13 +826,14 @@ void Application::renderSubgraphEditor() {
     if (!resolved) {
         editingSubgraphId_.clear();
         editingSubgraphInstance_ = 0;
+        navigateToRoot_ = true;
         return;
     }
     const bool readOnly = resolved->immutable;
     SubgraphDefinition* definition = readOnly ? nullptr : graph_.findSubgraph(editingSubgraphId_);
     bool changed = false;
     ImGui::Text("Root / %s", resolved->name.c_str());
-    ImGui::SameLine(); ImGui::TextDisabled("Tab: return to root");
+    ImGui::SameLine(); ImGui::TextDisabled("Same canvas · Tab: return to root");
     if (readOnly) {
         ImGui::TextColored(ImVec4(.85F, .7F, .25F, 1),
                            "Built-in template — inspect it here or make an editable project copy.");
@@ -890,14 +890,18 @@ void Application::renderSubgraphEditor() {
     ImGui::SameLine();
 
     ImGui::BeginChild("KernelCanvas", ImVec2(canvasWidth, 0), true);
-    ed::SetCurrentEditor(subgraphEditor_);
-    ed::Begin("Subgraph kernel");
+    // Root and nested graphs deliberately share one editor context. Only one graph is
+    // rendered at a time, and the high ID namespace below keeps their retained canvas
+    // state independent without making navigation feel like a different editor.
+    ed::SetCurrentEditor(nodeEditor_);
+    ed::Begin("Node graph");
     struct KernelPin { std::size_t node = 0, input = 0; bool output = false; };
     std::unordered_map<std::uintptr_t, KernelPin> kernelPins;
     std::unordered_map<std::string, std::size_t> kernelIndices;
     for (std::size_t index = 0; index < shown.kernel.size(); ++index)
         kernelIndices.emplace(shown.kernel[index].key, index);
-    const auto kernelNodeId = [](std::size_t index) { return std::uintptr_t{1000} + index * 128; };
+    constexpr std::uintptr_t kernelIdBase = std::uintptr_t{1} << 48U;
+    const auto kernelNodeId = [](std::size_t index) { return kernelIdBase + index * 128; };
     const auto kernelInputId = [&](std::size_t index, std::size_t input) {
         return kernelNodeId(index) + 2 + input * 2;
     };
@@ -930,7 +934,7 @@ void Application::renderSubgraphEditor() {
         }
     }
     positionedSubgraphId_ = editingSubgraphId_;
-    std::uintptr_t linkId = std::uintptr_t{1} << 56U;
+    std::uintptr_t linkId = kernelIdBase + (std::uintptr_t{1} << 40U);
     for (std::size_t target = 0; target < shown.kernel.size(); ++target) {
         for (std::size_t input = 0; input < shown.kernel[target].inputs.size(); ++input) {
             const auto source = kernelIndices.find(shown.kernel[target].inputs[input]);
@@ -958,8 +962,8 @@ void Application::renderSubgraphEditor() {
     }
     int selectedKernelIndex = -1;
     ed::NodeId selectedNode;
-    if (ed::GetSelectedNodes(&selectedNode, 1) == 1 && selectedNode.Get() >= 1000) {
-        const auto offset = selectedNode.Get() - 1000;
+    if (ed::GetSelectedNodes(&selectedNode, 1) == 1 && selectedNode.Get() >= kernelIdBase) {
+        const auto offset = selectedNode.Get() - kernelIdBase;
         if (offset % 128 == 0 && offset / 128 < shown.kernel.size())
             selectedKernelIndex = static_cast<int>(offset / 128);
     }
@@ -975,6 +979,9 @@ void Application::renderSubgraphEditor() {
         ImGui::TextWrapped("Select a kernel node to inspect its stable key, operation, and inputs.");
         ImGui::Spacing();
         ImGui::TextDisabled("This graph is fused into one compute shader per simulation iteration.");
+        ImGui::TextWrapped("Arithmetic uses the same operations as the root Math node. Previous State, "
+                           "Laplacian, and interface nodes are simulation-only because they use this "
+                           "subgraph's private state and ports.");
     } else {
         const auto index = static_cast<std::size_t>(selectedKernelIndex);
         const auto& current = shown.kernel[index];
@@ -983,7 +990,7 @@ void Application::renderSubgraphEditor() {
         ImGui::TextDisabled("Operation: %s", operationLabel(current.operation).c_str());
         static const std::array operations{"add", "subtract", "multiply", "divide", "min", "max",
             "abs", "sin", "cos", "pow", "clamp01", "clamp", "remap", "pack2", "swizzle", "length", "step", "select"};
-        ImGui::PushID(1000 + selectedKernelIndex);
+        ImGui::PushID(static_cast<int>(selectedKernelIndex));
         if (!readOnly) {
             auto& kernel = definition->kernel[index];
             char label[128]{};
@@ -1008,7 +1015,11 @@ void Application::renderSubgraphEditor() {
             for (std::size_t inputIndex = 0; inputIndex < kernel.inputs.size(); ++inputIndex) {
                 ImGui::PushID(static_cast<int>(inputIndex));
                 const auto inputLabel = kernelInputLabel(kernel.operation, inputIndex);
-                if (ImGui::BeginCombo(inputLabel.c_str(), kernel.inputs[inputIndex].c_str())) {
+                const auto selectedInput = kernelIndices.find(kernel.inputs[inputIndex]);
+                const std::string selectedInputLabel = selectedInput == kernelIndices.end()
+                    ? humanizeIdentifier(kernel.inputs[inputIndex])
+                    : kernelNodeLabel(shown.kernel[selectedInput->second], shown);
+                if (ImGui::BeginCombo(inputLabel.c_str(), selectedInputLabel.c_str())) {
                     for (std::size_t candidate = 0; candidate < index; ++candidate) {
                         const auto& candidateNode = definition->kernel[candidate];
                         const auto& key = candidateNode.key;
@@ -1027,9 +1038,14 @@ void Application::renderSubgraphEditor() {
             }
         } else {
             ImGui::Spacing();
-            for (std::size_t input = 0; input < current.inputs.size(); ++input)
+            for (std::size_t input = 0; input < current.inputs.size(); ++input) {
+                const auto source = kernelIndices.find(current.inputs[input]);
+                const std::string sourceLabel = source == kernelIndices.end()
+                    ? humanizeIdentifier(current.inputs[input])
+                    : kernelNodeLabel(shown.kernel[source->second], shown);
                 ImGui::BulletText("%s: %s", kernelInputLabel(current.operation, input).c_str(),
-                                  current.inputs[input].c_str());
+                                  sourceLabel.c_str());
+            }
         }
         ImGui::PopID();
     }
@@ -1134,17 +1150,17 @@ int Application::run() {
     while (!glfwWindowShouldClose(editorWindow_)) {
         const auto frameStart = Clock::now();
         const double delta = std::chrono::duration<double>(frameStart - previous).count(); previous = frameStart;
-        if (playing_) elapsed_ += delta;
+        const double target = 1.0 / static_cast<double>(std::max(graph_.settings.targetFps, 1));
+        const double evaluationDelta = recordingPipe_ >= 0 ? target : delta;
+        if (playing_) elapsed_ += evaluationDelta;
         glfwPollEvents();
         glfwMakeContextCurrent(editorWindow_);
-        runtime_->evaluate(elapsed_, playing_ ? delta : 0.0, playing_);
-        renderEditor();
-        glfwMakeContextCurrent(editorWindow_);
+        runtime_->evaluate(elapsed_, playing_ ? evaluationDelta : 0.0, playing_);
         recordFrame();
+        renderEditor();
         renderPreview();
         fpsAccumulator += delta; ++fpsFrames;
         if (fpsAccumulator >= .5) { displayedFps_ = static_cast<double>(fpsFrames) / fpsAccumulator; fpsAccumulator = 0; fpsFrames = 0; }
-        const double target = 1.0 / static_cast<double>(std::max(graph_.settings.targetFps, 1));
         const double spent = std::chrono::duration<double>(Clock::now() - frameStart).count();
         if (spent < target) std::this_thread::sleep_for(std::chrono::duration<double>(target - spent));
     }

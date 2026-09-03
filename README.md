@@ -23,11 +23,11 @@ The app opens an editor and a shared-context preview window. Right-click the can
 
 Projects use `*.reaction.json`. They store project settings, graph topology, parameters, and editor positions. Simulation buffers and elapsed time deliberately restart when a project loads.
 
-The add-node menu contains both **Reaction Diffusion (Monolithic)** and **Reaction Diffusion (Discrete)**. The discrete version is an immutable built-in subgraph with Image, A, and B outputs. Select it and press **Tab** to replace the root canvas with its primitive expression graph; press **Tab** again to return. Use **Duplicate as Editable** on an instance to create a shared project-local copy. Changes to that copy rebuild and reset all of its instances.
+The add-node menu contains both **Reaction Diffusion (Monolithic)** and **Reaction Diffusion (Discrete)**. The discrete version is an immutable built-in subgraph with Image, Chemical A, and Chemical B outputs. Select it and press **Tab** to navigate into its primitive expression graph on the same node-editor canvas; press **Tab** again to return. Use **Duplicate as Editable** on an instance to create a shared project-local copy. Changes to that copy rebuild and reset all of its instances. Simulation-only nodes such as Previous Simulation State and State Laplacian are available only inside a simulation subgraph because they depend on its private feedback state; ordinary arithmetic maps to the root editor's Math node.
 
 Use **File → Export Current Frame as PNG…** to write the graph output at its configured resolution. The export is an 8-bit RGB PNG and does not include the editor UI.
 
-Use **Record** in the toolbar or **File → Start Video Recording…** to capture the graph output as an H.264 MP4 at the project resolution and target FPS. Pausing also pauses capture; use **Stop Recording** to finalize the file. Video dimensions must be even. The preview window remains constrained to the project's aspect ratio while it is resized.
+Use **Record** in the toolbar or **File → Start Video Recording…** to capture the graph output as an H.264 MP4 at the project resolution and target FPS. Recording uses a fixed frame timestep, and Perlin animation advances by evaluated frame rather than wall time, so slower encoding does not introduce animation jumps. Pausing also pauses capture; use **Stop Recording** to finalize the file. Video dimensions must be even. The preview window remains constrained to the project's aspect ratio while it is resized.
 
 ## Current boundaries
 

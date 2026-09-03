@@ -196,6 +196,7 @@ void GraphRuntime::clear() {
     timings_.clear();
     previousParameters_.clear();
     pendingResets_.clear();
+    frame_ = 0;
 }
 
 void GraphRuntime::rebuild() {
@@ -246,7 +247,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
         forceDirty_ = true;
     }
     EvaluationContext context{graph_.settings.width, graph_.settings.height,
-                              time, deltaTime, playing, &gpu_};
+                              time, deltaTime, frame_, playing, &gpu_};
     std::unordered_set<NodeId> dirtyNodes;
     for (const auto id : compiled_.order) {
         const auto* record = graph_.findNode(id);
@@ -309,10 +310,11 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
     }
     needsReset_ = false;
     forceDirty_ = false;
+    if (playing) ++frame_;
     return true;
 }
 
-void GraphRuntime::reset() { needsReset_ = true; }
+void GraphRuntime::reset() { needsReset_ = true; frame_ = 0; }
 
 void GraphRuntime::resetNode(NodeId id) {
     const auto found = instances_.find(id);

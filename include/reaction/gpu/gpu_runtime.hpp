@@ -65,6 +65,7 @@ private:
     std::unordered_set<NodeId> pendingResets_;
     bool needsReset_ = true;
     bool forceDirty_ = true;
+    std::uint64_t frame_ = 0;
     int lastWidth_ = 0;
     int lastHeight_ = 0;
 };

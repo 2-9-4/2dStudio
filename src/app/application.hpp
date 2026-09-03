@@ -51,8 +51,9 @@ private:
     int recordingWidth_ = 0;
     int recordingHeight_ = 0;
     std::uint64_t recordedFrames_ = 0;
+    std::vector<std::uint8_t> recordingReadback_;
+    std::vector<std::uint8_t> recordingPixels_;
     ax::NodeEditor::EditorContext* nodeEditor_ = nullptr;
-    ax::NodeEditor::EditorContext* subgraphEditor_ = nullptr;
     NodeRegistry registry_;
     Graph graph_;
     std::unique_ptr<GpuRuntime> gpu_;
@@ -72,6 +73,7 @@ private:
     std::string editingSubgraphId_;
     std::string positionedSubgraphId_;
     NodeId editingSubgraphInstance_ = 0;
+    bool navigateToRoot_ = false;
 };
 
 } // namespace reaction
