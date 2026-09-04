@@ -117,7 +117,7 @@ bool renderImagePicker(NodeRecord& node) {
     return true;
 }
 
-bool renderPopup(PopupState& popup, Graph& graph) {
+bool renderPopup(PopupState& popup, GraphBody& graph) {
     if (popup.kind == PopupKind::None) return false;
     const char* name = popupName(popup.kind);
     if (popup.openRequested) {

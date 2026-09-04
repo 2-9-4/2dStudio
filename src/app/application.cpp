@@ -58,75 +58,6 @@ ImColor socketColor(ValueType type) {
     return ImColor(180, 180, 180);
 }
 
-std::string humanizeIdentifier(std::string_view value) {
-    std::string result;
-    result.reserve(value.size() + 8);
-    for (std::size_t index = 0; index < value.size(); ++index) {
-        const unsigned char current = static_cast<unsigned char>(value[index]);
-        if (value[index] == '_' || value[index] == '-') {
-            if (!result.empty() && result.back() != ' ') result.push_back(' ');
-            continue;
-        }
-        if (index > 0 && std::isupper(current) && result.back() != ' ') result.push_back(' ');
-        result.push_back(value[index]);
-    }
-    bool capitalize = true;
-    for (char& character : result) {
-        if (character == ' ') capitalize = true;
-        else if (capitalize) {
-            character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
-            capitalize = false;
-        }
-    }
-    return result;
-}
-
-std::string operationLabel(std::string_view operation) {
-    static const std::unordered_map<std::string_view, std::string_view> labels{
-        {"uv", "Canvas Coordinates"}, {"constant", "Number"}, {"constant2", "2D Value"},
-        {"previous_state", "Previous State"}, {"interface", "Subgraph Input"},
-        {"connected", "Input Connected"}, {"laplacian", "Laplacian"},
-        {"pack2", "Combine Channels"}, {"swizzle", "Extract Channel"},
-        {"clamp01", "Clamp 0–1"}, {"output", "Subgraph Output"}
-    };
-    const auto found = labels.find(operation);
-    return found == labels.end() ? humanizeIdentifier(operation) : std::string(found->second);
-}
-
-std::string kernelNodeLabel(const SubgraphKernelNode& node,
-                            const SubgraphDefinition& definition) {
-    if (node.properties.is_object()) {
-        const auto explicitLabel = node.properties.value("label", std::string{});
-        if (!explicitLabel.empty()) return explicitLabel;
-        if (node.operation == "interface" || node.operation == "connected" || node.operation == "output") {
-            const auto key = node.properties.value("key", std::string{});
-            const auto item = std::ranges::find(definition.interface, key, &SubgraphInterfaceItem::key);
-            if (item != definition.interface.end()) return item->label;
-        }
-    }
-    return humanizeIdentifier(node.key);
-}
-
-std::string kernelInputLabel(std::string_view operation, std::size_t input) {
-    if (operation == "select") {
-        static const std::array labels{"Condition", "True", "False"};
-        if (input < labels.size()) return labels[input];
-    }
-    if (operation == "clamp") {
-        static const std::array labels{"Value", "Minimum", "Maximum"};
-        if (input < labels.size()) return labels[input];
-    }
-    if (operation == "remap") {
-        static const std::array labels{"Value", "Input Min", "Input Max", "Output Min", "Output Max"};
-        if (input < labels.size()) return labels[input];
-    }
-    if (operation == "pack2") return input == 0 ? "Channel A" : "Channel B";
-    if (operation == "step") return input == 0 ? "Value" : "Edge";
-    if (operation == "subtract" || operation == "divide" || operation == "pow")
-        return input == 0 ? "A" : "B";
-    return input == 0 ? "Value" : "Value " + std::to_string(input + 1);
-}
-
 } // namespace
 
 Application::Application(std::filesystem::path startupProject) {
@@ -158,7 +89,17 @@ Application::Application(std::filesystem::path startupProject) {
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(editorWindow_, true);
     ImGui_ImplOpenGL3_Init("#version 430");
-    nodeEditor_ = ed::CreateEditor();
+    ed::Config rootEditorConfig;
+    // Node positions belong to the project. Do not reload the legacy shared
+    // NodeEditor.json camera, which also contains IDs from the old kernel view.
+    rootEditorConfig.SettingsFile = nullptr;
+    nodeEditor_ = ed::CreateEditor(&rootEditorConfig);
+    // A node-editor context owns one viewport transform. Keeping the nested graph's
+    // transform separate prevents its pan/zoom from moving the root viewport; both
+    // contexts are rendered by the same canvas UI below.
+    ed::Config subgraphEditorConfig;
+    subgraphEditorConfig.SettingsFile = nullptr;
+    subgraphEditor_ = ed::CreateEditor(&subgraphEditorConfig);
 
     registerBuiltInNodes(registry_);
     gpu_ = std::make_unique<GpuRuntime>();
@@ -173,6 +114,7 @@ Application::~Application() {
     runtime_.reset();
     gpu_.reset();
     if (nodeEditor_) ed::DestroyEditor(nodeEditor_);
+    if (subgraphEditor_) ed::DestroyEditor(subgraphEditor_);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -215,6 +157,7 @@ void Application::newProject() {
     editingSubgraphId_.clear();
     editingSubgraphInstance_ = 0;
     positionedSubgraphId_.clear();
+    positionedSubgraph_.clear();
     graph_.clear();
     graph_.settings = {};
     updatePreviewAspectRatio();
@@ -227,6 +170,7 @@ void Application::newProject() {
     graph_.activeOutput = output;
     currentPath_.clear();
     positioned_.clear();
+    fitRootGraph_ = true;
     elapsed_ = 0;
     rebuildRuntime();
     dirty_ = false;
@@ -256,10 +200,12 @@ void Application::loadProject(const std::filesystem::path& path) {
     editingSubgraphId_.clear();
     editingSubgraphInstance_ = 0;
     positionedSubgraphId_.clear();
+    positionedSubgraph_.clear();
     graph_ = reaction::loadProject(path, registry_);
     updatePreviewAspectRatio();
     currentPath_ = path;
     positioned_.clear();
+    fitRootGraph_ = true;
     elapsed_ = 0;
     rebuildRuntime();
     dirty_ = false;
@@ -464,8 +410,10 @@ void Application::handleShortcuts() {
     if (ImGui::IsKeyPressed(ImGuiKey_S, false)) saveProjectDialog(io.KeyShift);
     if (ImGui::IsKeyPressed(ImGuiKey_O, false)) loadProjectDialog();
     if (ImGui::IsKeyPressed(ImGuiKey_N, false)) newProject();
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_C, false)) copyRequested_ = true;
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_V, false)) pasteRequested_ = true;
+    if (editingSubgraphId_.empty() && !io.WantTextInput &&
+        ImGui::IsKeyPressed(ImGuiKey_C, false)) copyRequested_ = true;
+    if (editingSubgraphId_.empty() && !io.WantTextInput &&
+        ImGui::IsKeyPressed(ImGuiKey_V, false)) pasteRequested_ = true;
 }
 
 void Application::copySelectedNodes() {
@@ -678,7 +626,10 @@ void Application::renderGraph() {
             positioned_[node.id] = true;
         } else {
             const auto position = ed::GetNodePosition(ed::NodeId(nodeUiId(node.id)));
-            node.position = {position.x, position.y};
+            if (node.position.x != position.x || node.position.y != position.y) {
+                node.position = {position.x, position.y};
+                dirty_ = true;
+            }
         }
     }
 
@@ -760,6 +711,9 @@ void Application::renderGraph() {
                 for (const auto& item : definition.interface)
                     if (item.kind == SubgraphInterfaceKind::Slider)
                         record->parameters[item.key] = item.defaultValue;
+                // A subgraph added from the menu is an editable project asset. The
+                // immutable built-in remains only as the pristine source template.
+                if (definition.immutable) duplicateSubgraph(*record);
                 positioned_[id] = false; dirty_ = true; rebuildRuntime();
             }
         };
@@ -768,26 +722,29 @@ void Application::renderGraph() {
         ImGui::EndPopup();
     }
     ed::Resume();
-    if (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
+    if (!ImGui::GetIO().WantTextInput &&
+        !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId) &&
+        ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
         const int selectedCount = ed::GetSelectedObjectCount();
         if (selectedCount == 1) {
             ed::NodeId selectedUiId;
             if (ed::GetSelectedNodes(&selectedUiId, 1) == 1) {
                 const auto selectedId = static_cast<NodeId>(selectedUiId.Get() / 128);
-                const auto* selected = graph_.findNode(selectedId);
+                auto* selected = graph_.findNode(selectedId);
                 if (selected && selected->type == "subgraph" &&
                     resolveSubgraph(graph_, selected->subgraphId)) {
+                    if (resolveSubgraph(graph_, selected->subgraphId)->immutable)
+                        duplicateSubgraph(*selected);
                     editingSubgraphId_ = selected->subgraphId;
                     editingSubgraphInstance_ = selected->id;
-                    positionedSubgraphId_.clear();
                     setStatus("Entered subgraph — press Tab to return");
                 }
             }
         }
     }
-    if (navigateToRoot_) {
+    if (fitRootGraph_) {
         ed::NavigateToContent(0.0F);
-        navigateToRoot_ = false;
+        fitRootGraph_ = false;
     }
     ed::End();
     ed::SetCurrentEditor(nullptr);
@@ -804,7 +761,7 @@ void Application::duplicateSubgraph(NodeRecord& node) {
                   std::to_string(suffix++);
     } while (resolveSubgraph(graph_, copy.id));
     const int copyNumber = static_cast<int>(graph_.subgraphs().size()) + 1;
-    copy.name = "Reaction Diffusion Copy " + std::to_string(copyNumber);
+    copy.name = source->name + " (Editable " + std::to_string(copyNumber) + ")";
     graph_.subgraphs().push_back(std::move(copy));
     node.subgraphId = graph_.subgraphs().back().id;
     dirty_ = true;
@@ -814,66 +771,60 @@ void Application::duplicateSubgraph(NodeRecord& node) {
 
 void Application::renderSubgraphEditor() {
     if (editingSubgraphId_.empty()) return;
-    if (!ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
+    const auto leaveSubgraph = [&] {
         editingSubgraphId_.clear();
         editingSubgraphInstance_ = 0;
-        positionedSubgraphId_.clear();
-        navigateToRoot_ = true;
         setStatus("Returned to root graph");
+    };
+    if (!ImGui::GetIO().WantTextInput &&
+        !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId) &&
+        ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
+        leaveSubgraph();
         return;
     }
     const auto* resolved = resolveSubgraph(graph_, editingSubgraphId_);
     if (!resolved) {
-        editingSubgraphId_.clear();
-        editingSubgraphInstance_ = 0;
-        navigateToRoot_ = true;
+        leaveSubgraph();
         return;
     }
-    const bool readOnly = resolved->immutable;
-    SubgraphDefinition* definition = readOnly ? nullptr : graph_.findSubgraph(editingSubgraphId_);
-    bool changed = false;
-    ImGui::Text("Root / %s", resolved->name.c_str());
-    ImGui::SameLine(); ImGui::TextDisabled("Same canvas · Tab: return to root");
-    if (readOnly) {
-        ImGui::TextColored(ImVec4(.85F, .7F, .25F, 1),
-                           "Built-in template — inspect it here or make an editable project copy.");
-        ImGui::SameLine();
-        if (ImGui::Button("Make Editable Copy")) {
-            if (auto* instance = graph_.findNode(editingSubgraphInstance_)) {
-                duplicateSubgraph(*instance);
-                editingSubgraphId_ = instance->subgraphId;
-                positionedSubgraphId_.clear();
-            }
-            return;
+    if (resolved->immutable) {
+        if (auto* instance = graph_.findNode(editingSubgraphInstance_)) {
+            duplicateSubgraph(*instance);
+            editingSubgraphId_ = instance->subgraphId;
         }
+        return;
     }
-    const auto& shown = readOnly ? *resolved : *definition;
+    auto* definition = graph_.findSubgraph(editingSubgraphId_);
+    if (!definition) { leaveSubgraph(); return; }
+    auto& body = definition->body;
+    bool changed = false;
+    const bool navigateToGraph = positionedSubgraphId_ != editingSubgraphId_;
+    if (navigateToGraph) {
+        positionedSubgraphId_ = editingSubgraphId_;
+        positionedSubgraph_.clear();
+    }
 
-    const ImVec2 available = ImGui::GetContentRegionAvail();
-    const float spacing = ImGui::GetStyle().ItemSpacing.x;
-    const float leftWidth = std::min(260.0F, available.x * .23F);
-    const float rightWidth = std::min(300.0F, available.x * .27F);
-    const float canvasWidth = std::max(180.0F, available.x - leftWidth - rightWidth - spacing * 2.0F);
-
-    ImGui::BeginChild("SubgraphInterface", ImVec2(leftWidth, 0), true);
-    ImGui::SeparatorText("Interface");
-    if (!readOnly) {
+    if (ImGui::Button("← Root")) { leaveSubgraph(); return; }
+    ImGui::SameLine();
+    ImGui::Text("Root / %s", definition->name.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("Tab: return");
+    ImGui::SameLine();
+    if (ImGui::Button("Subgraph Settings…")) ImGui::OpenPopup("Subgraph Settings");
+    if (ImGui::BeginPopupModal("Subgraph Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         char name[128]{};
         std::snprintf(name, sizeof(name), "%s", definition->name.c_str());
         if (ImGui::InputText("Name", name, sizeof(name))) {
             definition->name = name; changed = true;
         }
-    }
-    for (std::size_t index = 0; index < shown.interface.size(); ++index) {
-        const auto& current = shown.interface[index];
-        ImGui::PushID(static_cast<int>(index));
-        ImGui::Separator();
-        ImGui::TextUnformatted(current.label.c_str());
-        ImGui::TextDisabled("%s · %s", current.kind == SubgraphInterfaceKind::Input ? "Input" :
-                                      current.kind == SubgraphInterfaceKind::Slider ? "Control" : "Output",
-                                      current.key.c_str());
-        if (!readOnly) {
+        ImGui::SeparatorText("Interface");
+        for (std::size_t index = 0; index < definition->interface.size(); ++index) {
             auto& item = definition->interface[index];
+            ImGui::PushID(static_cast<int>(index));
+            ImGui::TextDisabled("%s · %s",
+                item.kind == SubgraphInterfaceKind::Input ? "Input" :
+                item.kind == SubgraphInterfaceKind::Slider ? "Control" : "Output",
+                item.key.c_str());
             char label[128]{}; std::snprintf(label, sizeof(label), "%s", item.label.c_str());
             if (ImGui::InputText("Label", label, sizeof(label))) { item.label = label; changed = true; }
             if (item.kind == SubgraphInterfaceKind::Slider) {
@@ -883,173 +834,189 @@ void Application::renderSubgraphEditor() {
                 if (item.minimum > item.maximum) std::swap(item.minimum, item.maximum);
                 item.defaultValue = std::clamp(item.defaultValue, item.minimum, item.maximum);
             }
+            ImGui::Separator();
+            ImGui::PopID();
+        }
+        if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    // This is the same full-size canvas interaction model as the root graph. The
+    // separate context is only an independent camera; it is not a separate UI.
+    ed::SetCurrentEditor(subgraphEditor_);
+    ed::Begin("Node graph");
+    std::unordered_map<std::uintptr_t, PinTarget> pins;
+    for (auto& node : body.nodes()) {
+        NodeDescriptor descriptorStorage;
+        const auto* descriptor = resolveSubgraphBodyDescriptor(*definition, node, registry_,
+                                                               descriptorStorage);
+        ed::BeginNode(ed::NodeId(nodeUiId(node.id)));
+        ImGui::PushID(static_cast<int>(node.id));
+        if (!descriptor) {
+            ImGui::TextColored(ImVec4(1, .35F, .35F, 1), "Missing: %s", node.type.c_str());
+        } else {
+            ImGui::TextUnformatted(node.label.empty() ? descriptor->displayName.c_str()
+                                                       : node.label.c_str());
+            if (!node.label.empty() && node.label != descriptor->displayName)
+                ImGui::TextDisabled("%s", descriptor->displayName.c_str());
+            ImGui::Separator();
+            std::size_t pinIndex = 0;
+            for (const auto& socket : descriptor->sockets) {
+                const auto id = pinUiId(node.id, pinIndex++, socket.direction);
+                pins.emplace(id, PinTarget{node.id, socket.key, socket.direction});
+                ed::BeginPin(ed::PinId(id), socket.direction == SocketDirection::Input
+                                               ? ed::PinKind::Input : ed::PinKind::Output);
+                ImGui::TextColored(socketColor(socket.type), "%s%s",
+                    socket.direction == SocketDirection::Output ? "● " : "○ ",
+                    socket.label.c_str());
+                ed::EndPin();
+            }
+            for (const auto& property : descriptor->parameters) {
+                float value = node.parameters.value(property.key, property.defaultValue);
+                ImGui::SetNextItemWidth(150);
+                bool propertyChanged = false;
+                if (property.key == "operation" && node.type == "math") {
+                    node_widgets::renderMathOperationSelector(node, nodePopup_);
+                    continue;
+                } else if (property.control == ParameterDescriptor::Control::Boolean) {
+                    bool enabled = value > .5F;
+                    propertyChanged = ImGui::Checkbox(property.label.c_str(), &enabled);
+                    value = enabled ? 1.0F : 0.0F;
+                } else if (property.control == ParameterDescriptor::Control::Integer) {
+                    int integer = static_cast<int>(value);
+                    propertyChanged = ImGui::SliderInt(property.label.c_str(), &integer,
+                        static_cast<int>(property.minimum), static_cast<int>(property.maximum));
+                    value = static_cast<float>(integer);
+                } else {
+                    const float speed = std::max((property.maximum - property.minimum) / 500.0F,
+                                                 .0001F);
+                    propertyChanged = ImGui::DragFloat(property.label.c_str(), &value, speed,
+                        property.minimum, property.maximum, "%.6g", ImGuiSliderFlags_AlwaysClamp);
+                }
+                if (propertyChanged) { node.parameters[property.key] = value; changed = true; }
+            }
         }
         ImGui::PopID();
-    }
-    ImGui::EndChild();
-    ImGui::SameLine();
-
-    ImGui::BeginChild("KernelCanvas", ImVec2(canvasWidth, 0), true);
-    // Root and nested graphs deliberately share one editor context. Only one graph is
-    // rendered at a time, and the high ID namespace below keeps their retained canvas
-    // state independent without making navigation feel like a different editor.
-    ed::SetCurrentEditor(nodeEditor_);
-    ed::Begin("Node graph");
-    struct KernelPin { std::size_t node = 0, input = 0; bool output = false; };
-    std::unordered_map<std::uintptr_t, KernelPin> kernelPins;
-    std::unordered_map<std::string, std::size_t> kernelIndices;
-    for (std::size_t index = 0; index < shown.kernel.size(); ++index)
-        kernelIndices.emplace(shown.kernel[index].key, index);
-    constexpr std::uintptr_t kernelIdBase = std::uintptr_t{1} << 48U;
-    const auto kernelNodeId = [](std::size_t index) { return kernelIdBase + index * 128; };
-    const auto kernelInputId = [&](std::size_t index, std::size_t input) {
-        return kernelNodeId(index) + 2 + input * 2;
-    };
-    const auto kernelOutputId = [&](std::size_t index) { return kernelNodeId(index) + 1; };
-    const bool navigateToGraph = positionedSubgraphId_ != editingSubgraphId_;
-    for (std::size_t index = 0; index < shown.kernel.size(); ++index) {
-        const auto& kernel = shown.kernel[index];
-        ed::BeginNode(ed::NodeId(kernelNodeId(index)));
-        ImGui::TextUnformatted(kernelNodeLabel(kernel, shown).c_str());
-        ImGui::TextDisabled("%s", operationLabel(kernel.operation).c_str());
-        ImGui::Separator();
-        for (std::size_t input = 0; input < kernel.inputs.size(); ++input) {
-            const auto pin = kernelInputId(index, input);
-            kernelPins.emplace(pin, KernelPin{index, input, false});
-            ed::BeginPin(ed::PinId(pin), ed::PinKind::Input);
-            ImGui::Text("○ %s", kernelInputLabel(kernel.operation, input).c_str());
-            ed::EndPin();
-        }
-        const auto outputPin = kernelOutputId(index);
-        kernelPins.emplace(outputPin, KernelPin{index, 0, true});
-        ed::BeginPin(ed::PinId(outputPin), ed::PinKind::Output);
-        ImGui::TextUnformatted("● Value");
-        ed::EndPin();
         ed::EndNode();
-        if (navigateToGraph)
-            ed::SetNodePosition(ed::NodeId(kernelNodeId(index)), ImVec2(kernel.position.x, kernel.position.y));
-        else if (!readOnly) {
-            const auto position = ed::GetNodePosition(ed::NodeId(kernelNodeId(index)));
-            definition->kernel[index].position = {position.x, position.y};
+        if (!positionedSubgraph_[node.id]) {
+            ed::SetNodePosition(ed::NodeId(nodeUiId(node.id)), ImVec2(node.position.x, node.position.y));
+            positionedSubgraph_[node.id] = true;
+        } else {
+            const auto position = ed::GetNodePosition(ed::NodeId(nodeUiId(node.id)));
+            if (node.position.x != position.x || node.position.y != position.y) {
+                node.position = {position.x, position.y};
+                dirty_ = true;
+            }
         }
     }
-    positionedSubgraphId_ = editingSubgraphId_;
-    std::uintptr_t linkId = kernelIdBase + (std::uintptr_t{1} << 40U);
-    for (std::size_t target = 0; target < shown.kernel.size(); ++target) {
-        for (std::size_t input = 0; input < shown.kernel[target].inputs.size(); ++input) {
-            const auto source = kernelIndices.find(shown.kernel[target].inputs[input]);
-            if (source != kernelIndices.end())
-                ed::Link(ed::LinkId(linkId++), ed::PinId(kernelOutputId(source->second)),
-                         ed::PinId(kernelInputId(target, input)));
+
+    for (const auto& link : body.links()) {
+        const auto* from = body.findNode(link.fromNode);
+        const auto* to = body.findNode(link.toNode);
+        NodeDescriptor fromStorage, toStorage;
+        const auto* fromDesc = from ? resolveSubgraphBodyDescriptor(*definition, *from, registry_, fromStorage) : nullptr;
+        const auto* toDesc = to ? resolveSubgraphBodyDescriptor(*definition, *to, registry_, toStorage) : nullptr;
+        if (!fromDesc || !toDesc) continue;
+        std::size_t fromIndex = 0, toIndex = 0;
+        bool foundFrom = false, foundTo = false;
+        for (const auto& socket : fromDesc->sockets) {
+            if (socket.direction == SocketDirection::Output && socket.key == link.fromSocket) {
+                foundFrom = true; break;
+            }
+            ++fromIndex;
         }
+        for (const auto& socket : toDesc->sockets) {
+            if (socket.direction == SocketDirection::Input && socket.key == link.toSocket) {
+                foundTo = true; break;
+            }
+            ++toIndex;
+        }
+        if (foundFrom && foundTo)
+            ed::Link(ed::LinkId(linkUiId(link.id)),
+                     ed::PinId(pinUiId(link.fromNode, fromIndex, SocketDirection::Output)),
+                     ed::PinId(pinUiId(link.toNode, toIndex, SocketDirection::Input)));
     }
-    if (!readOnly && ed::BeginCreate()) {
+
+    if (ed::BeginCreate()) {
         ed::PinId first, second;
         if (ed::QueryNewLink(&first, &second) && first && second) {
-            auto from = kernelPins.find(first.Get()), to = kernelPins.find(second.Get());
-            if (from != kernelPins.end() && to != kernelPins.end()) {
-                if (!from->second.output) std::swap(from, to);
-                const bool valid = from->second.output && !to->second.output &&
-                                   from->second.node < to->second.node;
-                if (valid && ed::AcceptNewItem()) {
-                    definition->kernel[to->second.node].inputs[to->second.input] =
-                        definition->kernel[from->second.node].key;
+            auto from = pins.find(first.Get()), to = pins.find(second.Get());
+            if (from != pins.end() && to != pins.end()) {
+                if (from->second.direction == SocketDirection::Input) std::swap(from, to);
+                const bool directionOk = from->second.direction == SocketDirection::Output &&
+                                         to->second.direction == SocketDirection::Input;
+                if (directionOk && ed::AcceptNewItem()) {
+                    body.addLink(from->second.node, from->second.socket,
+                                 to->second.node, to->second.socket);
                     changed = true;
                 }
             }
         }
         ed::EndCreate();
     }
-    int selectedKernelIndex = -1;
-    ed::NodeId selectedNode;
-    if (ed::GetSelectedNodes(&selectedNode, 1) == 1 && selectedNode.Get() >= kernelIdBase) {
-        const auto offset = selectedNode.Get() - kernelIdBase;
-        if (offset % 128 == 0 && offset / 128 < shown.kernel.size())
-            selectedKernelIndex = static_cast<int>(offset / 128);
+    if (ed::BeginDelete()) {
+        ed::LinkId linkId;
+        while (ed::QueryDeletedLink(&linkId)) if (ed::AcceptDeletedItem()) {
+            body.removeLink(static_cast<LinkId>(linkId.Get() - (std::uintptr_t{1} << 60U)));
+            changed = true;
+        }
+        ed::NodeId nodeId;
+        while (ed::QueryDeletedNode(&nodeId)) if (ed::AcceptDeletedItem()) {
+            const auto id = static_cast<NodeId>(nodeId.Get() / 128);
+            body.removeNode(id);
+            positionedSubgraph_.erase(id);
+            changed = true;
+        }
+        ed::EndDelete();
     }
+
+    static ImVec2 addNodeCanvasPosition{};
+    ed::Suspend();
+    if (node_widgets::renderPopup(nodePopup_, body)) changed = true;
+    if (ed::ShowBackgroundContextMenu()) {
+        addNodeCanvasPosition = ed::ScreenToCanvas(ImGui::GetMousePos());
+        ImGui::OpenPopup("Add subgraph node");
+    }
+    if (ImGui::BeginPopup("Add subgraph node")) {
+        static char search[96]{};
+        ImGui::InputTextWithHint("##search", "Search nodes", search, sizeof(search));
+        const std::string filter = search;
+        const auto addNode = [&](std::string type, std::string label,
+                                 nlohmann::json parameters = nlohmann::json::object()) {
+            if (!filter.empty() && label.find(filter) == std::string::npos) return;
+            if (ImGui::MenuItem(label.c_str())) {
+                const auto id = body.addNode(std::move(type),
+                    {addNodeCanvasPosition.x, addNodeCanvasPosition.y});
+                auto* node = body.findNode(id);
+                node->parameters = std::move(parameters);
+                positionedSubgraph_[id] = false;
+                changed = true;
+            }
+        };
+        for (const auto* type : {"float", "math", "threshold", "select", "coordinates", "laplacian"}) {
+            if (const auto* descriptor = registry_.descriptor(type))
+                addNode(type, descriptor->category + " / " + descriptor->displayName);
+        }
+        addNode("simulation_previous_state", "Simulation / Previous Simulation State");
+        addNode("simulation_initial_state", "Simulation / Initial Simulation State");
+        addNode("simulation_next_state", "Simulation / Next Simulation State");
+        for (const auto& item : definition->interface) {
+            if (item.kind == SubgraphInterfaceKind::Output) {
+                addNode("subgraph_output", "Subgraph / Output: " + item.label,
+                        {{"key", item.key}});
+            } else {
+                addNode("subgraph_input", "Subgraph / " +
+                    std::string(item.kind == SubgraphInterfaceKind::Slider ? "Control: " : "Input: ") +
+                    item.label, {{"key", item.key}});
+            }
+        }
+        ImGui::EndPopup();
+    }
+    ed::Resume();
     if (navigateToGraph) ed::NavigateToContent(0.0F);
     ed::End();
     ed::SetCurrentEditor(nullptr);
-    ImGui::EndChild();
-    ImGui::SameLine();
 
-    ImGui::BeginChild("KernelInspector", ImVec2(rightWidth, 0), true);
-    ImGui::SeparatorText("Node Inspector");
-    if (selectedKernelIndex < 0) {
-        ImGui::TextWrapped("Select a kernel node to inspect its stable key, operation, and inputs.");
-        ImGui::Spacing();
-        ImGui::TextDisabled("This graph is fused into one compute shader per simulation iteration.");
-        ImGui::TextWrapped("Arithmetic uses the same operations as the root Math node. Previous State, "
-                           "Laplacian, and interface nodes are simulation-only because they use this "
-                           "subgraph's private state and ports.");
-    } else {
-        const auto index = static_cast<std::size_t>(selectedKernelIndex);
-        const auto& current = shown.kernel[index];
-        ImGui::TextUnformatted(kernelNodeLabel(current, shown).c_str());
-        ImGui::TextDisabled("Key: %s", current.key.c_str());
-        ImGui::TextDisabled("Operation: %s", operationLabel(current.operation).c_str());
-        static const std::array operations{"add", "subtract", "multiply", "divide", "min", "max",
-            "abs", "sin", "cos", "pow", "clamp01", "clamp", "remap", "pack2", "swizzle", "length", "step", "select"};
-        ImGui::PushID(static_cast<int>(selectedKernelIndex));
-        if (!readOnly) {
-            auto& kernel = definition->kernel[index];
-            char label[128]{};
-            const auto displayedLabel = kernelNodeLabel(kernel, shown);
-            std::snprintf(label, sizeof(label), "%s", displayedLabel.c_str());
-            if (ImGui::InputText("Label", label, sizeof(label))) {
-                kernel.properties["label"] = label; changed = true;
-            }
-            if (kernel.operation != "uv" && kernel.operation != "previous_state" &&
-                kernel.operation != "interface" && kernel.operation != "connected" &&
-                kernel.operation != "laplacian" && kernel.operation != "output") {
-                if (ImGui::BeginCombo("Operation", operationLabel(kernel.operation).c_str())) {
-                    for (const auto* operation : operations) {
-                        if (ImGui::Selectable(operationLabel(operation).c_str(),
-                                              kernel.operation == operation)) {
-                            kernel.operation = operation; changed = true;
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-            }
-            for (std::size_t inputIndex = 0; inputIndex < kernel.inputs.size(); ++inputIndex) {
-                ImGui::PushID(static_cast<int>(inputIndex));
-                const auto inputLabel = kernelInputLabel(kernel.operation, inputIndex);
-                const auto selectedInput = kernelIndices.find(kernel.inputs[inputIndex]);
-                const std::string selectedInputLabel = selectedInput == kernelIndices.end()
-                    ? humanizeIdentifier(kernel.inputs[inputIndex])
-                    : kernelNodeLabel(shown.kernel[selectedInput->second], shown);
-                if (ImGui::BeginCombo(inputLabel.c_str(), selectedInputLabel.c_str())) {
-                    for (std::size_t candidate = 0; candidate < index; ++candidate) {
-                        const auto& candidateNode = definition->kernel[candidate];
-                        const auto& key = candidateNode.key;
-                        if (ImGui::Selectable(kernelNodeLabel(candidateNode, *definition).c_str(),
-                                              kernel.inputs[inputIndex] == key)) {
-                            kernel.inputs[inputIndex] = key; changed = true;
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-                ImGui::PopID();
-            }
-            if (kernel.operation == "constant" && kernel.properties.contains("value")) {
-                float value = kernel.properties.value("value", 0.0F);
-                if (ImGui::DragFloat("Value", &value, .001F)) { kernel.properties["value"] = value; changed = true; }
-            }
-        } else {
-            ImGui::Spacing();
-            for (std::size_t input = 0; input < current.inputs.size(); ++input) {
-                const auto source = kernelIndices.find(current.inputs[input]);
-                const std::string sourceLabel = source == kernelIndices.end()
-                    ? humanizeIdentifier(current.inputs[input])
-                    : kernelNodeLabel(shown.kernel[source->second], shown);
-                ImGui::BulletText("%s: %s", kernelInputLabel(current.operation, input).c_str(),
-                                  sourceLabel.c_str());
-            }
-        }
-        ImGui::PopID();
-    }
-    ImGui::EndChild();
     if (changed) {
         for (auto& node : graph_.nodes()) if (node.type == "subgraph" && node.subgraphId == editingSubgraphId_) {
             for (const auto& item : definition->interface) if (item.kind == SubgraphInterfaceKind::Slider) {
@@ -1081,8 +1048,9 @@ void Application::renderEditor() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Edit")) {
-            if (ImGui::MenuItem("Copy Nodes", "Ctrl+C")) copyRequested_ = true;
-            if (ImGui::MenuItem("Paste Nodes", "Ctrl+V")) pasteRequested_ = true;
+            const bool rootGraph = editingSubgraphId_.empty();
+            if (ImGui::MenuItem("Copy Nodes", "Ctrl+C", false, rootGraph)) copyRequested_ = true;
+            if (ImGui::MenuItem("Paste Nodes", "Ctrl+V", false, rootGraph)) pasteRequested_ = true;
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Window")) {
@@ -1094,7 +1062,9 @@ void Application::renderEditor() {
 
     ImGui::SetNextWindowPos(ImVec2(0, ImGui::GetFrameHeight()));
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y - ImGui::GetFrameHeight()));
-    ImGui::Begin("Workspace", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+    ImGui::Begin("Workspace", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
+                 ImGuiWindowFlags_NoScrollWithMouse);
     if (ImGui::Button(playing_ ? "Pause" : "Play")) playing_ = !playing_;
     ImGui::SameLine(); if (ImGui::Button("Reset")) { runtime_->reset(); elapsed_ = 0; }
     ImGui::SameLine();

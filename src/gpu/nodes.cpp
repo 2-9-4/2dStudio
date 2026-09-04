@@ -252,6 +252,178 @@ public:
     }
 };
 
+constexpr std::string_view kSelectShader = R"GLSL(#version 430
+layout(local_size_x=16,local_size_y=16)in;
+layout(rgba16f,binding=0)writeonly uniform image2D outImage;
+layout(binding=0)uniform sampler2D conditionImage;
+layout(binding=1)uniform sampler2D trueImage;
+layout(binding=2)uniform sampler2D falseImage;
+uniform int hasCondition,hasTrue,hasFalse;
+uniform float scalarCondition;
+uniform vec4 scalarTrue,scalarFalse;
+void main(){
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(outImage);
+    if(any(greaterThanEqual(p,s)))return;
+    vec2 uv=(vec2(p)+.5)/vec2(s);
+    float condition=hasCondition!=0?texture(conditionImage,uv).r:scalarCondition;
+    vec4 yes=hasTrue!=0?texture(trueImage,uv):scalarTrue;
+    vec4 no=hasFalse!=0?texture(falseImage,uv):scalarFalse;
+    imageStore(outImage,p,condition!=0.0?yes:no);
+})GLSL";
+
+class SelectNode final : public TextureNode {
+public:
+    static NodeDescriptor describe() {
+        return {"select", 1, "Select", "Logic",
+                {{"condition", "Condition", ValueType::AnyNumeric, SocketDirection::Input, true},
+                 {"ifTrue", "If True", ValueType::AnyNumeric, SocketDirection::Input, true},
+                 {"ifFalse", "If False", ValueType::AnyNumeric, SocketDirection::Input, true},
+                 {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
+                {{"condition", "Condition", 0.0F, -10.0F, 10.0F},
+                 {"ifTrue", "If True", 1.0F, -10.0F, 10.0F},
+                 {"ifFalse", "If False", 0.0F, -10.0F, 10.0F}}};
+    }
+    const NodeDescriptor& descriptor() const override {
+        static const auto value = describe();
+        return value;
+    }
+    void evaluate(EvaluationContext& context, std::span<const Value> inputs,
+                  std::span<Value> outputs) override {
+        const auto conditionImage = imageAt(inputs, 0);
+        const auto trueImage = imageAt(inputs, 1);
+        const auto falseImage = imageAt(inputs, 2);
+        const float condition = floatAt(inputs, 0, parameter(parameters_, "condition", 0.0F));
+        const float ifTrue = floatAt(inputs, 1, parameter(parameters_, "ifTrue", 1.0F));
+        const float ifFalse = floatAt(inputs, 2, parameter(parameters_, "ifFalse", 0.0F));
+        if (!conditionImage && !trueImage && !falseImage) {
+            outputs[0] = condition != 0.0F ? ifTrue : ifFalse;
+            return;
+        }
+        ensure(context);
+        auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
+        if (!program_) program_ = gpu.compileCompute(kSelectShader, "Select / compute");
+        glUseProgram(program_);
+        const std::array images{conditionImage, trueImage, falseImage};
+        for (int index = 0; index < 3; ++index)
+            if (images[static_cast<std::size_t>(index)])
+                bindTexture(index, images[static_cast<std::size_t>(index)].texture);
+        glBindImageTexture(0, texture_, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+        uniform(program_, "hasCondition", conditionImage ? 1 : 0);
+        uniform(program_, "hasTrue", trueImage ? 1 : 0);
+        uniform(program_, "hasFalse", falseImage ? 1 : 0);
+        uniform(program_, "scalarCondition", condition);
+        glUniform4f(glGetUniformLocation(program_, "scalarTrue"), ifTrue, ifTrue, ifTrue, ifTrue);
+        glUniform4f(glGetUniformLocation(program_, "scalarFalse"), ifFalse, ifFalse, ifFalse, ifFalse);
+        gpu.dispatch(program_, context.width, context.height);
+        outputs[0] = ImageHandle{texture_, context.width, context.height};
+    }
+};
+
+constexpr std::string_view kCoordinatesShader = R"GLSL(#version 430
+layout(local_size_x=16,local_size_y=16)in;
+layout(rgba16f,binding=0)writeonly uniform image2D xImage;
+layout(rgba16f,binding=1)writeonly uniform image2D yImage;
+void main(){
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(xImage);
+    if(any(greaterThanEqual(p,s)))return;
+    vec2 uv=(vec2(p)+.5)/vec2(s);
+    imageStore(xImage,p,vec4(uv.x,uv.x,uv.x,1));
+    imageStore(yImage,p,vec4(uv.y,uv.y,uv.y,1));
+})GLSL";
+
+class CoordinatesNode final : public ParameterNode {
+public:
+    ~CoordinatesNode() override {
+        if (textures_[0]) glDeleteTextures(2, textures_.data());
+        if (program_) glDeleteProgram(program_);
+    }
+    static NodeDescriptor describe() {
+        return {"coordinates", 1, "Canvas Coordinates", "Input",
+                {{"x", "X", ValueType::Image2D, SocketDirection::Output},
+                 {"y", "Y", ValueType::Image2D, SocketDirection::Output}}, {}};
+    }
+    const NodeDescriptor& descriptor() const override {
+        static const auto value = describe();
+        return value;
+    }
+    void evaluate(EvaluationContext& context, std::span<const Value>,
+                  std::span<Value> outputs) override {
+        auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
+        for (std::size_t index = 0; index < textures_.size(); ++index) {
+            gpu.ensureTexture(textures_[index], widths_[index], heights_[index],
+                              context.width, context.height, GL_RGBA16F);
+        }
+        if (!program_) program_ = gpu.compileCompute(kCoordinatesShader, "Canvas Coordinates / compute");
+        glUseProgram(program_);
+        glBindImageTexture(0, textures_[0], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+        glBindImageTexture(1, textures_[1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+        gpu.dispatch(program_, context.width, context.height);
+        outputs[0] = ImageHandle{textures_[0], context.width, context.height};
+        outputs[1] = ImageHandle{textures_[1], context.width, context.height};
+    }
+
+private:
+    std::array<GLuint, 2> textures_{};
+    std::array<int, 2> widths_{};
+    std::array<int, 2> heights_{};
+    GLuint program_ = 0;
+};
+
+constexpr std::string_view kLaplacianShader = R"GLSL(#version 430
+layout(local_size_x=16,local_size_y=16)in;
+layout(rgba16f,binding=0)writeonly uniform image2D outImage;
+layout(binding=0)uniform sampler2D source;
+uniform float scale;
+vec4 sampleValue(vec2 uv){return texture(source,fract(uv));}
+vec4 laplacianAt(vec2 uv,float radius){
+    vec2 pixel=1.0/vec2(imageSize(outImage));
+    vec2 o=pixel*radius;
+    vec4 result=-sampleValue(uv);
+    result+=.2*(sampleValue(uv+vec2(-o.x,0))+sampleValue(uv+vec2(o.x,0))+
+                 sampleValue(uv+vec2(0,-o.y))+sampleValue(uv+vec2(0,o.y)));
+    result+=.05*(sampleValue(uv+vec2(-o.x,-o.y))+sampleValue(uv+vec2(o.x,-o.y))+
+                  sampleValue(uv+vec2(-o.x,o.y))+sampleValue(uv+vec2(o.x,o.y)));
+    return result;
+}
+void main(){
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(outImage);
+    if(any(greaterThanEqual(p,s)))return;
+    vec2 uv=(vec2(p)+.5)/vec2(s);
+    vec4 result;
+    if(abs(scale-1.0)<.001)result=laplacianAt(uv,1.0);
+    else{result=vec4(0);for(int i=0;i<3;i++)result+=laplacianAt(uv,mix(1.0,scale,float(i)/2.0))/3.0;}
+    imageStore(outImage,p,result);
+})GLSL";
+
+class LaplacianNode final : public TextureNode {
+public:
+    static NodeDescriptor describe() {
+        return {"laplacian", 1, "Laplacian", "Filter",
+                {{"value", "Value", ValueType::Image2D, SocketDirection::Input},
+                 {"scale", "Scale", ValueType::Float, SocketDirection::Input, true},
+                 {"result", "Result", ValueType::Image2D, SocketDirection::Output}},
+                {{"scale", "Scale", 1.0F, .25F, 8.0F}}};
+    }
+    const NodeDescriptor& descriptor() const override {
+        static const auto value = describe();
+        return value;
+    }
+    void evaluate(EvaluationContext& context, std::span<const Value> inputs,
+                  std::span<Value> outputs) override {
+        const auto source = imageAt(inputs, 0);
+        if (!source) { outputs[0] = {}; return; }
+        ensure(context);
+        auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
+        if (!program_) program_ = gpu.compileCompute(kLaplacianShader, "Laplacian / compute");
+        glUseProgram(program_);
+        bindTexture(0, source.texture);
+        glBindImageTexture(0, texture_, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+        uniform(program_, "scale", floatAt(inputs, 1, parameter(parameters_, "scale", 1.0F)));
+        gpu.dispatch(program_, context.width, context.height);
+        outputs[0] = ImageHandle{texture_, context.width, context.height};
+    }
+};
+
 constexpr std::string_view kInvertShader = R"GLSL(#version 430
 layout(local_size_x=16,local_size_y=16)in;layout(rgba16f,binding=0)writeonly uniform image2D outImage;
 layout(binding=0)uniform sampler2D source;
@@ -376,9 +548,9 @@ template <typename T> void addNode(NodeRegistry& registry) {
 
 void registerBuiltInNodes(NodeRegistry& registry) {
     registerInputNodes(registry);
-    addNode<PerlinNode>(registry);
-    addNode<MathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<InvertNode>(registry); addNode<ColorRampNode>(registry);
-    registerConvolutionNode(registry);
+    addNode<PerlinNode>(registry); addNode<CoordinatesNode>(registry);
+    addNode<MathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<SelectNode>(registry); addNode<InvertNode>(registry); addNode<ColorRampNode>(registry);
+    registerConvolutionNode(registry); addNode<LaplacianNode>(registry);
     addNode<ReactionNode>(registry); addNode<OutputNode>(registry);
 }
 

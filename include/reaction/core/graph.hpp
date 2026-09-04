@@ -34,33 +34,12 @@ struct SubgraphInterfaceItem {
           maximum(maximumValue), control(controlValue), role(std::move(roleValue)) {}
 };
 
-// Kernel nodes are deliberately data rather than C++ classes: editable simulation
-// subgraphs can be serialized without introducing a plug-in ABI. Inputs contains
-// stable node keys (or interface keys) and properties contains operation settings.
-struct SubgraphKernelNode {
-    std::string key;
-    std::string operation;
-    std::vector<std::string> inputs;
-    nlohmann::json properties = nlohmann::json::object();
-    Vec2 position;
-};
-
-struct SubgraphDefinition {
-    std::string id;
-    int version = 1;
-    std::string name;
-    std::string category = "Subgraphs";
-    SubgraphExecution execution = SubgraphExecution::Pipeline;
-    bool immutable = false;
-    std::vector<SubgraphInterfaceItem> interface;
-    std::vector<SubgraphKernelNode> kernel;
-};
-
 struct NodeRecord {
     NodeId id = 0;
     std::string type;
     std::string subgraphId;
     int typeVersion = 1;
+    std::string label;
     Vec2 position;
     nlohmann::json parameters = nlohmann::json::object();
     bool missing = false;
@@ -73,6 +52,43 @@ struct LinkRecord {
     std::string fromSocket;
     NodeId toNode = 0;
     std::string toSocket;
+};
+
+// The root graph and every editable subgraph use the same storage and mutation
+// semantics. IDs are local to a body and remain stable when nodes are reordered.
+class GraphBody {
+public:
+    NodeId addNode(std::string type, Vec2 position = {});
+    bool removeNode(NodeId id);
+    LinkId addLink(NodeId fromNode, std::string fromSocket,
+                   NodeId toNode, std::string toSocket);
+    bool removeLink(LinkId id);
+    void clear();
+
+    [[nodiscard]] const NodeRecord* findNode(NodeId id) const;
+    [[nodiscard]] NodeRecord* findNode(NodeId id);
+    [[nodiscard]] const std::vector<NodeRecord>& nodes() const { return nodes_; }
+    [[nodiscard]] std::vector<NodeRecord>& nodes() { return nodes_; }
+    [[nodiscard]] const std::vector<LinkRecord>& links() const { return links_; }
+    [[nodiscard]] std::vector<LinkRecord>& links() { return links_; }
+
+    NodeId nextNodeId = 1;
+    LinkId nextLinkId = 1;
+
+protected:
+    std::vector<NodeRecord> nodes_;
+    std::vector<LinkRecord> links_;
+};
+
+struct SubgraphDefinition {
+    std::string id;
+    int version = 1;
+    std::string name;
+    std::string category = "Subgraphs";
+    SubgraphExecution execution = SubgraphExecution::Pipeline;
+    bool immutable = false;
+    std::vector<SubgraphInterfaceItem> interface;
+    GraphBody body;
 };
 
 struct ProjectSettings {
@@ -88,35 +104,20 @@ struct CompileResult {
     std::unordered_map<NodeId, ValueType> inferredOutputs;
 };
 
-class Graph {
+class Graph : public GraphBody {
 public:
-    NodeId addNode(std::string type, Vec2 position = {});
     bool removeNode(NodeId id);
-    LinkId addLink(NodeId fromNode, std::string fromSocket,
-                   NodeId toNode, std::string toSocket);
-    bool removeLink(LinkId id);
     void clear();
 
     [[nodiscard]] CompileResult compile(const NodeRegistry& registry) const;
-    [[nodiscard]] const NodeRecord* findNode(NodeId id) const;
-    [[nodiscard]] NodeRecord* findNode(NodeId id);
     [[nodiscard]] const SubgraphDefinition* findSubgraph(std::string_view id) const;
     [[nodiscard]] SubgraphDefinition* findSubgraph(std::string_view id);
-    [[nodiscard]] const std::vector<NodeRecord>& nodes() const { return nodes_; }
-    [[nodiscard]] std::vector<NodeRecord>& nodes() { return nodes_; }
-    [[nodiscard]] const std::vector<LinkRecord>& links() const { return links_; }
-    [[nodiscard]] std::vector<LinkRecord>& links() { return links_; }
     [[nodiscard]] const std::vector<SubgraphDefinition>& subgraphs() const { return subgraphs_; }
     [[nodiscard]] std::vector<SubgraphDefinition>& subgraphs() { return subgraphs_; }
 
     ProjectSettings settings;
     NodeId activeOutput = 0;
-    NodeId nextNodeId = 1;
-    LinkId nextLinkId = 1;
-
 private:
-    std::vector<NodeRecord> nodes_;
-    std::vector<LinkRecord> links_;
     std::vector<SubgraphDefinition> subgraphs_;
 };
 
@@ -127,6 +128,11 @@ private:
                                                       const NodeRecord& node,
                                                       const NodeRegistry& registry,
                                                       NodeDescriptor& storage);
-[[nodiscard]] std::vector<std::string> validateSubgraph(const SubgraphDefinition& definition);
+[[nodiscard]] const NodeDescriptor* resolveSubgraphBodyDescriptor(
+    const SubgraphDefinition& definition, const NodeRecord& node,
+    const NodeRegistry& registry, NodeDescriptor& storage);
+[[nodiscard]] bool isSubgraphBodyNodeType(std::string_view type);
+[[nodiscard]] std::vector<std::string> validateSubgraph(
+    const SubgraphDefinition& definition, const NodeRegistry& registry);
 
 } // namespace reaction

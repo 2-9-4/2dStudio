@@ -35,7 +35,7 @@ private:
 
 void registerBuiltInNodes(NodeRegistry& registry);
 [[nodiscard]] std::unique_ptr<NodeInstance> createSubgraphInstance(
-    const SubgraphDefinition& definition);
+    const SubgraphDefinition& definition, const NodeRegistry& registry);
 
 class GraphRuntime {
 public:

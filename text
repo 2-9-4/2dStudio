@@ -1,18 +1,7 @@
 {
   "activeOutput": 4,
-  "formatVersion": 2,
+  "formatVersion": 3,
   "links": [
-    {
-      "from": {
-        "node": 2,
-        "socket": "image"
-      },
-      "id": 1,
-      "to": {
-        "node": 3,
-        "socket": "value"
-      }
-    },
     {
       "from": {
         "node": 5,
@@ -210,6 +199,17 @@
         "node": 4,
         "socket": "image"
       }
+    },
+    {
+      "from": {
+        "node": 2,
+        "socket": "image"
+      },
+      "id": 84,
+      "to": {
+        "node": 3,
+        "socket": "value"
+      }
     }
   ],
   "nodes": [
@@ -252,8 +252,8 @@
       "id": 3,
       "parameters": {},
       "position": [
-        1023.0,
-        59.0
+        1167.0,
+        75.0
       ],
       "type": "color_ramp",
       "typeVersion": 1
@@ -923,651 +923,3035 @@
           "type": "image2d"
         }
       ],
-      "kernel": [
+      "links": [
         {
-          "inputs": [],
-          "key": "uv",
-          "operation": "uv",
-          "position": [
-            0.0,
-            -4.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [],
-          "key": "center",
-          "operation": "constant2",
-          "position": [
-            0.0,
-            120.0
-          ],
-          "properties": {
-            "x": 0.5,
-            "y": 0.5
+          "from": {
+            "node": 2,
+            "socket": "x"
+          },
+          "id": 1,
+          "to": {
+            "node": 5,
+            "socket": "a"
           }
         },
         {
-          "inputs": [
-            "uv",
-            "center"
-          ],
-          "key": "radius",
-          "operation": "length",
-          "position": [
-            180.0,
-            60.0
-          ],
-          "properties": {
-            "subtract": true
+          "from": {
+            "node": 3,
+            "socket": "value"
+          },
+          "id": 2,
+          "to": {
+            "node": 5,
+            "socket": "b"
           }
         },
         {
-          "inputs": [],
-          "key": "seedRadius",
-          "operation": "constant",
-          "position": [
-            180.0,
-            160.0
-          ],
-          "properties": {
-            "value": 0.075
+          "from": {
+            "node": 5,
+            "socket": "result"
+          },
+          "id": 3,
+          "to": {
+            "node": 6,
+            "socket": "a"
           }
         },
         {
-          "inputs": [
-            "radius",
-            "seedRadius"
-          ],
-          "key": "defaultSeed",
-          "operation": "step",
-          "position": [
-            360.0,
-            100.0
-          ],
-          "properties": {
-            "reverse": true
+          "from": {
+            "node": 5,
+            "socket": "result"
+          },
+          "id": 4,
+          "to": {
+            "node": 6,
+            "socket": "b"
           }
         },
         {
-          "inputs": [],
-          "key": "seedInput",
-          "operation": "interface",
-          "position": [
-            360.0,
-            200.0
-          ],
-          "properties": {
-            "default": 0.0,
-            "key": "seed"
+          "from": {
+            "node": 2,
+            "socket": "y"
+          },
+          "id": 5,
+          "to": {
+            "node": 7,
+            "socket": "a"
           }
         },
         {
-          "inputs": [],
-          "key": "hasSeed",
-          "operation": "connected",
-          "position": [
-            360.0,
-            280.0
-          ],
-          "properties": {
-            "key": "seed"
+          "from": {
+            "node": 4,
+            "socket": "value"
+          },
+          "id": 6,
+          "to": {
+            "node": 7,
+            "socket": "b"
           }
         },
         {
-          "inputs": [
-            "hasSeed",
-            "seedInput",
-            "defaultSeed"
-          ],
-          "key": "initialSeed",
-          "operation": "select",
-          "position": [
-            540.0,
-            160.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "initialSeed"
-          ],
-          "key": "halfSeed",
-          "operation": "multiply",
-          "position": [
-            720.0,
-            100.0
-          ],
-          "properties": {
-            "value": 0.5
+          "from": {
+            "node": 7,
+            "socket": "result"
+          },
+          "id": 7,
+          "to": {
+            "node": 8,
+            "socket": "a"
           }
         },
         {
-          "inputs": [
-            "halfSeed"
-          ],
-          "key": "initialA",
-          "operation": "subtract",
-          "position": [
-            900.0,
-            80.0
-          ],
-          "properties": {
-            "from": 1.0
+          "from": {
+            "node": 7,
+            "socket": "result"
+          },
+          "id": 8,
+          "to": {
+            "node": 8,
+            "socket": "b"
           }
         },
         {
-          "inputs": [
-            "initialA",
-            "initialSeed"
-          ],
-          "key": "initial",
-          "operation": "pack2",
-          "position": [
-            1080.0,
-            140.0
-          ],
-          "properties": {
-            "label": "Initial State",
-            "role": "initial"
+          "from": {
+            "node": 6,
+            "socket": "result"
+          },
+          "id": 9,
+          "to": {
+            "node": 9,
+            "socket": "a"
           }
         },
         {
-          "inputs": [],
-          "key": "state",
-          "operation": "previous_state",
-          "position": [
-            0.0,
-            440.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "state"
-          ],
-          "key": "a0",
-          "operation": "swizzle",
-          "position": [
-            180.0,
-            380.0
-          ],
-          "properties": {
-            "channel": 0,
-            "label": "Current A"
+          "from": {
+            "node": 8,
+            "socket": "result"
+          },
+          "id": 10,
+          "to": {
+            "node": 9,
+            "socket": "b"
           }
         },
         {
-          "inputs": [
-            "state"
-          ],
-          "key": "b0",
-          "operation": "swizzle",
-          "position": [
-            180.0,
-            500.0
-          ],
-          "properties": {
-            "channel": 1,
-            "label": "Current B"
+          "from": {
+            "node": 9,
+            "socket": "result"
+          },
+          "id": 11,
+          "to": {
+            "node": 10,
+            "socket": "a"
           }
         },
         {
-          "inputs": [
-            "state"
-          ],
-          "key": "lap",
-          "operation": "laplacian",
-          "position": [
-            180.0,
-            620.0
-          ],
-          "properties": {
-            "label": "State Laplacian",
-            "scale": "structureScale"
+          "from": {
+            "node": 11,
+            "socket": "value"
+          },
+          "id": 12,
+          "to": {
+            "node": 12,
+            "socket": "a"
           }
         },
         {
-          "inputs": [
-            "lap"
-          ],
-          "key": "lapA",
-          "operation": "swizzle",
-          "position": [
-            360.0,
-            600.0
-          ],
-          "properties": {
-            "channel": 0
+          "from": {
+            "node": 10,
+            "socket": "result"
+          },
+          "id": 13,
+          "to": {
+            "node": 12,
+            "socket": "b"
           }
         },
         {
-          "inputs": [
-            "lap"
-          ],
-          "key": "lapB",
-          "operation": "swizzle",
-          "position": [
-            360.0,
-            700.0
-          ],
-          "properties": {
-            "channel": 1
+          "from": {
+            "node": 12,
+            "socket": "result"
+          },
+          "id": 14,
+          "to": {
+            "node": 13,
+            "socket": "value"
           }
         },
         {
-          "inputs": [
-            "b0",
-            "b0"
-          ],
-          "key": "bb",
-          "operation": "multiply",
-          "position": [
-            360.0,
-            420.0
-          ],
-          "properties": {
-            "label": "B Squared"
+          "from": {
+            "node": 1,
+            "socket": "connected"
+          },
+          "id": 15,
+          "to": {
+            "node": 14,
+            "socket": "condition"
           }
         },
         {
-          "inputs": [
-            "a0",
-            "bb"
-          ],
-          "key": "reaction",
-          "operation": "multiply",
-          "position": [
-            540.0,
-            420.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [],
-          "key": "feedMask",
-          "operation": "interface",
-          "position": [
-            360.0,
-            800.0
-          ],
-          "properties": {
-            "default": 1.0,
-            "key": "feedMultiplier"
+          "from": {
+            "node": 1,
+            "socket": "value"
+          },
+          "id": 16,
+          "to": {
+            "node": 14,
+            "socket": "ifTrue"
           }
         },
         {
-          "inputs": [],
-          "key": "killMask",
-          "operation": "interface",
-          "position": [
-            360.0,
-            880.0
-          ],
-          "properties": {
-            "default": 1.0,
-            "key": "killMultiplier"
+          "from": {
+            "node": 13,
+            "socket": "result"
+          },
+          "id": 17,
+          "to": {
+            "node": 14,
+            "socket": "ifFalse"
           }
         },
         {
-          "inputs": [],
-          "key": "feedValue",
-          "operation": "interface",
-          "position": [
-            540.0,
-            800.0
-          ],
-          "properties": {
-            "key": "feed"
+          "from": {
+            "node": 14,
+            "socket": "result"
+          },
+          "id": 18,
+          "to": {
+            "node": 15,
+            "socket": "a"
           }
         },
         {
-          "inputs": [],
-          "key": "killValue",
-          "operation": "interface",
-          "position": [
-            540.0,
-            880.0
-          ],
-          "properties": {
-            "key": "kill"
+          "from": {
+            "node": 15,
+            "socket": "result"
+          },
+          "id": 19,
+          "to": {
+            "node": 16,
+            "socket": "b"
           }
         },
         {
-          "inputs": [
-            "feedValue",
-            "feedMask"
-          ],
-          "key": "f",
-          "operation": "multiply",
-          "position": [
-            720.0,
-            800.0
-          ],
-          "properties": {
-            "label": "Effective Feed"
+          "from": {
+            "node": 16,
+            "socket": "result"
+          },
+          "id": 20,
+          "to": {
+            "node": 17,
+            "socket": "a"
           }
         },
         {
-          "inputs": [
-            "killValue",
-            "killMask"
-          ],
-          "key": "k",
-          "operation": "multiply",
-          "position": [
-            720.0,
-            880.0
-          ],
-          "properties": {
-            "label": "Effective Kill"
+          "from": {
+            "node": 14,
+            "socket": "result"
+          },
+          "id": 21,
+          "to": {
+            "node": 17,
+            "socket": "b"
           }
         },
         {
-          "inputs": [],
-          "key": "diffAValue",
-          "operation": "interface",
-          "position": [
-            540.0,
-            600.0
-          ],
-          "properties": {
-            "key": "diffA"
+          "from": {
+            "node": 18,
+            "socket": "a"
+          },
+          "id": 22,
+          "to": {
+            "node": 21,
+            "socket": "value"
           }
         },
         {
-          "inputs": [],
-          "key": "diffBValue",
-          "operation": "interface",
-          "position": [
-            540.0,
-            700.0
-          ],
-          "properties": {
-            "key": "diffB"
+          "from": {
+            "node": 20,
+            "socket": "value"
+          },
+          "id": 23,
+          "to": {
+            "node": 21,
+            "socket": "scale"
           }
         },
         {
-          "inputs": [
-            "diffAValue",
-            "lapA"
-          ],
-          "key": "diffusionA",
-          "operation": "multiply",
-          "position": [
-            720.0,
-            580.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "diffBValue",
-            "lapB"
-          ],
-          "key": "diffusionB",
-          "operation": "multiply",
-          "position": [
-            720.0,
-            680.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "a0"
-          ],
-          "key": "oneMinusA",
-          "operation": "subtract",
-          "position": [
-            720.0,
-            360.0
-          ],
-          "properties": {
-            "from": 1.0
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 24,
+          "to": {
+            "node": 22,
+            "socket": "value"
           }
         },
         {
-          "inputs": [
-            "f",
-            "oneMinusA"
-          ],
-          "key": "feedTerm",
-          "operation": "multiply",
-          "position": [
-            900.0,
-            360.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "diffusionA",
-            "reaction"
-          ],
-          "key": "aDelta0",
-          "operation": "subtract",
-          "position": [
-            900.0,
-            540.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "aDelta0",
-            "feedTerm"
-          ],
-          "key": "aDelta",
-          "operation": "add",
-          "position": [
-            1080.0,
-            500.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "k",
-            "f"
-          ],
-          "key": "kf",
-          "operation": "add",
-          "position": [
-            900.0,
-            820.0
-          ],
-          "properties": {
-            "label": "Feed + Kill"
+          "from": {
+            "node": 20,
+            "socket": "value"
+          },
+          "id": 25,
+          "to": {
+            "node": 22,
+            "socket": "scale"
           }
         },
         {
-          "inputs": [
-            "kf",
-            "b0"
-          ],
-          "key": "decay",
-          "operation": "multiply",
-          "position": [
-            1080.0,
-            780.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "diffusionB",
-            "reaction"
-          ],
-          "key": "bDelta0",
-          "operation": "add",
-          "position": [
-            900.0,
-            680.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "bDelta0",
-            "decay"
-          ],
-          "key": "bDelta",
-          "operation": "subtract",
-          "position": [
-            1260.0,
-            720.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [],
-          "key": "dtValue",
-          "operation": "interface",
-          "position": [
-            1080.0,
-            900.0
-          ],
-          "properties": {
-            "key": "dt"
+          "from": {
+            "node": 19,
+            "socket": "value"
+          },
+          "id": 26,
+          "to": {
+            "node": 23,
+            "socket": "a"
           }
         },
         {
-          "inputs": [
-            "aDelta",
-            "dtValue"
-          ],
-          "key": "aStep",
-          "operation": "multiply",
-          "position": [
-            1260.0,
-            480.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "bDelta",
-            "dtValue"
-          ],
-          "key": "bStep",
-          "operation": "multiply",
-          "position": [
-            1440.0,
-            700.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "a0",
-            "aStep"
-          ],
-          "key": "aNext0",
-          "operation": "add",
-          "position": [
-            1440.0,
-            460.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "b0",
-            "bStep"
-          ],
-          "key": "bNext0",
-          "operation": "add",
-          "position": [
-            1620.0,
-            680.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "aNext0"
-          ],
-          "key": "aNext",
-          "operation": "clamp01",
-          "position": [
-            1620.0,
-            460.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "bNext0"
-          ],
-          "key": "bNext",
-          "operation": "clamp01",
-          "position": [
-            1800.0,
-            680.0
-          ],
-          "properties": {}
-        },
-        {
-          "inputs": [
-            "aNext",
-            "bNext"
-          ],
-          "key": "next",
-          "operation": "pack2",
-          "position": [
-            1980.0,
-            560.0
-          ],
-          "properties": {
-            "label": "Next State",
-            "role": "next"
+          "from": {
+            "node": 21,
+            "socket": "result"
+          },
+          "id": 27,
+          "to": {
+            "node": 23,
+            "socket": "b"
           }
         },
         {
-          "inputs": [
-            "bNext"
-          ],
-          "key": "outputImage",
-          "operation": "output",
-          "position": [
-            2160.0,
-            500.0
-          ],
-          "properties": {
-            "key": "image"
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 28,
+          "to": {
+            "node": 24,
+            "socket": "a"
           }
         },
         {
-          "inputs": [
-            "aNext"
-          ],
-          "key": "outputA",
-          "operation": "output",
-          "position": [
-            2160.0,
-            580.0
-          ],
-          "properties": {
-            "key": "a"
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 29,
+          "to": {
+            "node": 24,
+            "socket": "b"
           }
         },
         {
-          "inputs": [
-            "bNext"
-          ],
-          "key": "outputB",
-          "operation": "output",
-          "position": [
-            2160.0,
-            660.0
-          ],
-          "properties": {
-            "key": "b"
+          "from": {
+            "node": 18,
+            "socket": "a"
+          },
+          "id": 30,
+          "to": {
+            "node": 25,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 24,
+            "socket": "result"
+          },
+          "id": 31,
+          "to": {
+            "node": 25,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 23,
+            "socket": "result"
+          },
+          "id": 32,
+          "to": {
+            "node": 26,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 25,
+            "socket": "result"
+          },
+          "id": 33,
+          "to": {
+            "node": 26,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 27,
+            "socket": "value"
+          },
+          "id": 34,
+          "to": {
+            "node": 29,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 28,
+            "socket": "value"
+          },
+          "id": 35,
+          "to": {
+            "node": 29,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "a"
+          },
+          "id": 36,
+          "to": {
+            "node": 30,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 29,
+            "socket": "result"
+          },
+          "id": 37,
+          "to": {
+            "node": 31,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 30,
+            "socket": "result"
+          },
+          "id": 38,
+          "to": {
+            "node": 31,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 26,
+            "socket": "result"
+          },
+          "id": 39,
+          "to": {
+            "node": 32,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 31,
+            "socket": "result"
+          },
+          "id": 40,
+          "to": {
+            "node": 32,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 32,
+            "socket": "result"
+          },
+          "id": 41,
+          "to": {
+            "node": 34,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 33,
+            "socket": "value"
+          },
+          "id": 42,
+          "to": {
+            "node": 34,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "a"
+          },
+          "id": 43,
+          "to": {
+            "node": 35,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 34,
+            "socket": "result"
+          },
+          "id": 44,
+          "to": {
+            "node": 35,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 35,
+            "socket": "result"
+          },
+          "id": 45,
+          "to": {
+            "node": 36,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 37,
+            "socket": "value"
+          },
+          "id": 46,
+          "to": {
+            "node": 38,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 22,
+            "socket": "result"
+          },
+          "id": 47,
+          "to": {
+            "node": 38,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 38,
+            "socket": "result"
+          },
+          "id": 48,
+          "to": {
+            "node": 39,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 25,
+            "socket": "result"
+          },
+          "id": 49,
+          "to": {
+            "node": 39,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 40,
+            "socket": "value"
+          },
+          "id": 50,
+          "to": {
+            "node": 42,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 41,
+            "socket": "value"
+          },
+          "id": 51,
+          "to": {
+            "node": 42,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 42,
+            "socket": "result"
+          },
+          "id": 52,
+          "to": {
+            "node": 43,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 29,
+            "socket": "result"
+          },
+          "id": 53,
+          "to": {
+            "node": 43,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 43,
+            "socket": "result"
+          },
+          "id": 54,
+          "to": {
+            "node": 44,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 55,
+          "to": {
+            "node": 44,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 39,
+            "socket": "result"
+          },
+          "id": 56,
+          "to": {
+            "node": 45,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 44,
+            "socket": "result"
+          },
+          "id": 57,
+          "to": {
+            "node": 45,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 45,
+            "socket": "result"
+          },
+          "id": 58,
+          "to": {
+            "node": 46,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 33,
+            "socket": "value"
+          },
+          "id": 59,
+          "to": {
+            "node": 46,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 60,
+          "to": {
+            "node": 47,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 46,
+            "socket": "result"
+          },
+          "id": 61,
+          "to": {
+            "node": 47,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 47,
+            "socket": "result"
+          },
+          "id": 62,
+          "to": {
+            "node": 48,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 36,
+            "socket": "result"
+          },
+          "id": 63,
+          "to": {
+            "node": 49,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 48,
+            "socket": "result"
+          },
+          "id": 64,
+          "to": {
+            "node": 49,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 49,
+            "socket": "b"
+          },
+          "id": 65,
+          "to": {
+            "node": 50,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 49,
+            "socket": "a"
+          },
+          "id": 66,
+          "to": {
+            "node": 51,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 49,
+            "socket": "b"
+          },
+          "id": 67,
+          "to": {
+            "node": 52,
+            "socket": "value"
           }
         }
       ],
       "name": "Reaction Diffusion Copy 1",
+      "nodes": [
+        {
+          "id": 1,
+          "label": "Has Seed",
+          "parameters": {
+            "default": 0.0,
+            "key": "seed"
+          },
+          "position": [
+            360.0,
+            280.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 2,
+          "label": "Uv",
+          "parameters": {},
+          "position": [
+            0.0,
+            -4.0
+          ],
+          "type": "coordinates",
+          "typeVersion": 1
+        },
+        {
+          "id": 3,
+          "label": "Center X",
+          "parameters": {
+            "value": 0.5
+          },
+          "position": [
+            0.0,
+            120.0
+          ],
+          "type": "float",
+          "typeVersion": 1
+        },
+        {
+          "id": 4,
+          "label": "Center Y",
+          "parameters": {
+            "value": 0.5
+          },
+          "position": [
+            0.0,
+            210.0
+          ],
+          "type": "float",
+          "typeVersion": 1
+        },
+        {
+          "id": 5,
+          "label": "Radius X",
+          "parameters": {
+            "operation": 1.0
+          },
+          "position": [
+            180.0,
+            60.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 6,
+          "label": "Radius X Squared",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            350.0,
+            60.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 7,
+          "label": "Radius Y",
+          "parameters": {
+            "operation": 1.0
+          },
+          "position": [
+            180.0,
+            130.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 8,
+          "label": "Radius Y Squared",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            350.0,
+            130.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 9,
+          "label": "Radius Squared",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            520.0,
+            60.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 10,
+          "label": "Radius",
+          "parameters": {
+            "b": 0.5,
+            "operation": 4.0
+          },
+          "position": [
+            690.0,
+            60.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 11,
+          "label": "Seed Radius",
+          "parameters": {
+            "value": 0.07500000298023224
+          },
+          "position": [
+            180.0,
+            160.0
+          ],
+          "type": "float",
+          "typeVersion": 1
+        },
+        {
+          "id": 12,
+          "label": "Default Seed Comparison",
+          "parameters": {
+            "operation": 1.0
+          },
+          "position": [
+            360.0,
+            100.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 13,
+          "label": "Default Seed",
+          "parameters": {
+            "threshold": 0.0
+          },
+          "position": [
+            530.0,
+            100.0
+          ],
+          "type": "threshold",
+          "typeVersion": 1
+        },
+        {
+          "id": 14,
+          "label": "Initial Seed",
+          "parameters": {},
+          "position": [
+            540.0,
+            160.0
+          ],
+          "type": "select",
+          "typeVersion": 1
+        },
+        {
+          "id": 15,
+          "label": "Half Seed",
+          "parameters": {
+            "b": 0.5,
+            "operation": 2.0,
+            "value": 0.5
+          },
+          "position": [
+            720.0,
+            100.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 16,
+          "label": "Initial A",
+          "parameters": {
+            "a": 1.0,
+            "from": 1.0,
+            "operation": 1.0
+          },
+          "position": [
+            900.0,
+            80.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 17,
+          "label": "Initial State",
+          "parameters": {},
+          "position": [
+            1080.0,
+            140.0
+          ],
+          "type": "simulation_initial_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 18,
+          "label": "State",
+          "parameters": {},
+          "position": [
+            0.0,
+            440.0
+          ],
+          "type": "simulation_previous_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 19,
+          "label": "Diff A Value",
+          "parameters": {
+            "key": "diffA"
+          },
+          "position": [
+            540.0,
+            600.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 20,
+          "label": "Structure Scale",
+          "parameters": {
+            "key": "structureScale"
+          },
+          "position": [
+            40.0,
+            740.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 21,
+          "label": "State Laplacian A",
+          "parameters": {},
+          "position": [
+            180.0,
+            620.0
+          ],
+          "type": "laplacian",
+          "typeVersion": 1
+        },
+        {
+          "id": 22,
+          "label": "State Laplacian B",
+          "parameters": {},
+          "position": [
+            180.0,
+            700.0
+          ],
+          "type": "laplacian",
+          "typeVersion": 1
+        },
+        {
+          "id": 23,
+          "label": "Diffusion A",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            720.0,
+            580.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 24,
+          "label": "B Squared",
+          "parameters": {
+            "label": "B Squared",
+            "operation": 2.0
+          },
+          "position": [
+            360.0,
+            420.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 25,
+          "label": "Reaction",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            540.0,
+            420.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 26,
+          "label": "A Delta0",
+          "parameters": {
+            "operation": 1.0
+          },
+          "position": [
+            900.0,
+            540.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 27,
+          "label": "Feed Value",
+          "parameters": {
+            "key": "feed"
+          },
+          "position": [
+            540.0,
+            800.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 28,
+          "label": "Feed Mask",
+          "parameters": {
+            "default": 1.0,
+            "key": "feedMultiplier"
+          },
+          "position": [
+            360.0,
+            800.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 29,
+          "label": "Effective Feed",
+          "parameters": {
+            "label": "Effective Feed",
+            "operation": 2.0
+          },
+          "position": [
+            720.0,
+            800.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 30,
+          "label": "One Minus A",
+          "parameters": {
+            "a": 1.0,
+            "from": 1.0,
+            "operation": 1.0
+          },
+          "position": [
+            720.0,
+            360.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 31,
+          "label": "Feed Term",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            900.0,
+            360.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 32,
+          "label": "A Delta",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            1080.0,
+            500.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 33,
+          "label": "Dt Value",
+          "parameters": {
+            "key": "dt"
+          },
+          "position": [
+            1080.0,
+            900.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 34,
+          "label": "A Step",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            1260.0,
+            480.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 35,
+          "label": "A Next0",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            1440.0,
+            460.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 36,
+          "label": "A Next",
+          "parameters": {
+            "b": 0.0,
+            "c": 1.0,
+            "operation": 10.0
+          },
+          "position": [
+            1620.0,
+            460.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 37,
+          "label": "Diff B Value",
+          "parameters": {
+            "key": "diffB"
+          },
+          "position": [
+            540.0,
+            700.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 38,
+          "label": "Diffusion B",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            720.0,
+            680.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 39,
+          "label": "B Delta0",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            900.0,
+            680.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 40,
+          "label": "Kill Value",
+          "parameters": {
+            "key": "kill"
+          },
+          "position": [
+            540.0,
+            880.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 41,
+          "label": "Kill Mask",
+          "parameters": {
+            "default": 1.0,
+            "key": "killMultiplier"
+          },
+          "position": [
+            360.0,
+            880.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 42,
+          "label": "Effective Kill",
+          "parameters": {
+            "label": "Effective Kill",
+            "operation": 2.0
+          },
+          "position": [
+            720.0,
+            880.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 43,
+          "label": "Feed + Kill",
+          "parameters": {
+            "label": "Feed + Kill",
+            "operation": 0.0
+          },
+          "position": [
+            900.0,
+            820.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 44,
+          "label": "Decay",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            1080.0,
+            780.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 45,
+          "label": "B Delta",
+          "parameters": {
+            "operation": 1.0
+          },
+          "position": [
+            1260.0,
+            720.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 46,
+          "label": "B Step",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            1440.0,
+            700.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 47,
+          "label": "B Next0",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            1620.0,
+            680.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 48,
+          "label": "B Next",
+          "parameters": {
+            "b": 0.0,
+            "c": 1.0,
+            "operation": 10.0
+          },
+          "position": [
+            1800.0,
+            680.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 49,
+          "label": "Next State",
+          "parameters": {},
+          "position": [
+            1980.0,
+            560.0
+          ],
+          "type": "simulation_next_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 50,
+          "label": "Output Image",
+          "parameters": {
+            "key": "image"
+          },
+          "position": [
+            2160.0,
+            500.0
+          ],
+          "type": "subgraph_output",
+          "typeVersion": 1
+        },
+        {
+          "id": 51,
+          "label": "Output A",
+          "parameters": {
+            "key": "a"
+          },
+          "position": [
+            2160.0,
+            580.0
+          ],
+          "type": "subgraph_output",
+          "typeVersion": 1
+        },
+        {
+          "id": 52,
+          "label": "Output B",
+          "parameters": {
+            "key": "b"
+          },
+          "position": [
+            2160.0,
+            660.0
+          ],
+          "type": "subgraph_output",
+          "typeVersion": 1
+        }
+      ],
+      "version": 1
+    },
+    {
+      "category": "Simulation",
+      "execution": "simulation",
+      "id": "project.reaction_diffusion.32.1",
+      "interface": [
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "feedMultiplier",
+          "kind": "input",
+          "label": "Feed Multiplier",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "role": "",
+          "type": "numeric"
+        },
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "killMultiplier",
+          "kind": "input",
+          "label": "Kill Multiplier",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "role": "",
+          "type": "numeric"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "seed",
+          "kind": "input",
+          "label": "Seed",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "role": "",
+          "type": "image2d"
+        },
+        {
+          "control": "float",
+          "default": 0.054999999701976776,
+          "key": "feed",
+          "kind": "slider",
+          "label": "Feed",
+          "maximum": 0.10000000149011612,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.06199999898672104,
+          "key": "kill",
+          "kind": "slider",
+          "label": "Kill",
+          "maximum": 0.10000000149011612,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "diffA",
+          "kind": "slider",
+          "label": "Diffusion A",
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.5,
+          "key": "diffB",
+          "kind": "slider",
+          "label": "Diffusion B",
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "structureScale",
+          "kind": "slider",
+          "label": "Structure Scale",
+          "maximum": 8.0,
+          "minimum": 0.25,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "dt",
+          "kind": "slider",
+          "label": "Timestep",
+          "maximum": 2.0,
+          "minimum": 0.009999999776482582,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "integer",
+          "default": 8.0,
+          "key": "iterations",
+          "kind": "slider",
+          "label": "Iterations",
+          "maximum": 64.0,
+          "minimum": 1.0,
+          "optional": false,
+          "role": "iterations",
+          "type": "float"
+        },
+        {
+          "control": "boolean",
+          "default": 0.0,
+          "key": "autoReset",
+          "kind": "slider",
+          "label": "Auto Reset",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "autoReset",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "image",
+          "kind": "output",
+          "label": "Image",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "image2d"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "a",
+          "kind": "output",
+          "label": "Chemical A",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "image2d"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "b",
+          "kind": "output",
+          "label": "Chemical B",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "image2d"
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": 1,
+            "socket": "x"
+          },
+          "id": 1,
+          "to": {
+            "node": 2,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 1,
+            "socket": "y"
+          },
+          "id": 2,
+          "to": {
+            "node": 3,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 2,
+            "socket": "result"
+          },
+          "id": 3,
+          "to": {
+            "node": 4,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 2,
+            "socket": "result"
+          },
+          "id": 4,
+          "to": {
+            "node": 4,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "result"
+          },
+          "id": 5,
+          "to": {
+            "node": 5,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "result"
+          },
+          "id": 6,
+          "to": {
+            "node": 5,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 4,
+            "socket": "result"
+          },
+          "id": 7,
+          "to": {
+            "node": 6,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 5,
+            "socket": "result"
+          },
+          "id": 8,
+          "to": {
+            "node": 6,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 6,
+            "socket": "result"
+          },
+          "id": 9,
+          "to": {
+            "node": 7,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 7,
+            "socket": "result"
+          },
+          "id": 10,
+          "to": {
+            "node": 8,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 8,
+            "socket": "result"
+          },
+          "id": 11,
+          "to": {
+            "node": 9,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "connected"
+          },
+          "id": 12,
+          "to": {
+            "node": 11,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 9,
+            "socket": "result"
+          },
+          "id": 13,
+          "to": {
+            "node": 12,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 11,
+            "socket": "result"
+          },
+          "id": 14,
+          "to": {
+            "node": 12,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "value"
+          },
+          "id": 15,
+          "to": {
+            "node": 13,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "connected"
+          },
+          "id": 16,
+          "to": {
+            "node": 13,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 12,
+            "socket": "result"
+          },
+          "id": 17,
+          "to": {
+            "node": 14,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 13,
+            "socket": "result"
+          },
+          "id": 18,
+          "to": {
+            "node": 14,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 14,
+            "socket": "result"
+          },
+          "id": 19,
+          "to": {
+            "node": 15,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 15,
+            "socket": "result"
+          },
+          "id": 20,
+          "to": {
+            "node": 16,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 16,
+            "socket": "result"
+          },
+          "id": 21,
+          "to": {
+            "node": 17,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 14,
+            "socket": "result"
+          },
+          "id": 22,
+          "to": {
+            "node": 17,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "a"
+          },
+          "id": 23,
+          "to": {
+            "node": 20,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 24,
+          "to": {
+            "node": 21,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 19,
+            "socket": "value"
+          },
+          "id": 25,
+          "to": {
+            "node": 20,
+            "socket": "scale"
+          }
+        },
+        {
+          "from": {
+            "node": 19,
+            "socket": "value"
+          },
+          "id": 26,
+          "to": {
+            "node": 21,
+            "socket": "scale"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 27,
+          "to": {
+            "node": 22,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 28,
+          "to": {
+            "node": 22,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "a"
+          },
+          "id": 29,
+          "to": {
+            "node": 23,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 22,
+            "socket": "result"
+          },
+          "id": 30,
+          "to": {
+            "node": 23,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 26,
+            "socket": "value"
+          },
+          "id": 31,
+          "to": {
+            "node": 28,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 24,
+            "socket": "value"
+          },
+          "id": 32,
+          "to": {
+            "node": 28,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 27,
+            "socket": "value"
+          },
+          "id": 33,
+          "to": {
+            "node": 29,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 25,
+            "socket": "value"
+          },
+          "id": 34,
+          "to": {
+            "node": 29,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 30,
+            "socket": "value"
+          },
+          "id": 35,
+          "to": {
+            "node": 32,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 20,
+            "socket": "result"
+          },
+          "id": 36,
+          "to": {
+            "node": 32,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 31,
+            "socket": "value"
+          },
+          "id": 37,
+          "to": {
+            "node": 33,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 21,
+            "socket": "result"
+          },
+          "id": 38,
+          "to": {
+            "node": 33,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "a"
+          },
+          "id": 39,
+          "to": {
+            "node": 34,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 28,
+            "socket": "result"
+          },
+          "id": 40,
+          "to": {
+            "node": 35,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 34,
+            "socket": "result"
+          },
+          "id": 41,
+          "to": {
+            "node": 35,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 32,
+            "socket": "result"
+          },
+          "id": 42,
+          "to": {
+            "node": 36,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 23,
+            "socket": "result"
+          },
+          "id": 43,
+          "to": {
+            "node": 36,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 36,
+            "socket": "result"
+          },
+          "id": 44,
+          "to": {
+            "node": 37,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 35,
+            "socket": "result"
+          },
+          "id": 45,
+          "to": {
+            "node": 37,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 28,
+            "socket": "result"
+          },
+          "id": 46,
+          "to": {
+            "node": 38,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 29,
+            "socket": "result"
+          },
+          "id": 47,
+          "to": {
+            "node": 38,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 38,
+            "socket": "result"
+          },
+          "id": 48,
+          "to": {
+            "node": 39,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 49,
+          "to": {
+            "node": 39,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 33,
+            "socket": "result"
+          },
+          "id": 50,
+          "to": {
+            "node": 40,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 23,
+            "socket": "result"
+          },
+          "id": 51,
+          "to": {
+            "node": 40,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 40,
+            "socket": "result"
+          },
+          "id": 52,
+          "to": {
+            "node": 41,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 39,
+            "socket": "result"
+          },
+          "id": 53,
+          "to": {
+            "node": 41,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 37,
+            "socket": "result"
+          },
+          "id": 54,
+          "to": {
+            "node": 43,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 42,
+            "socket": "value"
+          },
+          "id": 55,
+          "to": {
+            "node": 43,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 41,
+            "socket": "result"
+          },
+          "id": 56,
+          "to": {
+            "node": 44,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 42,
+            "socket": "value"
+          },
+          "id": 57,
+          "to": {
+            "node": 44,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "a"
+          },
+          "id": 58,
+          "to": {
+            "node": 45,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 43,
+            "socket": "result"
+          },
+          "id": 59,
+          "to": {
+            "node": 45,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 60,
+          "to": {
+            "node": 46,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 44,
+            "socket": "result"
+          },
+          "id": 61,
+          "to": {
+            "node": 46,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 45,
+            "socket": "result"
+          },
+          "id": 62,
+          "to": {
+            "node": 47,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 46,
+            "socket": "result"
+          },
+          "id": 63,
+          "to": {
+            "node": 48,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 47,
+            "socket": "result"
+          },
+          "id": 64,
+          "to": {
+            "node": 49,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 48,
+            "socket": "result"
+          },
+          "id": 65,
+          "to": {
+            "node": 49,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 49,
+            "socket": "b"
+          },
+          "id": 66,
+          "to": {
+            "node": 50,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 49,
+            "socket": "a"
+          },
+          "id": 67,
+          "to": {
+            "node": 51,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 49,
+            "socket": "b"
+          },
+          "id": 68,
+          "to": {
+            "node": 52,
+            "socket": "value"
+          }
+        }
+      ],
+      "name": "Reaction Diffusion (Discrete) (Editable 2)",
+      "nodes": [
+        {
+          "id": 1,
+          "label": "Canvas Coordinates",
+          "parameters": {},
+          "position": [
+            0.0,
+            20.0
+          ],
+          "type": "coordinates",
+          "typeVersion": 1
+        },
+        {
+          "id": 2,
+          "label": "Horizontal Distance from Center",
+          "parameters": {
+            "b": 0.5,
+            "operation": 1.0
+          },
+          "position": [
+            200.0,
+            0.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 3,
+          "label": "Vertical Distance from Center",
+          "parameters": {
+            "b": 0.5,
+            "operation": 1.0
+          },
+          "position": [
+            200.0,
+            100.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 4,
+          "label": "Horizontal Distance Squared",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            400.0,
+            0.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 5,
+          "label": "Vertical Distance Squared",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            400.0,
+            100.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 6,
+          "label": "Distance Squared",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            600.0,
+            50.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 7,
+          "label": "Distance from Center",
+          "parameters": {
+            "b": 0.5,
+            "operation": 4.0
+          },
+          "position": [
+            800.0,
+            50.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 8,
+          "label": "Outside Seed Circle",
+          "parameters": {
+            "threshold": 0.07500000298023224
+          },
+          "position": [
+            1000.0,
+            50.0
+          ],
+          "type": "threshold",
+          "typeVersion": 1
+        },
+        {
+          "id": 9,
+          "label": "Default Circular Seed",
+          "parameters": {
+            "a": 1.0,
+            "operation": 1.0
+          },
+          "position": [
+            1200.0,
+            50.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 10,
+          "label": "Seed Input",
+          "parameters": {
+            "key": "seed"
+          },
+          "position": [
+            800.0,
+            190.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 11,
+          "label": "Seed Input Not Connected",
+          "parameters": {
+            "a": 1.0,
+            "operation": 1.0
+          },
+          "position": [
+            1000.0,
+            190.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 12,
+          "label": "Default Seed Contribution",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            1400.0,
+            30.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 13,
+          "label": "Supplied Seed Contribution",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            1200.0,
+            200.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 14,
+          "label": "Selected Initial Seed",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            1600.0,
+            110.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 15,
+          "label": "Half-strength Seed",
+          "parameters": {
+            "b": 0.5,
+            "operation": 2.0
+          },
+          "position": [
+            1800.0,
+            80.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 16,
+          "label": "Initial Chemical A",
+          "parameters": {
+            "a": 1.0,
+            "operation": 1.0
+          },
+          "position": [
+            2000.0,
+            40.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 17,
+          "label": "Initial Simulation State",
+          "parameters": {},
+          "position": [
+            2200.0,
+            100.0
+          ],
+          "type": "simulation_initial_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 18,
+          "label": "Previous Simulation State",
+          "parameters": {},
+          "position": [
+            0.0,
+            460.0
+          ],
+          "type": "simulation_previous_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 19,
+          "label": "Structure Scale",
+          "parameters": {
+            "key": "structureScale"
+          },
+          "position": [
+            0.0,
+            720.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 20,
+          "label": "Chemical A Laplacian",
+          "parameters": {},
+          "position": [
+            220.0,
+            400.0
+          ],
+          "type": "laplacian",
+          "typeVersion": 1
+        },
+        {
+          "id": 21,
+          "label": "Chemical B Laplacian",
+          "parameters": {},
+          "position": [
+            220.0,
+            560.0
+          ],
+          "type": "laplacian",
+          "typeVersion": 1
+        },
+        {
+          "id": 22,
+          "label": "Chemical B Squared",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            220.0,
+            760.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 23,
+          "label": "Reaction Rate",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            440.0,
+            720.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 24,
+          "label": "Feed Multiplier",
+          "parameters": {
+            "key": "feedMultiplier"
+          },
+          "position": [
+            220.0,
+            940.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 25,
+          "label": "Kill Multiplier",
+          "parameters": {
+            "key": "killMultiplier"
+          },
+          "position": [
+            220.0,
+            1040.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 26,
+          "label": "Feed Rate",
+          "parameters": {
+            "key": "feed"
+          },
+          "position": [
+            440.0,
+            940.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 27,
+          "label": "Kill Rate",
+          "parameters": {
+            "key": "kill"
+          },
+          "position": [
+            440.0,
+            1040.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 28,
+          "label": "Effective Feed Rate",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            660.0,
+            940.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 29,
+          "label": "Effective Kill Rate",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            660.0,
+            1040.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 30,
+          "label": "Chemical A Diffusion Rate",
+          "parameters": {
+            "key": "diffA"
+          },
+          "position": [
+            440.0,
+            400.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 31,
+          "label": "Chemical B Diffusion Rate",
+          "parameters": {
+            "key": "diffB"
+          },
+          "position": [
+            463.0,
+            539.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 32,
+          "label": "Chemical A Diffusion",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            660.0,
+            400.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 33,
+          "label": "Chemical B Diffusion",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            660.0,
+            560.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 34,
+          "label": "Available Chemical A",
+          "parameters": {
+            "a": 1.0,
+            "operation": 1.0
+          },
+          "position": [
+            660.0,
+            700.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 35,
+          "label": "Chemical A Feed Term",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            880.0,
+            700.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 36,
+          "label": "Chemical A Diffusion Minus Reaction",
+          "parameters": {
+            "operation": 1.0
+          },
+          "position": [
+            880.0,
+            440.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 37,
+          "label": "Chemical A Change",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            1100.0,
+            520.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 38,
+          "label": "Feed Rate Plus Kill Rate",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            880.0,
+            980.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 39,
+          "label": "Chemical B Decay",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            1100.0,
+            940.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 40,
+          "label": "Chemical B Diffusion Plus Reaction",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            880.0,
+            580.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 41,
+          "label": "Chemical B Change",
+          "parameters": {
+            "operation": 1.0
+          },
+          "position": [
+            1100.0,
+            660.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 42,
+          "label": "Timestep",
+          "parameters": {
+            "key": "dt"
+          },
+          "position": [
+            1100.0,
+            1080.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 43,
+          "label": "Timestep-scaled Chemical A Change",
+          "parameters": {
+            "inMax": 6.360000133514404,
+            "operation": 2.0
+          },
+          "position": [
+            1320.0,
+            500.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 44,
+          "label": "Timestep-scaled Chemical B Change",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            1389.0,
+            1145.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 45,
+          "label": "Unclamped Next Chemical A",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            1540.0,
+            480.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 46,
+          "label": "Unclamped Next Chemical B",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            1740.0,
+            1160.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 47,
+          "label": "Next Chemical A",
+          "parameters": {
+            "b": 0.0,
+            "c": 1.0,
+            "operation": 10.0,
+            "outMin": 5.599999904632568
+          },
+          "position": [
+            1760.0,
+            480.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 48,
+          "label": "Next Chemical B",
+          "parameters": {
+            "b": 0.0,
+            "c": 1.0,
+            "operation": 10.0
+          },
+          "position": [
+            2140.0,
+            1016.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 49,
+          "label": "Next Simulation State",
+          "parameters": {},
+          "position": [
+            2030.0,
+            523.0
+          ],
+          "type": "simulation_next_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 50,
+          "label": "Image Output",
+          "parameters": {
+            "key": "image"
+          },
+          "position": [
+            2255.0,
+            491.0
+          ],
+          "type": "subgraph_output",
+          "typeVersion": 1
+        },
+        {
+          "id": 51,
+          "label": "Chemical A Output",
+          "parameters": {
+            "key": "a"
+          },
+          "position": [
+            2200.0,
+            620.0
+          ],
+          "type": "subgraph_output",
+          "typeVersion": 1
+        },
+        {
+          "id": 52,
+          "label": "Chemical B Output",
+          "parameters": {
+            "key": "b"
+          },
+          "position": [
+            2200.0,
+            740.0
+          ],
+          "type": "subgraph_output",
+          "typeVersion": 1
+        }
+      ],
       "version": 1
     }
   ]

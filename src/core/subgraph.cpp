@@ -1,25 +1,106 @@
 #include "reaction/core/graph.hpp"
 
 #include <algorithm>
-#include <set>
-#include <functional>
+#include <queue>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace reaction {
 namespace {
 
-SubgraphKernelNode node(std::string key, std::string operation,
-                        std::vector<std::string> inputs = {},
-                        nlohmann::json properties = nlohmann::json::object(), Vec2 position = {},
-                        std::string label = {}) {
-    if (!properties.is_object()) properties = nlohmann::json::object();
-    if (!label.empty()) properties["label"] = std::move(label);
-    return {std::move(key), std::move(operation), std::move(inputs),
-            std::move(properties), position};
+using Control = ParameterDescriptor::Control;
+
+const SocketDescriptor* socket(const NodeDescriptor& descriptor, std::string_view key,
+                               SocketDirection direction) {
+    const auto found = std::ranges::find_if(descriptor.sockets, [&](const auto& candidate) {
+        return candidate.key == key && candidate.direction == direction;
+    });
+    return found == descriptor.sockets.end() ? nullptr : &*found;
+}
+
+bool compatible(ValueType from, ValueType to) {
+    return from == to || from == ValueType::AnyNumeric || to == ValueType::AnyNumeric;
+}
+
+const SubgraphInterfaceItem* interfaceItem(const SubgraphDefinition& definition,
+                                            const NodeRecord& node) {
+    if (!node.parameters.is_object()) return nullptr;
+    const auto key = node.parameters.value("key", std::string{});
+    const auto found = std::ranges::find(definition.interface, key, &SubgraphInterfaceItem::key);
+    return found == definition.interface.end() ? nullptr : &*found;
+}
+
+const NodeDescriptor* intrinsicDescriptor(const SubgraphDefinition& definition,
+                                          const NodeRecord& node,
+                                          NodeDescriptor& storage) {
+    if (node.type == "subgraph_input") {
+        const auto* item = interfaceItem(definition, node);
+        if (!item || item->kind == SubgraphInterfaceKind::Output) return nullptr;
+        storage = {"subgraph_input", 1, item->label, "Subgraph Interface", {}, {}};
+        storage.sockets.push_back({"value", "Value", item->type, SocketDirection::Output});
+        if (item->kind == SubgraphInterfaceKind::Input) {
+            storage.sockets.push_back({"connected", "Connected", ValueType::Float,
+                                       SocketDirection::Output});
+        }
+        return &storage;
+    }
+    if (node.type == "subgraph_output") {
+        const auto* item = interfaceItem(definition, node);
+        if (!item || item->kind != SubgraphInterfaceKind::Output) return nullptr;
+        storage = {"subgraph_output", 1, item->label, "Subgraph Interface",
+                   {{"value", "Value", item->type, SocketDirection::Input}}, {}};
+        return &storage;
+    }
+    if (node.type == "simulation_previous_state") {
+        storage = {"simulation_previous_state", 1, "Previous Simulation State", "Simulation",
+                   {{"a", "Chemical A", ValueType::Image2D, SocketDirection::Output},
+                    {"b", "Chemical B", ValueType::Image2D, SocketDirection::Output}}, {}};
+        return &storage;
+    }
+    if (node.type == "simulation_initial_state") {
+        storage = {"simulation_initial_state", 1, "Initial Simulation State", "Simulation",
+                   {{"a", "Chemical A", ValueType::AnyNumeric, SocketDirection::Input},
+                    {"b", "Chemical B", ValueType::AnyNumeric, SocketDirection::Input}}, {}};
+        return &storage;
+    }
+    if (node.type == "simulation_next_state") {
+        storage = {"simulation_next_state", 1, "Next Simulation State", "Simulation",
+                   {{"a", "Chemical A", ValueType::AnyNumeric, SocketDirection::Input},
+                    {"b", "Chemical B", ValueType::AnyNumeric, SocketDirection::Input},
+                    {"a", "Chemical A", ValueType::Image2D, SocketDirection::Output},
+                    {"b", "Chemical B", ValueType::Image2D, SocketDirection::Output}}, {}};
+        return &storage;
+    }
+
+    return nullptr;
+}
+
+NodeId addNode(GraphBody& body, std::string type, std::string label, Vec2 position,
+               nlohmann::json parameters = nlohmann::json::object()) {
+    const auto id = body.addNode(std::move(type), position);
+    auto* record = body.findNode(id);
+    record->label = std::move(label);
+    record->parameters = std::move(parameters);
+    return id;
+}
+
+void link(GraphBody& body, NodeId from, std::string fromSocket,
+          NodeId to, std::string toSocket) {
+    body.addLink(from, std::move(fromSocket), to, std::move(toSocket));
+}
+
+NodeId math(GraphBody& body, std::string label, int operation, Vec2 position,
+            nlohmann::json parameters = nlohmann::json::object()) {
+    parameters["operation"] = static_cast<float>(operation);
+    return addNode(body, "math", std::move(label), position, std::move(parameters));
+}
+
+NodeId input(GraphBody& body, std::string key, std::string label, Vec2 position) {
+    return addNode(body, "subgraph_input", std::move(label), position,
+                   {{"key", std::move(key)}});
 }
 
 SubgraphDefinition discreteReaction() {
-    using Control = ParameterDescriptor::Control;
     SubgraphDefinition result;
     result.id = "builtin.reaction_diffusion.discrete";
     result.name = "Reaction Diffusion (Discrete)";
@@ -53,59 +134,291 @@ SubgraphDefinition discreteReaction() {
         {"b", "Chemical B", SubgraphInterfaceKind::Output, ValueType::Image2D},
     };
 
-    // This is an editable expression DAG. The simulation compiler lowers the nodes
-    // below into one initialization shader and one fused update shader.
-    result.kernel = {
-        node("uv", "uv", {}, {}, {0, 0}, "Canvas Coordinates"),
-        node("center", "constant2", {}, {{"x", .5}, {"y", .5}}, {0, 120}, "Canvas Center"),
-        node("radius", "length", {"uv", "center"}, {{"subtract", true}}, {180, 60}, "Distance from Center"),
-        node("seedRadius", "constant", {}, {{"value", .075}}, {180, 160}, "Seed Radius"),
-        node("defaultSeed", "step", {"radius", "seedRadius"}, {{"reverse", true}}, {360, 100}, "Default Circular Seed"),
-        node("seedInput", "interface", {}, {{"key", "seed"}, {"default", 0.0}}, {360, 200}),
-        node("hasSeed", "connected", {}, {{"key", "seed"}}, {360, 280}, "Seed Input Connected"),
-        node("initialSeed", "select", {"hasSeed", "seedInput", "defaultSeed"}, {}, {540, 160}, "Selected Initial Seed"),
-        node("halfSeed", "multiply", {"initialSeed"}, {{"value", .5}}, {720, 100}, "Half-strength Seed"),
-        node("initialA", "subtract", {"halfSeed"}, {{"from", 1.0}}, {900, 80}, "Initial Chemical A"),
-        node("initial", "pack2", {"initialA", "initialSeed"}, {{"role", "initial"}}, {1080, 140}, "Initial State"),
-        node("state", "previous_state", {}, {}, {0, 440}, "Previous Simulation State"),
-        node("a0", "swizzle", {"state"}, {{"channel", 0}}, {180, 380}, "Current Chemical A"),
-        node("b0", "swizzle", {"state"}, {{"channel", 1}}, {180, 500}, "Current Chemical B"),
-        node("lap", "laplacian", {"state"}, {{"scale", "structureScale"}}, {180, 620}, "State Laplacian"),
-        node("lapA", "swizzle", {"lap"}, {{"channel", 0}}, {360, 600}, "Chemical A Laplacian"),
-        node("lapB", "swizzle", {"lap"}, {{"channel", 1}}, {360, 700}, "Chemical B Laplacian"),
-        node("bb", "multiply", {"b0", "b0"}, {}, {360, 420}, "Chemical B Squared"),
-        node("reaction", "multiply", {"a0", "bb"}, {}, {540, 420}, "Reaction Rate"),
-        node("feedMask", "interface", {}, {{"key", "feedMultiplier"}, {"default", 1.0}}, {360, 800}),
-        node("killMask", "interface", {}, {{"key", "killMultiplier"}, {"default", 1.0}}, {360, 880}),
-        node("feedValue", "interface", {}, {{"key", "feed"}}, {540, 800}, "Feed Rate"),
-        node("killValue", "interface", {}, {{"key", "kill"}}, {540, 880}, "Kill Rate"),
-        node("f", "multiply", {"feedValue", "feedMask"}, {}, {720, 800}, "Effective Feed Rate"),
-        node("k", "multiply", {"killValue", "killMask"}, {}, {720, 880}, "Effective Kill Rate"),
-        node("diffAValue", "interface", {}, {{"key", "diffA"}}, {540, 600}),
-        node("diffBValue", "interface", {}, {{"key", "diffB"}}, {540, 700}),
-        node("diffusionA", "multiply", {"diffAValue", "lapA"}, {}, {720, 580}, "Chemical A Diffusion"),
-        node("diffusionB", "multiply", {"diffBValue", "lapB"}, {}, {720, 680}, "Chemical B Diffusion"),
-        node("oneMinusA", "subtract", {"a0"}, {{"from", 1.0}}, {720, 360}, "Available Chemical A"),
-        node("feedTerm", "multiply", {"f", "oneMinusA"}, {}, {900, 360}, "Chemical A Feed Term"),
-        node("aDelta0", "subtract", {"diffusionA", "reaction"}, {}, {900, 540}, "Chemical A Diffusion Minus Reaction"),
-        node("aDelta", "add", {"aDelta0", "feedTerm"}, {}, {1080, 500}, "Chemical A Change"),
-        node("kf", "add", {"k", "f"}, {}, {900, 820}, "Feed Rate + Kill Rate"),
-        node("decay", "multiply", {"kf", "b0"}, {}, {1080, 780}, "Chemical B Decay"),
-        node("bDelta0", "add", {"diffusionB", "reaction"}, {}, {900, 680}, "Chemical B Diffusion Plus Reaction"),
-        node("bDelta", "subtract", {"bDelta0", "decay"}, {}, {1260, 720}, "Chemical B Change"),
-        node("dtValue", "interface", {}, {{"key", "dt"}}, {1080, 900}),
-        node("aStep", "multiply", {"aDelta", "dtValue"}, {}, {1260, 480}, "Timestep-scaled Chemical A Change"),
-        node("bStep", "multiply", {"bDelta", "dtValue"}, {}, {1440, 700}, "Timestep-scaled Chemical B Change"),
-        node("aNext0", "add", {"a0", "aStep"}, {}, {1440, 460}, "Unclamped Next Chemical A"),
-        node("bNext0", "add", {"b0", "bStep"}, {}, {1620, 680}, "Unclamped Next Chemical B"),
-        node("aNext", "clamp01", {"aNext0"}, {}, {1620, 460}, "Next Chemical A"),
-        node("bNext", "clamp01", {"bNext0"}, {}, {1800, 680}, "Next Chemical B"),
-        node("next", "pack2", {"aNext", "bNext"}, {{"role", "next"}}, {1980, 560}, "Next State"),
-        node("outputImage", "output", {"bNext"}, {{"key", "image"}}, {2160, 500}),
-        node("outputA", "output", {"aNext"}, {{"key", "a"}}, {2160, 580}),
-        node("outputB", "output", {"bNext"}, {{"key", "b"}}, {2160, 660}),
-    };
+    auto& body = result.body;
+    const auto coordinates = addNode(body, "coordinates", "Canvas Coordinates", {0, 20});
+    const auto deltaX = math(body, "Horizontal Distance from Center", 1, {200, 0}, {{"b", .5F}});
+    const auto deltaY = math(body, "Vertical Distance from Center", 1, {200, 100}, {{"b", .5F}});
+    link(body, coordinates, "x", deltaX, "a");
+    link(body, coordinates, "y", deltaY, "a");
+    const auto deltaXSquared = math(body, "Horizontal Distance Squared", 2, {400, 0});
+    const auto deltaYSquared = math(body, "Vertical Distance Squared", 2, {400, 100});
+    link(body, deltaX, "result", deltaXSquared, "a");
+    link(body, deltaX, "result", deltaXSquared, "b");
+    link(body, deltaY, "result", deltaYSquared, "a");
+    link(body, deltaY, "result", deltaYSquared, "b");
+    const auto distanceSquared = math(body, "Distance Squared", 0, {600, 50});
+    link(body, deltaXSquared, "result", distanceSquared, "a");
+    link(body, deltaYSquared, "result", distanceSquared, "b");
+    const auto radius = math(body, "Distance from Center", 4, {800, 50}, {{"b", .5F}});
+    link(body, distanceSquared, "result", radius, "a");
+    const auto outsideSeed = addNode(body, "threshold", "Outside Seed Circle", {1000, 50},
+                                     {{"threshold", .075F}});
+    link(body, radius, "result", outsideSeed, "value");
+    const auto defaultSeed = math(body, "Default Circular Seed", 1, {1200, 50}, {{"a", 1.0F}});
+    link(body, outsideSeed, "result", defaultSeed, "b");
+
+    const auto seed = input(body, "seed", "Seed Input", {800, 190});
+    const auto seedMissing = math(body, "Seed Input Not Connected", 1, {1000, 190}, {{"a", 1.0F}});
+    link(body, seed, "connected", seedMissing, "b");
+    const auto defaultSeedPart = math(body, "Default Seed Contribution", 2, {1400, 30});
+    link(body, defaultSeed, "result", defaultSeedPart, "a");
+    link(body, seedMissing, "result", defaultSeedPart, "b");
+    const auto suppliedSeedPart = math(body, "Supplied Seed Contribution", 2, {1200, 200});
+    link(body, seed, "value", suppliedSeedPart, "a");
+    link(body, seed, "connected", suppliedSeedPart, "b");
+    const auto initialSeed = math(body, "Selected Initial Seed", 0, {1600, 110});
+    link(body, defaultSeedPart, "result", initialSeed, "a");
+    link(body, suppliedSeedPart, "result", initialSeed, "b");
+    const auto halfSeed = math(body, "Half-strength Seed", 2, {1800, 80}, {{"b", .5F}});
+    link(body, initialSeed, "result", halfSeed, "a");
+    const auto initialA = math(body, "Initial Chemical A", 1, {2000, 40}, {{"a", 1.0F}});
+    link(body, halfSeed, "result", initialA, "b");
+    const auto initialState = addNode(body, "simulation_initial_state", "Initial Simulation State",
+                                      {2200, 100});
+    link(body, initialA, "result", initialState, "a");
+    link(body, initialSeed, "result", initialState, "b");
+
+    const auto previous = addNode(body, "simulation_previous_state", "Previous Simulation State",
+                                  {0, 460});
+    const auto scale = input(body, "structureScale", "Structure Scale", {0, 720});
+    const auto laplacianA = addNode(body, "laplacian", "Chemical A Laplacian", {220, 400});
+    const auto laplacianB = addNode(body, "laplacian", "Chemical B Laplacian", {220, 560});
+    link(body, previous, "a", laplacianA, "value");
+    link(body, previous, "b", laplacianB, "value");
+    link(body, scale, "value", laplacianA, "scale");
+    link(body, scale, "value", laplacianB, "scale");
+
+    const auto bSquared = math(body, "Chemical B Squared", 2, {220, 760});
+    link(body, previous, "b", bSquared, "a");
+    link(body, previous, "b", bSquared, "b");
+    const auto reaction = math(body, "Reaction Rate", 2, {440, 720});
+    link(body, previous, "a", reaction, "a");
+    link(body, bSquared, "result", reaction, "b");
+
+    const auto feedMultiplier = input(body, "feedMultiplier", "Feed Multiplier", {220, 940});
+    const auto killMultiplier = input(body, "killMultiplier", "Kill Multiplier", {220, 1040});
+    const auto feedValue = input(body, "feed", "Feed Rate", {440, 940});
+    const auto killValue = input(body, "kill", "Kill Rate", {440, 1040});
+    const auto feed = math(body, "Effective Feed Rate", 2, {660, 940});
+    const auto kill = math(body, "Effective Kill Rate", 2, {660, 1040});
+    link(body, feedValue, "value", feed, "a");
+    link(body, feedMultiplier, "value", feed, "b");
+    link(body, killValue, "value", kill, "a");
+    link(body, killMultiplier, "value", kill, "b");
+
+    const auto diffusionAValue = input(body, "diffA", "Chemical A Diffusion Rate", {440, 400});
+    const auto diffusionBValue = input(body, "diffB", "Chemical B Diffusion Rate", {440, 560});
+    const auto diffusionA = math(body, "Chemical A Diffusion", 2, {660, 400});
+    const auto diffusionB = math(body, "Chemical B Diffusion", 2, {660, 560});
+    link(body, diffusionAValue, "value", diffusionA, "a");
+    link(body, laplacianA, "result", diffusionA, "b");
+    link(body, diffusionBValue, "value", diffusionB, "a");
+    link(body, laplacianB, "result", diffusionB, "b");
+
+    const auto availableA = math(body, "Available Chemical A", 1, {660, 700}, {{"a", 1.0F}});
+    link(body, previous, "a", availableA, "b");
+    const auto feedTerm = math(body, "Chemical A Feed Term", 2, {880, 700});
+    link(body, feed, "result", feedTerm, "a");
+    link(body, availableA, "result", feedTerm, "b");
+    const auto aDiffusionMinusReaction = math(body, "Chemical A Diffusion Minus Reaction", 1,
+                                              {880, 440});
+    link(body, diffusionA, "result", aDiffusionMinusReaction, "a");
+    link(body, reaction, "result", aDiffusionMinusReaction, "b");
+    const auto aDelta = math(body, "Chemical A Change", 0, {1100, 520});
+    link(body, aDiffusionMinusReaction, "result", aDelta, "a");
+    link(body, feedTerm, "result", aDelta, "b");
+
+    const auto feedPlusKill = math(body, "Feed Rate Plus Kill Rate", 0, {880, 980});
+    link(body, feed, "result", feedPlusKill, "a");
+    link(body, kill, "result", feedPlusKill, "b");
+    const auto decay = math(body, "Chemical B Decay", 2, {1100, 940});
+    link(body, feedPlusKill, "result", decay, "a");
+    link(body, previous, "b", decay, "b");
+    const auto bDiffusionPlusReaction = math(body, "Chemical B Diffusion Plus Reaction", 0,
+                                             {880, 580});
+    link(body, diffusionB, "result", bDiffusionPlusReaction, "a");
+    link(body, reaction, "result", bDiffusionPlusReaction, "b");
+    const auto bDelta = math(body, "Chemical B Change", 1, {1100, 660});
+    link(body, bDiffusionPlusReaction, "result", bDelta, "a");
+    link(body, decay, "result", bDelta, "b");
+
+    const auto timestep = input(body, "dt", "Timestep", {1100, 1080});
+    const auto aStep = math(body, "Timestep-scaled Chemical A Change", 2, {1320, 500});
+    const auto bStep = math(body, "Timestep-scaled Chemical B Change", 2, {1320, 700});
+    link(body, aDelta, "result", aStep, "a");
+    link(body, timestep, "value", aStep, "b");
+    link(body, bDelta, "result", bStep, "a");
+    link(body, timestep, "value", bStep, "b");
+    const auto aNextUnclamped = math(body, "Unclamped Next Chemical A", 0, {1540, 480});
+    const auto bNextUnclamped = math(body, "Unclamped Next Chemical B", 0, {1540, 700});
+    link(body, previous, "a", aNextUnclamped, "a");
+    link(body, aStep, "result", aNextUnclamped, "b");
+    link(body, previous, "b", bNextUnclamped, "a");
+    link(body, bStep, "result", bNextUnclamped, "b");
+    const auto aNext = math(body, "Next Chemical A", 10, {1760, 480}, {{"b", 0.0F}, {"c", 1.0F}});
+    const auto bNext = math(body, "Next Chemical B", 10, {1760, 700}, {{"b", 0.0F}, {"c", 1.0F}});
+    link(body, aNextUnclamped, "result", aNext, "a");
+    link(body, bNextUnclamped, "result", bNext, "a");
+    const auto nextState = addNode(body, "simulation_next_state", "Next Simulation State", {1980, 580});
+    link(body, aNext, "result", nextState, "a");
+    link(body, bNext, "result", nextState, "b");
+
+    const auto outputImage = addNode(body, "subgraph_output", "Image Output", {2200, 500}, {{"key", "image"}});
+    const auto outputA = addNode(body, "subgraph_output", "Chemical A Output", {2200, 620}, {{"key", "a"}});
+    const auto outputB = addNode(body, "subgraph_output", "Chemical B Output", {2200, 740}, {{"key", "b"}});
+    link(body, nextState, "b", outputImage, "value");
+    link(body, nextState, "a", outputA, "value");
+    link(body, nextState, "b", outputB, "value");
+
     return result;
+}
+
+std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definition,
+                                               const NodeRegistry& registry) {
+    std::vector<std::string> errors;
+    if (definition.id.empty()) errors.push_back("Subgraph has an empty id");
+    if (definition.name.empty()) errors.push_back("Subgraph has an empty name");
+    if (definition.execution == SubgraphExecution::Pipeline)
+        errors.push_back("Pipeline subgraphs are not supported in this milestone");
+
+    std::unordered_set<std::string> interfaceKeys;
+    std::unordered_map<std::string, const SubgraphInterfaceItem*> interfaceByKey;
+    int outputCount = 0;
+    for (const auto& item : definition.interface) {
+        if (item.key.empty() || !interfaceKeys.insert(item.key).second)
+            errors.push_back("Subgraph interface keys must be non-empty and unique");
+        interfaceByKey[item.key] = &item;
+        if (item.kind == SubgraphInterfaceKind::Slider &&
+            (item.minimum > item.maximum || item.defaultValue < item.minimum ||
+             item.defaultValue > item.maximum))
+            errors.push_back("Subgraph slider '" + item.label + "' has an invalid range");
+        if (item.kind == SubgraphInterfaceKind::Output && item.type != ValueType::Image2D)
+            errors.push_back("Subgraph outputs must be Image2D");
+        if (item.kind == SubgraphInterfaceKind::Output) ++outputCount;
+    }
+    if (definition.execution == SubgraphExecution::Simulation && (outputCount < 1 || outputCount > 3))
+        errors.push_back("Simulation subgraphs support between one and three outputs");
+
+    std::unordered_set<NodeId> nodeIds;
+    std::unordered_map<NodeId, const NodeRecord*> nodes;
+    std::unordered_map<NodeId, NodeDescriptor> descriptors;
+    int previousStates = 0;
+    int initialStates = 0;
+    int nextStates = 0;
+    std::unordered_map<std::string, int> outputEndpoints;
+    for (const auto& node : definition.body.nodes()) {
+        if (node.id == 0 || !nodeIds.insert(node.id).second) {
+            errors.push_back("Subgraph node IDs must be non-zero and unique");
+            continue;
+        }
+        nodes[node.id] = &node;
+        if (node.type == "subgraph") errors.push_back("Nested subgraphs are not supported");
+        if (node.type == "simulation_previous_state") ++previousStates;
+        if (node.type == "simulation_initial_state") ++initialStates;
+        if (node.type == "simulation_next_state") ++nextStates;
+        if (node.type == "subgraph_input" || node.type == "subgraph_output") {
+            const auto key = node.parameters.is_object()
+                ? node.parameters.value("key", std::string{}) : std::string{};
+            const auto found = interfaceByKey.find(key);
+            if (found == interfaceByKey.end()) {
+                errors.push_back("Subgraph boundary node references missing interface item '" + key + "'");
+            } else if (node.type == "subgraph_input" &&
+                       found->second->kind == SubgraphInterfaceKind::Output) {
+                errors.push_back("Subgraph input node references an output interface item");
+            } else if (node.type == "subgraph_output" &&
+                       found->second->kind != SubgraphInterfaceKind::Output) {
+                errors.push_back("Subgraph output node references a non-output interface item");
+            }
+            if (node.type == "subgraph_output") ++outputEndpoints[key];
+        }
+
+        NodeDescriptor descriptor;
+        const NodeDescriptor* resolved = nullptr;
+        if (isSubgraphBodyNodeType(node.type))
+            resolved = resolveSubgraphBodyDescriptor(definition, node, registry, descriptor);
+        if (!resolved) {
+            errors.push_back("Unsupported subgraph node type '" + node.type + "'");
+        } else {
+            descriptors.emplace(node.id, *resolved);
+        }
+    }
+
+    if (definition.execution == SubgraphExecution::Simulation) {
+        if (previousStates != 1) errors.push_back("A simulation subgraph needs exactly one previous-state node");
+        if (initialStates != 1) errors.push_back("A simulation subgraph needs exactly one initial-state endpoint");
+        if (nextStates != 1) errors.push_back("A simulation subgraph needs exactly one next-state endpoint");
+    }
+    for (const auto& item : definition.interface) {
+        if (item.kind == SubgraphInterfaceKind::Output && outputEndpoints[item.key] != 1)
+            errors.push_back("Output '" + item.label + "' needs exactly one subgraph output node");
+    }
+
+    std::unordered_set<LinkId> linkIds;
+    std::unordered_set<std::string> occupiedInputs;
+    std::unordered_map<NodeId, int> indegree;
+    std::unordered_map<NodeId, std::vector<NodeId>> outgoing;
+    for (const auto id : nodeIds) indegree[id] = 0;
+    for (const auto& linkRecord : definition.body.links()) {
+        if (linkRecord.id == 0 || !linkIds.insert(linkRecord.id).second)
+            errors.push_back("Subgraph link IDs must be non-zero and unique");
+        const auto from = nodes.find(linkRecord.fromNode);
+        const auto to = nodes.find(linkRecord.toNode);
+        if (from == nodes.end() || to == nodes.end()) {
+            errors.push_back("Subgraph link " + std::to_string(linkRecord.id) + " has a missing endpoint");
+            continue;
+        }
+        const auto fromDescriptor = descriptors.find(linkRecord.fromNode);
+        const auto toDescriptor = descriptors.find(linkRecord.toNode);
+        if (fromDescriptor == descriptors.end() || toDescriptor == descriptors.end()) continue;
+        const auto* output = socket(fromDescriptor->second, linkRecord.fromSocket, SocketDirection::Output);
+        const auto* inputSocket = socket(toDescriptor->second, linkRecord.toSocket, SocketDirection::Input);
+        if (!output || !inputSocket) {
+            errors.push_back("Subgraph link " + std::to_string(linkRecord.id) + " names an unknown socket");
+            continue;
+        }
+        if (!compatible(output->type, inputSocket->type))
+            errors.push_back("Subgraph link " + std::to_string(linkRecord.id) + " has incompatible socket types");
+        const auto inputKey = std::to_string(linkRecord.toNode) + ":" + linkRecord.toSocket;
+        if (!occupiedInputs.insert(inputKey).second)
+            errors.push_back("Subgraph input has more than one link: " + inputKey);
+        ++indegree[linkRecord.toNode];
+        outgoing[linkRecord.fromNode].push_back(linkRecord.toNode);
+    }
+
+    std::priority_queue<NodeId, std::vector<NodeId>, std::greater<>> ready;
+    for (const auto& [id, degree] : indegree) if (degree == 0) ready.push(id);
+    std::size_t visited = 0;
+    while (!ready.empty()) {
+        const auto id = ready.top();
+        ready.pop();
+        ++visited;
+        for (const auto next : outgoing[id]) if (--indegree[next] == 0) ready.push(next);
+    }
+    if (visited != nodeIds.size()) errors.push_back("Subgraph contains a cycle");
+
+    for (const auto& [id, descriptor] : descriptors) {
+        for (const auto& inputSocket : descriptor.sockets) {
+            if (inputSocket.direction != SocketDirection::Input || inputSocket.optional) continue;
+            if (!occupiedInputs.contains(std::to_string(id) + ":" + inputSocket.key)) {
+                errors.push_back("Subgraph node " + std::to_string(id) + " has unconnected input '" +
+                                 inputSocket.label + "'");
+            }
+        }
+    }
+
+    NodeId nextStateId = 0;
+    for (const auto& node : definition.body.nodes())
+        if (node.type == "simulation_next_state") nextStateId = node.id;
+    for (const auto& node : definition.body.nodes()) {
+        if (node.type != "subgraph_output") continue;
+        const auto incoming = std::ranges::find_if(definition.body.links(), [&](const auto& candidate) {
+            return candidate.toNode == node.id && candidate.toSocket == "value";
+        });
+        if (incoming != definition.body.links().end() && incoming->fromNode != nextStateId)
+            errors.push_back("Simulation outputs must expose a Next Simulation State channel");
+    }
+
+    return errors;
 }
 
 } // namespace
@@ -150,159 +463,32 @@ const NodeDescriptor* resolveDescriptor(const Graph& graph, const NodeRecord& no
     return &storage;
 }
 
-std::vector<std::string> validateSubgraph(const SubgraphDefinition& definition) {
-    std::vector<std::string> errors;
-    if (definition.id.empty()) errors.push_back("Subgraph has an empty id");
-    if (definition.name.empty()) errors.push_back("Subgraph has an empty name");
-    if (definition.execution == SubgraphExecution::Pipeline)
-        errors.push_back("Pipeline subgraphs are not supported in this milestone");
-    std::unordered_set<std::string> keys;
-    int outputCount = 0;
-    for (const auto& item : definition.interface) {
-        if (item.key.empty() || !keys.insert(item.key).second)
-            errors.push_back("Subgraph interface keys must be non-empty and unique");
-        if (item.kind == SubgraphInterfaceKind::Slider &&
-            (item.minimum > item.maximum || item.defaultValue < item.minimum ||
-             item.defaultValue > item.maximum))
-            errors.push_back("Subgraph slider '" + item.label + "' has an invalid range");
-        if (item.kind == SubgraphInterfaceKind::Output && item.type != ValueType::Image2D)
-            errors.push_back("Subgraph outputs must be Image2D");
-        if (item.kind == SubgraphInterfaceKind::Output) ++outputCount;
+bool isSubgraphBodyNodeType(std::string_view type) {
+    return type == "float" || type == "math" || type == "threshold" || type == "select" ||
+           type == "coordinates" || type == "laplacian" ||
+           type == "subgraph_input" || type == "subgraph_output" ||
+           type == "simulation_previous_state" ||
+           type == "simulation_initial_state" ||
+           type == "simulation_next_state";
+}
+
+const NodeDescriptor* resolveSubgraphBodyDescriptor(const SubgraphDefinition& definition,
+                                                    const NodeRecord& node,
+                                                    const NodeRegistry& registry,
+                                                    NodeDescriptor& storage) {
+    if (!isSubgraphBodyNodeType(node.type)) return nullptr;
+    if (node.type == "subgraph_input" || node.type == "subgraph_output" ||
+        node.type == "simulation_previous_state" ||
+        node.type == "simulation_initial_state" ||
+        node.type == "simulation_next_state") {
+        return intrinsicDescriptor(definition, node, storage);
     }
-    if (definition.execution == SubgraphExecution::Simulation && (outputCount < 1 || outputCount > 3))
-        errors.push_back("Simulation subgraphs support between one and three outputs");
-    std::unordered_set<std::string> kernelKeys;
-    int initial = 0, next = 0;
-    for (const auto& item : definition.kernel) {
-        if (item.key.empty() || !kernelKeys.insert(item.key).second)
-            errors.push_back("Subgraph kernel keys must be non-empty and unique");
-        const auto role = item.properties.is_object() ? item.properties.value("role", "") : "";
-        if (role == std::string_view("initial")) ++initial;
-        if (role == std::string_view("next")) ++next;
-        if (item.operation == "subgraph") errors.push_back("Nested subgraphs are not supported");
-        if ((item.operation == "interface" || item.operation == "connected") &&
-            (!item.properties.is_object() ||
-             !keys.contains(item.properties.value("key", std::string{}))))
-            errors.push_back("Kernel node '" + item.key + "' references a missing interface item");
-        if (item.operation == "connected" && item.properties.is_object()) {
-            const auto interfaceKey = item.properties.value("key", std::string{});
-            const auto interface = std::ranges::find(definition.interface, interfaceKey,
-                                                     &SubgraphInterfaceItem::key);
-            if (interface != definition.interface.end() && interface->kind != SubgraphInterfaceKind::Input)
-                errors.push_back("Connected nodes must reference an input socket");
-        }
-        const auto arity = item.inputs.size();
-        const auto exactly = [&](std::size_t value) {
-            if (arity != value) errors.push_back("Kernel node '" + item.key + "' has the wrong input count");
-        };
-        if (item.operation == "uv" || item.operation == "constant" || item.operation == "constant2" ||
-            item.operation == "previous_state" || item.operation == "interface" || item.operation == "connected") exactly(0);
-        else if (item.operation == "abs" || item.operation == "sin" || item.operation == "cos" ||
-                 item.operation == "clamp01" || item.operation == "swizzle" || item.operation == "laplacian" ||
-                 item.operation == "output") exactly(1);
-        else if (item.operation == "add" || item.operation == "divide" || item.operation == "min" ||
-                 item.operation == "max" || item.operation == "pow" || item.operation == "pack2" ||
-                 item.operation == "step") exactly(2);
-        else if (item.operation == "multiply") {
-            if (arity != 2 && !(arity == 1 && item.properties.is_object() && item.properties.contains("value")))
-                errors.push_back("Kernel node '" + item.key + "' has the wrong input count");
-        } else if (item.operation == "subtract") {
-            if (arity != 2 && !(arity == 1 && item.properties.is_object() && item.properties.contains("from")))
-                errors.push_back("Kernel node '" + item.key + "' has the wrong input count");
-        } else if (item.operation == "length") {
-            if (arity != 1 && arity != 2) errors.push_back("Kernel node '" + item.key + "' has the wrong input count");
-        } else if (item.operation == "select" || item.operation == "clamp") exactly(3);
-        else if (item.operation == "remap") exactly(5);
-        else if (item.operation != "subgraph") errors.push_back("Unsupported kernel operation '" + item.operation + "'");
-    }
-    std::unordered_map<std::string, int> visit;
-    std::function<void(const std::string&)> walk = [&](const std::string& key) {
-        if (visit[key] == 1) { errors.push_back("Subgraph kernel contains a cycle"); return; }
-        if (visit[key] == 2) return;
-        visit[key] = 1;
-        const auto it = std::ranges::find(definition.kernel, key, &SubgraphKernelNode::key);
-        if (it != definition.kernel.end()) for (const auto& input : it->inputs) walk(input);
-        visit[key] = 2;
-    };
-    for (const auto& item : definition.kernel) walk(item.key);
-    std::unordered_map<std::string, int> outputMappings;
-    const SubgraphKernelNode* nextNode = nullptr;
-    for (const auto& item : definition.kernel) {
-        const auto role = item.properties.is_object() ? item.properties.value("role", "") : "";
-        if (role == std::string_view("next")) nextNode = &item;
-    }
-    for (const auto& item : definition.kernel)
-        if (item.operation == "output") {
-            ++outputMappings[item.properties.is_object()
-                ? item.properties.value("key", std::string{}) : std::string{}];
-            if (!nextNode || item.inputs.size() != 1 ||
-                std::ranges::find(nextNode->inputs, item.inputs.front()) == nextNode->inputs.end())
-                errors.push_back("Simulation outputs must expose a next-state channel");
-        }
-    for (const auto& item : definition.interface)
-        if (item.kind == SubgraphInterfaceKind::Output && outputMappings[item.key] != 1)
-            errors.push_back("Output '" + item.label + "' needs exactly one kernel endpoint");
-    for (const auto& item : definition.kernel) {
-        for (const auto& input : item.inputs) {
-            if (!kernelKeys.contains(input))
-                errors.push_back("Kernel node '" + item.key + "' references missing input '" + input + "'");
-        }
-    }
-    enum class KernelType { Invalid, Float, Vec2 };
-    std::unordered_map<std::string, KernelType> types;
-    std::unordered_set<std::string> typing;
-    std::function<KernelType(const std::string&)> infer = [&](const std::string& key) -> KernelType {
-        if (const auto known = types.find(key); known != types.end()) return known->second;
-        if (!typing.insert(key).second) return KernelType::Invalid;
-        const auto found = std::ranges::find(definition.kernel, key, &SubgraphKernelNode::key);
-        if (found == definition.kernel.end()) return KernelType::Invalid;
-        const auto& item = *found;
-        KernelType result = KernelType::Float;
-        if (item.operation == "uv" || item.operation == "constant2" || item.operation == "previous_state")
-            result = KernelType::Vec2;
-        else if (item.operation == "pack2") {
-            if (item.inputs.size() != 2 || infer(item.inputs[0]) != KernelType::Float ||
-                infer(item.inputs[1]) != KernelType::Float) result = KernelType::Invalid;
-            else result = KernelType::Vec2;
-        } else if (item.operation == "swizzle") {
-            result = item.inputs.size() == 1 && infer(item.inputs[0]) == KernelType::Vec2
-                ? KernelType::Float : KernelType::Invalid;
-        } else if (item.operation == "laplacian") {
-            result = item.inputs.size() == 1 && infer(item.inputs[0]) == KernelType::Vec2
-                ? KernelType::Vec2 : KernelType::Invalid;
-        } else if (item.operation == "length") {
-            result = !item.inputs.empty() && infer(item.inputs[0]) == KernelType::Vec2
-                ? KernelType::Float : KernelType::Invalid;
-            if (item.inputs.size() == 2 && infer(item.inputs[1]) != KernelType::Vec2)
-                result = KernelType::Invalid;
-        } else if (item.operation == "select" && item.inputs.size() == 3) {
-            const auto yes = infer(item.inputs[1]), no = infer(item.inputs[2]);
-            result = infer(item.inputs[0]) == KernelType::Float && yes == no ? yes : KernelType::Invalid;
-        } else if (item.operation == "output") {
-            result = item.inputs.size() == 1 ? infer(item.inputs[0]) : KernelType::Invalid;
-            if (result != KernelType::Float) result = KernelType::Invalid;
-        } else if (!item.inputs.empty()) {
-            result = KernelType::Float;
-            for (const auto& input : item.inputs) {
-                const auto inputType = infer(input);
-                if (inputType == KernelType::Invalid) result = KernelType::Invalid;
-                else if (inputType == KernelType::Vec2) result = KernelType::Vec2;
-            }
-        }
-        typing.erase(key); types[key] = result; return result;
-    };
-    for (const auto& item : definition.kernel)
-        if (infer(item.key) == KernelType::Invalid)
-            errors.push_back("Kernel node '" + item.key + "' has incompatible input types");
-    for (const auto& item : definition.kernel) {
-        const auto role = item.properties.is_object() ? item.properties.value("role", "") : "";
-        if ((role == std::string_view("initial") || role == std::string_view("next")) &&
-            infer(item.key) != KernelType::Vec2)
-            errors.push_back("Simulation state endpoints must produce a two-channel value");
-    }
-    if (definition.execution == SubgraphExecution::Simulation && (initial != 1 || next != 1))
-        errors.push_back("A simulation subgraph needs exactly one initial and next state endpoint");
-    return errors;
+    return registry.descriptor(node.type);
+}
+
+std::vector<std::string> validateSubgraph(const SubgraphDefinition& definition,
+                                          const NodeRegistry& registry) {
+    return validateSubgraphImpl(definition, registry);
 }
 
 } // namespace reaction

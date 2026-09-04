@@ -214,7 +214,7 @@ void GraphRuntime::rebuild() {
             next.emplace(node.id, std::move(found->second));
         } else if (node.type == "subgraph") {
             if (const auto* definition = resolveSubgraph(graph_, node.subgraphId)) {
-                auto instance = createSubgraphInstance(*definition);
+                auto instance = createSubgraphInstance(*definition, registry_);
                 pendingResets_.insert(node.id);
                 next.emplace(node.id, std::move(instance));
             }

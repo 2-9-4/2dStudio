@@ -22,7 +22,7 @@ bool compatible(ValueType from, ValueType to) {
 
 } // namespace
 
-NodeId Graph::addNode(std::string type, Vec2 position) {
+NodeId GraphBody::addNode(std::string type, Vec2 position) {
     const auto id = nextNodeId++;
     NodeRecord record;
     record.id = id;
@@ -32,18 +32,17 @@ NodeId Graph::addNode(std::string type, Vec2 position) {
     return id;
 }
 
-bool Graph::removeNode(NodeId id) {
+bool GraphBody::removeNode(NodeId id) {
     const auto oldSize = nodes_.size();
     std::erase_if(nodes_, [id](const NodeRecord& node) { return node.id == id; });
     std::erase_if(links_, [id](const LinkRecord& link) {
         return link.fromNode == id || link.toNode == id;
     });
-    if (activeOutput == id) activeOutput = 0;
     return nodes_.size() != oldSize;
 }
 
-LinkId Graph::addLink(NodeId fromNode, std::string fromSocket,
-                      NodeId toNode, std::string toSocket) {
+LinkId GraphBody::addLink(NodeId fromNode, std::string fromSocket,
+                          NodeId toNode, std::string toSocket) {
     std::erase_if(links_, [&](const LinkRecord& link) {
         return link.toNode == toNode && link.toSocket == toSocket;
     });
@@ -53,29 +52,39 @@ LinkId Graph::addLink(NodeId fromNode, std::string fromSocket,
     return id;
 }
 
-bool Graph::removeLink(LinkId id) {
+bool GraphBody::removeLink(LinkId id) {
     const auto oldSize = links_.size();
     std::erase_if(links_, [id](const LinkRecord& link) { return link.id == id; });
     return links_.size() != oldSize;
 }
 
-void Graph::clear() {
+void GraphBody::clear() {
     nodes_.clear();
     links_.clear();
-    subgraphs_.clear();
-    activeOutput = 0;
     nextNodeId = 1;
     nextLinkId = 1;
 }
 
-const NodeRecord* Graph::findNode(NodeId id) const {
+const NodeRecord* GraphBody::findNode(NodeId id) const {
     const auto it = std::ranges::find(nodes_, id, &NodeRecord::id);
     return it == nodes_.end() ? nullptr : &*it;
 }
 
-NodeRecord* Graph::findNode(NodeId id) {
+NodeRecord* GraphBody::findNode(NodeId id) {
     const auto it = std::ranges::find(nodes_, id, &NodeRecord::id);
     return it == nodes_.end() ? nullptr : &*it;
+}
+
+bool Graph::removeNode(NodeId id) {
+    const bool removed = GraphBody::removeNode(id);
+    if (removed && activeOutput == id) activeOutput = 0;
+    return removed;
+}
+
+void Graph::clear() {
+    GraphBody::clear();
+    subgraphs_.clear();
+    activeOutput = 0;
 }
 
 const SubgraphDefinition* Graph::findSubgraph(std::string_view id) const {
@@ -167,7 +176,7 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
     }
 
     for (const auto& definition : subgraphs_) {
-        for (const auto& error : validateSubgraph(definition)) {
+        for (const auto& error : validateSubgraph(definition, registry)) {
             result.errors.push_back("Subgraph '" + definition.name + "': " + error);
         }
     }

@@ -30,6 +30,6 @@ bool renderImagePicker(NodeRecord& node);
 
 // Must be called while the node editor is suspended. Popups use ImGui screen
 // coordinates and must never be rendered inside the transformed node canvas.
-bool renderPopup(PopupState& popup, Graph& graph);
+bool renderPopup(PopupState& popup, GraphBody& graph);
 
 } // namespace reaction::node_widgets

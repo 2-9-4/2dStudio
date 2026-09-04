@@ -183,6 +183,87 @@ TEST_CASE("convolution exposes bounded iteration control") {
     REQUIRE(iteration->maximum == 32.0F);
 }
 
+TEST_CASE("spatial simulation operators are ordinary registered nodes") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* coordinates = registry.descriptor("coordinates");
+    REQUIRE(coordinates != nullptr);
+    REQUIRE(coordinates->displayName == "Canvas Coordinates");
+    REQUIRE(coordinates->category == "Input");
+    REQUIRE(coordinates->sockets.size() == 2);
+    REQUIRE(coordinates->sockets[0].key == "x");
+    REQUIRE(coordinates->sockets[0].type == ValueType::Image2D);
+    REQUIRE(coordinates->sockets[1].key == "y");
+    REQUIRE(coordinates->sockets[1].type == ValueType::Image2D);
+
+    const auto* laplacian = registry.descriptor("laplacian");
+    REQUIRE(laplacian != nullptr);
+    REQUIRE(laplacian->displayName == "Laplacian");
+    REQUIRE(laplacian->category == "Filter");
+    REQUIRE(laplacian->sockets.size() == 3);
+    REQUIRE(laplacian->sockets[0].key == "value");
+    REQUIRE(laplacian->sockets[0].type == ValueType::Image2D);
+    REQUIRE(laplacian->sockets[1].key == "scale");
+    REQUIRE(laplacian->sockets[1].type == ValueType::Float);
+    REQUIRE(laplacian->sockets[1].optional);
+    REQUIRE(laplacian->sockets[2].key == "result");
+    REQUIRE(laplacian->sockets[2].type == ValueType::Image2D);
+    REQUIRE(laplacian->parameters.size() == 1);
+    REQUIRE(laplacian->parameters[0].defaultValue == 1.0F);
+    REQUIRE(laplacian->parameters[0].minimum == .25F);
+    REQUIRE(laplacian->parameters[0].maximum == 8.0F);
+
+    Graph graph;
+    const auto uv = graph.addNode("coordinates");
+    const auto filter = graph.addNode("laplacian");
+    graph.addLink(uv, "x", filter, "value");
+    REQUIRE(graph.compile(registry).valid);
+}
+
+TEST_CASE("Select is an ordinary registered node with exact nonzero semantics") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* descriptor = registry.descriptor("select");
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(descriptor->displayName == "Select");
+    REQUIRE(descriptor->category == "Logic");
+    REQUIRE(descriptor->sockets.size() == 4);
+
+    auto node = registry.create("select");
+    EvaluationContext context{};
+    std::array<Value, 3> inputs{Value{-0.25F}, Value{2.0F}, Value{3.0F}};
+    std::array<Value, 1> outputs;
+    node->evaluate(context, inputs, outputs);
+    REQUIRE(std::get<float>(outputs[0]) == 2.0F);
+    inputs[0] = 0.0F;
+    node->evaluate(context, inputs, outputs);
+    REQUIRE(std::get<float>(outputs[0]) == 3.0F);
+}
+
+TEST_CASE("canvas coordinates and Laplacian execute through the normal graph runtime") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {4, 4, 60};
+    const auto coordinates = graph.addNode("coordinates");
+    const auto laplacian = graph.addNode("laplacian");
+    graph.addLink(coordinates, "x", laplacian, "value");
+    GpuRuntime gpu;
+    GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0, 0, false));
+
+    const auto& coordinateValues = runtime.values().at(coordinates);
+    REQUIRE(coordinateValues.size() == 2);
+    const auto x = readImage(std::get<ImageHandle>(coordinateValues[0]));
+    const auto y = readImage(std::get<ImageHandle>(coordinateValues[1]));
+    REQUIRE(x[0] == Catch::Approx(.125F).margin(.001F));
+    REQUIRE(x[3 * 4] == Catch::Approx(.875F).margin(.001F));
+    REQUIRE(x[4 * 4] == Catch::Approx(.125F).margin(.001F));
+    REQUIRE(y[0] == Catch::Approx(.125F).margin(.001F));
+    REQUIRE(y[4 * 4] == Catch::Approx(.375F).margin(.001F));
+
+    const auto result = readImage(std::get<ImageHandle>(runtime.values().at(laplacian)[0]));
+    REQUIRE(result[0] == Catch::Approx(.3F).margin(.003F));
+    REQUIRE(result[(1 * 4 + 1) * 4] == Catch::Approx(0.0F).margin(.003F));
+}
+
 TEST_CASE("Perlin advances by evaluated frame rather than wall time") {
     HiddenContext context;
     NodeRegistry registry; registerBuiltInNodes(registry);
@@ -421,6 +502,40 @@ TEST_CASE("discrete reaction accepts scalar and image multiplier inputs") {
     const auto expected = readImage(std::get<ImageHandle>(runtime.values().at(baseline)[0]));
     REQUIRE(readImage(std::get<ImageHandle>(runtime.values().at(scalarMapped)[0])) == expected);
     REQUIRE(readImage(std::get<ImageHandle>(runtime.values().at(imageMapped)[0])) == expected);
+}
+
+TEST_CASE("structural subgraph edits change the fused simulation") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {24, 24, 60};
+
+    auto definition = builtInSubgraphs().front();
+    definition.id = "project.edited_discrete";
+    definition.immutable = false;
+    const auto nextState = std::ranges::find(
+        definition.body.nodes(), std::string("simulation_next_state"), &NodeRecord::type);
+    REQUIRE(nextState != definition.body.nodes().end());
+    const NodeId nextStateId = nextState->id;
+    const auto zero = definition.body.addNode("float", {1700, 820});
+    definition.body.findNode(zero)->parameters["value"] = 0.0F;
+    const auto select = definition.body.addNode("select", {1880, 820});
+    definition.body.findNode(select)->parameters = {
+        {"condition", -0.25F}, {"ifFalse", 1.0F}};
+    definition.body.addLink(zero, "value", select, "ifTrue");
+    definition.body.addLink(select, "result", nextStateId, "b");
+    graph.subgraphs().push_back(std::move(definition));
+
+    const auto reaction = graph.addNode("subgraph");
+    graph.findNode(reaction)->subgraphId = "project.edited_discrete";
+    graph.findNode(reaction)->parameters = {{"feed", .055F}, {"kill", .062F},
+        {"diffA", 1.0F}, {"diffB", .5F}, {"structureScale", 1.0F},
+        {"dt", 1.0F}, {"iterations", 1.0F}, {"autoReset", 0.0F}};
+
+    GpuRuntime gpu; GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0, 1.0 / 60.0, true));
+    const auto b = readImage(std::get<ImageHandle>(runtime.values().at(reaction)[2]));
+    for (std::size_t pixel = 0; pixel < b.size(); pixel += 4)
+        REQUIRE(b[pixel] == Catch::Approx(0.0F).margin(.0001F));
 }
 
 TEST_CASE("discrete reaction default B agrees with the monolithic implementation") {
