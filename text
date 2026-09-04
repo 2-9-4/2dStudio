@@ -202,17 +202,6 @@
     },
     {
       "from": {
-        "node": 33,
-        "socket": "result"
-      },
-      "id": 104,
-      "to": {
-        "node": 4,
-        "socket": "image"
-      }
-    },
-    {
-      "from": {
         "node": 21,
         "socket": "result"
       },
@@ -224,13 +213,90 @@
     },
     {
       "from": {
-        "node": 34,
+        "node": 35,
+        "socket": "time"
+      },
+      "id": 110,
+      "to": {
+        "node": 36,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 36,
+        "socket": "result"
+      },
+      "id": 112,
+      "to": {
+        "node": 38,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 38,
+        "socket": "result"
+      },
+      "id": 113,
+      "to": {
+        "node": 37,
+        "socket": "value"
+      }
+    },
+    {
+      "from": {
+        "node": 39,
         "socket": "image"
       },
-      "id": 109,
+      "id": 115,
+      "to": {
+        "node": 40,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 40,
+        "socket": "result"
+      },
+      "id": 116,
+      "to": {
+        "node": 34,
+        "socket": "seed"
+      }
+    },
+    {
+      "from": {
+        "node": 34,
+        "socket": "b"
+      },
+      "id": 118,
       "to": {
         "node": 3,
         "socket": "value"
+      }
+    },
+    {
+      "from": {
+        "node": 33,
+        "socket": "result"
+      },
+      "id": 126,
+      "to": {
+        "node": 44,
+        "socket": "image"
+      }
+    },
+    {
+      "from": {
+        "node": 44,
+        "socket": "image"
+      },
+      "id": 129,
+      "to": {
+        "node": 4,
+        "socket": "image"
       }
     }
   ],
@@ -245,11 +311,11 @@
         "feed": 0.08020000159740448,
         "iterations": 64.0,
         "kill": 0.06199999898672104,
-        "structureScale": 0.25
+        "structureScale": 0.4359999895095825
       },
       "position": [
-        2966.0,
-        586.0
+        4376.0,
+        964.0
       ],
       "type": "reaction_diffusion",
       "typeVersion": 1
@@ -262,8 +328,8 @@
         "r0": 0.0
       },
       "position": [
-        3356.0,
-        603.0
+        3377.0,
+        981.0
       ],
       "type": "color_ramp",
       "typeVersion": 1
@@ -272,8 +338,8 @@
       "id": 4,
       "parameters": {},
       "position": [
-        4327.0,
-        698.0
+        4639.0,
+        1468.0
       ],
       "type": "output",
       "typeVersion": 1
@@ -283,7 +349,7 @@
       "parameters": {},
       "position": [
         296.0,
-        -117.0
+        192.0
       ],
       "type": "threshold",
       "typeVersion": 1
@@ -311,7 +377,7 @@
       },
       "position": [
         629.0,
-        -194.0
+        115.0
       ],
       "type": "convolution",
       "typeVersion": 1
@@ -499,7 +565,7 @@
       },
       "position": [
         1019.0,
-        -309.0
+        0.0
       ],
       "type": "convolution",
       "typeVersion": 1
@@ -512,7 +578,7 @@
       },
       "position": [
         1549.0,
-        157.0
+        467.0
       ],
       "type": "math",
       "typeVersion": 1
@@ -522,7 +588,7 @@
       "parameters": {},
       "position": [
         1896.0,
-        183.0
+        457.0
       ],
       "type": "invert",
       "typeVersion": 1
@@ -536,7 +602,7 @@
       },
       "position": [
         1896.0,
-        451.0
+        725.0
       ],
       "type": "math",
       "typeVersion": 1
@@ -549,7 +615,7 @@
       },
       "position": [
         1549.0,
-        -277.0
+        32.0
       ],
       "type": "perlin",
       "typeVersion": 1
@@ -564,7 +630,7 @@
       },
       "position": [
         1896.0,
-        -303.0
+        41.0
       ],
       "type": "math",
       "typeVersion": 1
@@ -580,7 +646,7 @@
       },
       "position": [
         2236.0,
-        74.0
+        767.0
       ],
       "type": "math",
       "typeVersion": 1
@@ -596,7 +662,7 @@
       },
       "position": [
         2626.0,
-        597.0
+        967.0
       ],
       "type": "math",
       "typeVersion": 1
@@ -608,8 +674,8 @@
         "mode": 2.0
       },
       "position": [
-        3675.0,
-        643.0
+        3696.0,
+        1022.0
       ],
       "type": "mix",
       "typeVersion": 1
@@ -622,8 +688,8 @@
         "r1": 0.0
       },
       "position": [
-        3356.0,
-        -197.0
+        3377.0,
+        112.0
       ],
       "type": "color_ramp",
       "typeVersion": 1
@@ -667,7 +733,7 @@
       },
       "position": [
         2966.0,
-        -217.0
+        92.0
       ],
       "type": "convolution",
       "typeVersion": 1
@@ -735,7 +801,7 @@
       },
       "position": [
         2236.0,
-        560.0
+        1183.0
       ],
       "type": "convolution",
       "typeVersion": 1
@@ -747,7 +813,7 @@
       },
       "position": [
         0.0,
-        -97.0
+        212.0
       ],
       "type": "image",
       "typeVersion": 1
@@ -759,8 +825,8 @@
         "operation": 2.0
       },
       "position": [
-        3987.0,
-        597.0
+        4036.0,
+        967.0
       ],
       "type": "math",
       "typeVersion": 1
@@ -769,20 +835,337 @@
       "id": 34,
       "parameters": {
         "autoReset": 0.0,
-        "diffA": 1.0240000486373901,
-        "diffB": 0.3799999952316284,
-        "dt": 0.989080011844635,
+        "diffA": 1.9759999513626099,
+        "diffB": 0.23199999332427979,
+        "dt": 0.8259000182151794,
         "feed": 0.08020000159740448,
-        "iterations": 64.0,
+        "iterations": 26.0,
         "kill": 0.06199999898672104,
         "structureScale": 0.25
       },
       "position": [
-        2979.0,
-        1223.0
+        2963.0,
+        1002.0
       ],
       "subgraphId": "project.reaction_diffusion.35.2",
       "type": "subgraph",
+      "typeVersion": 1
+    },
+    {
+      "id": 35,
+      "parameters": {},
+      "position": [
+        3377.0,
+        1936.0
+      ],
+      "type": "time",
+      "typeVersion": 1
+    },
+    {
+      "id": 36,
+      "parameters": {
+        "operation": 8.0
+      },
+      "position": [
+        3696.0,
+        1838.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 37,
+      "parameters": {},
+      "position": [
+        4376.0,
+        1927.0
+      ],
+      "type": "float_preview",
+      "typeVersion": 1
+    },
+    {
+      "id": 38,
+      "parameters": {
+        "inMin": -1.0,
+        "operation": 11.0,
+        "outMax": 1.0,
+        "outMin": 0.6000000238418579
+      },
+      "position": [
+        4036.0,
+        1838.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 39,
+      "parameters": {},
+      "position": [
+        2236.0,
+        332.0
+      ],
+      "type": "perlin",
+      "typeVersion": 1
+    },
+    {
+      "id": 40,
+      "parameters": {
+        "b": 5.679999828338623,
+        "inMin": -1.0,
+        "operation": 2.0,
+        "outMax": 1.0,
+        "outMin": 0.6000000238418579
+      },
+      "position": [
+        2626.0,
+        298.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 44,
+      "parameters": {
+        "bias": 0.0,
+        "iterations": 1.0,
+        "kernel": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          -1.0,
+          11.0,
+          -1.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          -1.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "kernelSize": 15,
+        "normalize": 1.0,
+        "operation": 0.0,
+        "preset": "Custom"
+      },
+      "position": [
+        3679.0,
+        1308.0
+      ],
+      "type": "convolution",
       "typeVersion": 1
     }
   ],
@@ -6757,8 +7140,8 @@
           "label": "Previous Simulation State",
           "parameters": {},
           "position": [
-            582.0,
-            961.0
+            574.0,
+            940.0
           ],
           "type": "simulation_previous_state",
           "typeVersion": 1
@@ -6781,8 +7164,8 @@
           "label": "Chemical A Laplacian",
           "parameters": {},
           "position": [
-            922.0,
-            1008.0
+            911.0,
+            1017.0
           ],
           "type": "laplacian",
           "typeVersion": 1
@@ -6792,8 +7175,8 @@
           "label": "Chemical B Laplacian",
           "parameters": {},
           "position": [
-            922.0,
-            1212.0
+            927.0,
+            1211.0
           ],
           "type": "laplacian",
           "typeVersion": 1
