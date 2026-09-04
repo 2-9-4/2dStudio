@@ -372,12 +372,10 @@ std::string GraphRuntime::fusionSignature() const {
         if (!descriptor || !descriptor->lowerable || !compiled_.inferredOutputs.contains(id) ||
             compiled_.inferredOutputs.at(id) != ValueType::Image2D) continue;
         result += std::to_string(id) + ":" + node->type;
-        if (node->type == "math")
-            result += ":operation=" + std::to_string(static_cast<int>(
-                node->parameters.value("operation", 0.0F)));
-        else if (node->type == "mix")
-            result += ":mode=" + std::to_string(static_cast<int>(
-                node->parameters.value("mode", 0.0F)));
+        if (const auto found = instances_.find(id); found != instances_.end()) {
+            const auto variant = found->second->shaderVariantKey(node->parameters);
+            if (!variant.empty()) result += ":" + variant;
+        }
         result += ";";
     }
     result += "preview:";

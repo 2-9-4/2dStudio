@@ -77,14 +77,9 @@ public:
                     result.candidateOutputs.push_back(
                         ShaderOutputRequirement{id, socket.key, found->second, -1, {}});
             }
-            if (record->type == "math") {
-                const auto operation = record->parameters.value("operation", 0.0F);
-                result.specializationKey += std::to_string(id) + ":operation=" +
-                    std::to_string(static_cast<int>(mathOperation(operation))) + ";";
-            } else if (record->type == "mix") {
-                result.specializationKey += std::to_string(id) + ":mode=" +
-                    std::to_string(static_cast<int>(record->parameters.value("mode", 0.0F))) + ";";
-            }
+            const auto variant = instance->shaderVariantKey(record->parameters);
+            if (!variant.empty())
+                result.specializationKey += std::to_string(id) + ":" + variant + ";";
         }
         region_ = nullptr;
         return result;
@@ -275,16 +270,24 @@ std::vector<ShaderRegion> planShaderRegions(
         const auto* node = graph.findNode(id);
         NodeDescriptor storage;
         const auto* descriptor = node ? resolveDescriptor(graph, *node, registry, storage) : nullptr;
-        if (descriptor && descriptor->lowerable && compiled.inferredOutputs.contains(id) &&
-            compiled.inferredOutputs.at(id) == ValueType::Image2D) eligible.insert(id);
+        if (!descriptor || !descriptor->lowerable || !compiled.inferredOutputs.contains(id) ||
+            compiled.inferredOutputs.at(id) != ValueType::Image2D) continue;
+        auto instance = registry.create(node->type);
+        if (!instance) continue;
+        instance->setParameters(node->parameters);
+        if (instance->supportsRegionFusion(node->parameters)) eligible.insert(id);
     }
 
     std::unordered_map<NodeId, std::vector<NodeId>> eligiblePredecessors;
     std::unordered_map<NodeId, std::vector<NodeId>> consumers;
     for (const auto& link : graph.links()) {
         const auto* target = graph.findNode(link.toNode);
-        const bool neighborhoodBoundary = target && target->type == "laplacian" &&
-                                          link.toSocket == "value";
+        NodeDescriptor storage;
+        const auto* descriptor = target
+            ? resolveDescriptor(graph, *target, registry, storage) : nullptr;
+        const bool neighborhoodBoundary = descriptor &&
+            !descriptor->neighborhoodSocket.empty() &&
+            link.toSocket == descriptor->neighborhoodSocket;
         auto& targets = consumers[link.fromNode];
         if (std::ranges::find(targets, link.toNode) == targets.end()) targets.push_back(link.toNode);
         if (!neighborhoodBoundary && eligible.contains(link.fromNode) && eligible.contains(link.toNode)) {

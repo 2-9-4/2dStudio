@@ -51,6 +51,9 @@ struct NodeDescriptor {
     // Lowerable nodes can participate in generated shader regions. Whether a
     // particular instance is eligible still depends on its inferred output type.
     bool lowerable = false;
+    // When non-empty, links feeding this socket sample a pixel neighborhood and
+    // therefore form a materialization boundary in generated shader regions.
+    std::string neighborhoodSocket{};
 };
 
 struct EvaluationContext {
@@ -79,6 +82,12 @@ public:
     // GPU-capable nodes may lower themselves into a generated shader region.
     // The default keeps existing and third-party node implementations unfused.
     virtual bool lowerShader(ShaderLoweringContext&) const { return false; }
+    // Contributes a stable specialization key so parameter edits that change the
+    // emitted GLSL (baked branches, unrolled loops, const kernels) rebuild regions.
+    virtual std::string shaderVariantKey(const nlohmann::json&) const { return {}; }
+    // A lowerable node may still refuse fusion for a given parameter set (for
+    // example, multi-pass iterations). Such nodes stay materialized boundaries.
+    virtual bool supportsRegionFusion(const nlohmann::json&) const { return true; }
 };
 
 class NodeRegistry {

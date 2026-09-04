@@ -308,6 +308,71 @@ TEST_CASE("Laplacian neighborhood inputs form region boundaries") {
     }) == 1);
 }
 
+TEST_CASE("convolution neighborhood inputs form region boundaries and specialize") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph;
+    const auto source = graph.addNode("perlin");
+    const auto convolution = graph.addNode("convolution");
+    const auto threshold = graph.addNode("threshold");
+    graph.addLink(source, "image", convolution, "image");
+    graph.addLink(convolution, "image", threshold, "value");
+    auto compiled = graph.compile(registry);
+    REQUIRE(compiled.valid);
+    auto regions = planShaderRegions(graph, registry, compiled, 16, 1024);
+    REQUIRE(regions.size() == 2);
+    REQUIRE(regions[0].nodes == std::vector<NodeId>{source});
+    REQUIRE(regions[1].nodes == std::vector<NodeId>{convolution, threshold});
+
+    const auto generated = generateComputeShader(regions[1], {threshold});
+    REQUIRE(generated.source.find("convolutionKernel_") != std::string::npos);
+    REQUIRE(generated.source.find("operation") == std::string::npos);
+    REQUIRE(generated.source.find("normalize") == std::string::npos);
+    REQUIRE(generated.source.find("weightSum") == std::string::npos);
+    REQUIRE(generated.source.find("for(int y=-1;y<=1;++y)for(int x=-1;x<=1;++x)") !=
+            std::string::npos);
+
+    const auto originalSource = generated.source;
+    const auto originalKey = generated.specializationKey;
+    graph.findNode(convolution)->parameters["normalize"] = 1.0F;
+    compiled = graph.compile(registry);
+    regions = planShaderRegions(graph, registry, compiled, 16, 1024);
+    const auto normalized = generateComputeShader(regions[1], {threshold});
+    REQUIRE(normalized.source != originalSource);
+    REQUIRE(normalized.specializationKey != originalKey);
+    REQUIRE(normalized.source.find("weightSum") != std::string::npos);
+
+    graph.findNode(convolution)->parameters["kernelSize"] = 5.0F;
+    compiled = graph.compile(registry);
+    regions = planShaderRegions(graph, registry, compiled, 16, 1024);
+    const auto larger = generateComputeShader(regions[1], {threshold});
+    REQUIRE(larger.source != normalized.source);
+    REQUIRE(larger.specializationKey != normalized.specializationKey);
+    REQUIRE(larger.source.find("for(int y=-2;y<=2;++y)for(int x=-2;x<=2;++x)") !=
+            std::string::npos);
+}
+
+TEST_CASE("convolution iterations above one stay a materialized boundary") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph;
+    const auto source = graph.addNode("perlin");
+    const auto convolution = graph.addNode("convolution");
+    graph.findNode(convolution)->parameters = {{"iterations", 3.0F}};
+    const auto threshold = graph.addNode("threshold");
+    graph.addLink(source, "image", convolution, "image");
+    graph.addLink(convolution, "image", threshold, "value");
+    const auto compiled = graph.compile(registry);
+    REQUIRE(compiled.valid);
+    const auto regions = planShaderRegions(graph, registry, compiled, 16, 1024);
+    const auto contains = [&](NodeId id) {
+        return std::ranges::any_of(regions, [&](const auto& region) {
+            return std::ranges::find(region.nodes, id) != region.nodes.end();
+        });
+    };
+    REQUIRE_FALSE(contains(convolution));
+    REQUIRE(contains(source));
+    REQUIRE(contains(threshold));
+}
+
 TEST_CASE("shader planner keeps branch and join boundaries materialized") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph;

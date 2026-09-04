@@ -166,6 +166,10 @@ public:
         return result;
     }
     const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
+    std::string shaderVariantKey(const nlohmann::json& parameters) const override {
+        return "operation=" + std::to_string(
+            static_cast<int>(mathOperation(parameter(parameters, "operation", 0))));
+    }
     bool lowerShader(ShaderLoweringContext& context) const override {
         const auto operation = mathOperation(parameter(parameters_, "operation", 0));
         static constexpr std::array<const char*, 3> sockets{"a", "b", "c"};
@@ -259,6 +263,10 @@ public:
          {"factor","Factor",ValueType::AnyNumeric,SocketDirection::Input,true},{"result","Result",ValueType::AnyNumeric,SocketDirection::Output}},
         {{"mode","Mode",0,0,9,ParameterDescriptor::Control::Enum},{"a","A",0,0,1},{"b","B",1,0,1},{"factor","Factor",0.5F,0,1}}}; result.lowerable=true; return result; }
     const NodeDescriptor& descriptor() const override { static const auto value=describe();return value; }
+    std::string shaderVariantKey(const nlohmann::json& parameters) const override {
+        return "mode=" + std::to_string(std::clamp(
+            static_cast<int>(parameter(parameters, "mode", 0)), 0, 9));
+    }
     bool lowerShader(ShaderLoweringContext& context) const override {
         const auto type = context.valueType();
         const auto a = context.input("a", "a", 0.0F);
@@ -524,6 +532,7 @@ public:
                  {"result", "Result", ValueType::AnyVector, SocketDirection::Output}},
                 {{"scale", "Scale", 1.0F, .25F, 8.0F}}};
         result.lowerable = true;
+        result.neighborhoodSocket = "value";
         return result;
     }
     const NodeDescriptor& descriptor() const override {
