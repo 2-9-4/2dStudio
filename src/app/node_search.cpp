@@ -30,7 +30,12 @@ bool whitespace(char character) {
 }
 
 AddNodeEntry baseEntry(const NodeDescriptor& descriptor) {
-    return {descriptor.type, descriptor.displayName, descriptor.category, {}, {}, {}, 1,
+    // An explicit {} in an aggregate initializer constructs a null JSON value,
+    // rather than using AddNodeEntry::parameters' object default.  Nodes created
+    // from an unconfigured entry (such as plain "Mix") must always start with a
+    // parameter object, because the editor reads defaults with json::value().
+    return {descriptor.type, descriptor.displayName, descriptor.category, {},
+            nlohmann::json::object(), {}, 1,
             nullptr, {descriptor.displayName, descriptor.category, descriptor.type}};
 }
 

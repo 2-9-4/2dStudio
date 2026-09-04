@@ -50,7 +50,11 @@ NodeRecord deserializeNode(const nlohmann::json& value) {
     node.label = value.value("label", std::string{});
     const auto& position = value.at("position");
     node.position = {position.at(0).get<float>(), position.at(1).get<float>()};
-    node.parameters = value.value("parameters", nlohmann::json::object());
+    // Older builds could save a null parameter block for a node created from a
+    // plain search-menu entry.  Treat it as an empty object so loading remains
+    // safe for all parameter widgets and runtime nodes.
+    const auto parameters = value.value("parameters", nlohmann::json::object());
+    node.parameters = parameters.is_object() ? parameters : nlohmann::json::object();
     return node;
 }
 

@@ -26,6 +26,7 @@ private:
     void loadProject(const std::filesystem::path& path);
     void loadProjectDialog();
     void saveProjectDialog(bool forceDialog);
+    void updateRecoverySidecar();
     void exportFrameDialog();
     void startRecordingDialog();
     void stopRecording(bool reportStatus = true);
@@ -62,6 +63,9 @@ private:
     std::unique_ptr<GpuRuntime> gpu_;
     std::unique_ptr<GraphRuntime> runtime_;
     std::filesystem::path currentPath_;
+    std::string recoverySnapshot_;
+    std::filesystem::path recoveryCandidate_;
+    bool recoveryPromptDismissed_ = false;
     std::unordered_map<NodeId, bool> positioned_;
     bool playing_ = true;
     bool dirty_ = false;

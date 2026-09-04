@@ -46,6 +46,18 @@ TEST_CASE("root entries include preconfigured math aliases") {
     REQUIRE(matches(*subtract, "subtract"));
 }
 
+TEST_CASE("plain search entries start with an object parameter block") {
+    NodeRegistry registry;
+    addDescriptor(registry, {"mix", 1, "Mix", "Color", {}, {}});
+
+    const Graph graph;
+    const auto entries = buildRootEntries(registry, graph);
+    const auto* mix = findEntry(entries, "mix");
+
+    REQUIRE(mix != nullptr);
+    REQUIRE(mix->parameters.is_object());
+}
+
 TEST_CASE("subgraph editor entries include simulation and keyed interface nodes") {
     NodeRegistry registry;
     SubgraphDefinition definition;

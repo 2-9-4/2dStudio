@@ -36,6 +36,10 @@ namespace reaction {
 namespace ed = ax::NodeEditor;
 namespace {
 
+std::filesystem::path recoveryPath(const std::filesystem::path& projectPath) {
+    return projectPath.string() + ".recovery";
+}
+
 void glfwError(int, const char* description) {
     throw std::runtime_error(description ? description : "GLFW error");
 }
@@ -250,6 +254,9 @@ void Application::newProject() {
     graph_.addLink(ramp, "image", output, "image");
     graph_.activeOutput = output;
     currentPath_.clear();
+    recoverySnapshot_.clear();
+    recoveryCandidate_.clear();
+    recoveryPromptDismissed_ = false;
     positioned_.clear();
     fitRootGraph_ = true;
     elapsed_ = 0;
@@ -283,6 +290,12 @@ void Application::loadProject(const std::filesystem::path& path) {
     editingSubgraphInstance_ = 0;
     positionedSubgraphId_.clear();
     positionedSubgraph_.clear();
+    const auto sidecar = recoveryPath(path);
+    std::error_code error;
+    const bool recover = std::filesystem::exists(sidecar, error) && !error &&
+        (!std::filesystem::exists(path, error) ||
+         std::filesystem::last_write_time(sidecar, error) >
+             std::filesystem::last_write_time(path, error));
     graph_ = reaction::loadProject(path, registry_);
     updatePreviewAspectRatio();
     currentPath_ = path;
@@ -290,8 +303,12 @@ void Application::loadProject(const std::filesystem::path& path) {
     fitRootGraph_ = true;
     elapsed_ = 0;
     rebuildRuntime();
+    recoverySnapshot_ = serializeProject(graph_).dump();
+    recoveryCandidate_ = recover ? sidecar : std::filesystem::path{};
+    recoveryPromptDismissed_ = false;
     dirty_ = false;
-    setStatus("Loaded " + currentPath_.filename().string());
+    setStatus(recover ? "Newer recovery changes are available"
+                      : "Loaded " + currentPath_.filename().string());
 }
 
 void Application::saveProjectDialog(bool forceDialog) {
@@ -302,10 +319,31 @@ void Application::saveProjectDialog(bool forceDialog) {
         currentPath_ = std::move(selected);
     }
     try {
+        // Keep a separate, atomically replaced recovery copy. It intentionally
+        // stays beside the project after a normal save, so it is also useful if
+        // the project file itself is interrupted or damaged during a later save.
+        saveProjectAtomic(graph_, recoveryPath(currentPath_));
+        // Write the primary project last. Its timestamp then records that it
+        // already includes this recovery snapshot.
         saveProjectAtomic(graph_, currentPath_);
+        recoverySnapshot_ = serializeProject(graph_).dump();
+        recoveryCandidate_.clear();
+        recoveryPromptDismissed_ = false;
         dirty_ = false;
         setStatus("Saved " + currentPath_.filename().string());
     } catch (const std::exception& error) { setStatus(error.what(), true); }
+}
+
+void Application::updateRecoverySidecar() {
+    if (currentPath_.empty()) return;
+    const auto snapshot = serializeProject(graph_).dump();
+    if (snapshot == recoverySnapshot_) return;
+    try {
+        saveProjectAtomic(graph_, recoveryPath(currentPath_));
+        recoverySnapshot_ = snapshot;
+    } catch (const std::exception& error) {
+        setStatus(std::string("Recovery save failed: ") + error.what(), true);
+    }
 }
 
 void Application::exportFrameDialog() {
@@ -1259,6 +1297,46 @@ void Application::renderEditor() {
     ImGui::NewFrame();
     handleShortcuts();
 
+    if (!recoveryCandidate_.empty() && !recoveryPromptDismissed_)
+        ImGui::OpenPopup("Recover project changes?");
+    if (ImGui::BeginPopupModal("Recover project changes?", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("A newer recovery copy was found beside this project:");
+        ImGui::TextWrapped("%s", recoveryCandidate_.filename().string().c_str());
+        ImGui::Spacing();
+        ImGui::TextWrapped("Recover its unsaved graph changes?");
+        if (ImGui::Button("Recover", ImVec2(120, 0))) {
+            try {
+                graph_ = reaction::loadProject(recoveryCandidate_, registry_);
+                editingSubgraphId_.clear();
+                editingSubgraphInstance_ = 0;
+                positionedSubgraphId_.clear();
+                positionedSubgraph_.clear();
+                positioned_.clear();
+                fitRootGraph_ = true;
+                elapsed_ = 0;
+                updatePreviewAspectRatio();
+                rebuildRuntime();
+                recoverySnapshot_ = serializeProject(graph_).dump();
+                recoveryCandidate_.clear();
+                dirty_ = true;
+                setStatus("Recovered unsaved graph changes");
+                ImGui::CloseCurrentPopup();
+            } catch (const std::exception& error) {
+                recoveryPromptDismissed_ = true;
+                setStatus(std::string("Cannot recover project: ") + error.what(), true);
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Keep Current File", ImVec2(150, 0))) {
+            recoveryPromptDismissed_ = true;
+            setStatus("Kept current project; recovery copy remains available", false);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New", "Ctrl+N")) newProject();
@@ -1338,6 +1416,7 @@ void Application::renderEditor() {
     glViewport(0, 0, widthPixels, heightPixels); glClearColor(.035F,.035F,.045F,1); glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     glfwSwapBuffers(editorWindow_);
+    updateRecoverySidecar();
 }
 
 void Application::renderPreview() {

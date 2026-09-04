@@ -152,6 +152,18 @@ TEST_CASE("project JSON round trips graph state") {
     REQUIRE(restored.findNode(image)->parameters.at("seed") == 42);
 }
 
+TEST_CASE("null node parameters load as an empty object") {
+    auto nodes = registry();
+    const nlohmann::json document = {
+        {"formatVersion", 1}, {"project", {{"width", 128}, {"height", 128}, {"targetFps", 60}}},
+        {"nodes", {{{"id", 9}, {"type", "math"}, {"position", {1, 2}}, {"parameters", nullptr}}}},
+        {"links", nlohmann::json::array()}, {"activeOutput", 0}};
+
+    const auto graph = deserializeProject(document, nodes);
+    REQUIRE(graph.nodes().front().parameters.is_object());
+    REQUIRE(serializeProject(graph)["nodes"][0]["parameters"].is_object());
+}
+
 TEST_CASE("unknown nodes preserve their original JSON") {
     auto nodes = registry();
     const nlohmann::json document = {
