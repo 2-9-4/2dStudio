@@ -64,6 +64,9 @@ public:
     virtual void reset(EvaluationContext&) {}
     [[nodiscard]] virtual nlohmann::json parameters() const = 0;
     virtual void setParameters(const nlohmann::json& values) = 0;
+    // Lets multi-output nodes avoid materializing outputs that have no consumers.
+    // Implementations must leave required outputs in their descriptor order.
+    virtual void setOutputRequirements(const std::vector<bool>&) {}
     // GPU-capable nodes may lower themselves into a generated shader region.
     // The default keeps existing and third-party node implementations unfused.
     virtual bool lowerShader(ShaderLoweringContext&) const { return false; }

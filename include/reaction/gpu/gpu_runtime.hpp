@@ -74,6 +74,11 @@ struct NodeFusionInfo {
 void registerBuiltInNodes(NodeRegistry& registry);
 [[nodiscard]] std::unique_ptr<NodeInstance> createSubgraphInstance(
     const SubgraphDefinition& definition, const NodeRegistry& registry);
+// Exposed for source-level tests and shader inspection. Simulation graphs have
+// feedback and neighborhood-sampling semantics, so they use a dedicated planner
+// even though individual arithmetic expressions share the normal shader lowering.
+[[nodiscard]] std::string generateSimulationShader(
+    const SubgraphDefinition& definition, bool initialization);
 
 class GraphRuntime {
 public:
@@ -109,6 +114,7 @@ private:
     std::unordered_map<NodeId, double> timings_;
     std::unordered_map<NodeId, GLuint> timerQueries_;
     std::unordered_map<NodeId, nlohmann::json> previousParameters_;
+    std::unordered_map<NodeId, std::string> subgraphSignatures_;
     std::unordered_set<NodeId> pendingResets_;
     bool needsReset_ = true;
     bool forceDirty_ = true;

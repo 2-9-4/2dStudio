@@ -213,10 +213,21 @@
     },
     {
       "from": {
-        "node": 2,
+        "node": 21,
+        "socket": "result"
+      },
+      "id": 106,
+      "to": {
+        "node": 34,
+        "socket": "feedMultiplier"
+      }
+    },
+    {
+      "from": {
+        "node": 34,
         "socket": "image"
       },
-      "id": 105,
+      "id": 109,
       "to": {
         "node": 3,
         "socket": "value"
@@ -752,6 +763,26 @@
         597.0
       ],
       "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 34,
+      "parameters": {
+        "autoReset": 0.0,
+        "diffA": 1.0240000486373901,
+        "diffB": 0.3799999952316284,
+        "dt": 0.989080011844635,
+        "feed": 0.08020000159740448,
+        "iterations": 64.0,
+        "kill": 0.06199999898672104,
+        "structureScale": 0.25
+      },
+      "position": [
+        2979.0,
+        1223.0
+      ],
+      "subgraphId": "project.reaction_diffusion.35.2",
+      "type": "subgraph",
       "typeVersion": 1
     }
   ],
@@ -5564,6 +5595,1611 @@
           "position": [
             3670.0,
             1346.0
+          ],
+          "type": "subgraph_output",
+          "typeVersion": 1
+        }
+      ],
+      "version": 1
+    },
+    {
+      "category": "Simulation",
+      "execution": "simulation",
+      "id": "project.reaction_diffusion.35.2",
+      "interface": [
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "feedMultiplier",
+          "kind": "input",
+          "label": "Feed Multiplier",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "role": "",
+          "type": "numeric"
+        },
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "killMultiplier",
+          "kind": "input",
+          "label": "Kill Multiplier",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "role": "",
+          "type": "numeric"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "seed",
+          "kind": "input",
+          "label": "Seed",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "role": "",
+          "type": "image2d"
+        },
+        {
+          "control": "float",
+          "default": 0.054999999701976776,
+          "key": "feed",
+          "kind": "slider",
+          "label": "Feed",
+          "maximum": 0.10000000149011612,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.06199999898672104,
+          "key": "kill",
+          "kind": "slider",
+          "label": "Kill",
+          "maximum": 0.10000000149011612,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "diffA",
+          "kind": "slider",
+          "label": "Diffusion A",
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.5,
+          "key": "diffB",
+          "kind": "slider",
+          "label": "Diffusion B",
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "structureScale",
+          "kind": "slider",
+          "label": "Structure Scale",
+          "maximum": 8.0,
+          "minimum": 0.25,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 1.0,
+          "key": "dt",
+          "kind": "slider",
+          "label": "Timestep",
+          "maximum": 2.0,
+          "minimum": 0.009999999776482582,
+          "optional": false,
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "integer",
+          "default": 8.0,
+          "key": "iterations",
+          "kind": "slider",
+          "label": "Iterations",
+          "maximum": 64.0,
+          "minimum": 1.0,
+          "optional": false,
+          "role": "iterations",
+          "type": "float"
+        },
+        {
+          "control": "boolean",
+          "default": 0.0,
+          "key": "autoReset",
+          "kind": "slider",
+          "label": "Auto Reset",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "autoReset",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "image",
+          "kind": "output",
+          "label": "Image",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "image2d"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "a",
+          "kind": "output",
+          "label": "Chemical A",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "image2d"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "b",
+          "kind": "output",
+          "label": "Chemical B",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "role": "",
+          "type": "image2d"
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": 1,
+            "socket": "x"
+          },
+          "id": 1,
+          "to": {
+            "node": 2,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 1,
+            "socket": "y"
+          },
+          "id": 2,
+          "to": {
+            "node": 3,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 2,
+            "socket": "result"
+          },
+          "id": 3,
+          "to": {
+            "node": 4,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 2,
+            "socket": "result"
+          },
+          "id": 4,
+          "to": {
+            "node": 4,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "result"
+          },
+          "id": 5,
+          "to": {
+            "node": 5,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "result"
+          },
+          "id": 6,
+          "to": {
+            "node": 5,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 4,
+            "socket": "result"
+          },
+          "id": 7,
+          "to": {
+            "node": 6,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 5,
+            "socket": "result"
+          },
+          "id": 8,
+          "to": {
+            "node": 6,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 6,
+            "socket": "result"
+          },
+          "id": 9,
+          "to": {
+            "node": 7,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 7,
+            "socket": "result"
+          },
+          "id": 10,
+          "to": {
+            "node": 8,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 8,
+            "socket": "result"
+          },
+          "id": 11,
+          "to": {
+            "node": 9,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "connected"
+          },
+          "id": 12,
+          "to": {
+            "node": 11,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 9,
+            "socket": "result"
+          },
+          "id": 13,
+          "to": {
+            "node": 12,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 11,
+            "socket": "result"
+          },
+          "id": 14,
+          "to": {
+            "node": 12,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "value"
+          },
+          "id": 15,
+          "to": {
+            "node": 13,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "connected"
+          },
+          "id": 16,
+          "to": {
+            "node": 13,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 12,
+            "socket": "result"
+          },
+          "id": 17,
+          "to": {
+            "node": 14,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 13,
+            "socket": "result"
+          },
+          "id": 18,
+          "to": {
+            "node": 14,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 14,
+            "socket": "result"
+          },
+          "id": 19,
+          "to": {
+            "node": 15,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 15,
+            "socket": "result"
+          },
+          "id": 20,
+          "to": {
+            "node": 16,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 16,
+            "socket": "result"
+          },
+          "id": 21,
+          "to": {
+            "node": 17,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 14,
+            "socket": "result"
+          },
+          "id": 22,
+          "to": {
+            "node": 17,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "a"
+          },
+          "id": 23,
+          "to": {
+            "node": 20,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 24,
+          "to": {
+            "node": 21,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 19,
+            "socket": "value"
+          },
+          "id": 25,
+          "to": {
+            "node": 20,
+            "socket": "scale"
+          }
+        },
+        {
+          "from": {
+            "node": 19,
+            "socket": "value"
+          },
+          "id": 26,
+          "to": {
+            "node": 21,
+            "socket": "scale"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 27,
+          "to": {
+            "node": 22,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 28,
+          "to": {
+            "node": 22,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "a"
+          },
+          "id": 29,
+          "to": {
+            "node": 23,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 22,
+            "socket": "result"
+          },
+          "id": 30,
+          "to": {
+            "node": 23,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 26,
+            "socket": "value"
+          },
+          "id": 31,
+          "to": {
+            "node": 28,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 24,
+            "socket": "value"
+          },
+          "id": 32,
+          "to": {
+            "node": 28,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 27,
+            "socket": "value"
+          },
+          "id": 33,
+          "to": {
+            "node": 29,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 25,
+            "socket": "value"
+          },
+          "id": 34,
+          "to": {
+            "node": 29,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 30,
+            "socket": "value"
+          },
+          "id": 35,
+          "to": {
+            "node": 32,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 20,
+            "socket": "result"
+          },
+          "id": 36,
+          "to": {
+            "node": 32,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 31,
+            "socket": "value"
+          },
+          "id": 37,
+          "to": {
+            "node": 33,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 21,
+            "socket": "result"
+          },
+          "id": 38,
+          "to": {
+            "node": 33,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "a"
+          },
+          "id": 39,
+          "to": {
+            "node": 34,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 28,
+            "socket": "result"
+          },
+          "id": 40,
+          "to": {
+            "node": 35,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 34,
+            "socket": "result"
+          },
+          "id": 41,
+          "to": {
+            "node": 35,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 32,
+            "socket": "result"
+          },
+          "id": 42,
+          "to": {
+            "node": 36,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 23,
+            "socket": "result"
+          },
+          "id": 43,
+          "to": {
+            "node": 36,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 36,
+            "socket": "result"
+          },
+          "id": 44,
+          "to": {
+            "node": 37,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 35,
+            "socket": "result"
+          },
+          "id": 45,
+          "to": {
+            "node": 37,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 28,
+            "socket": "result"
+          },
+          "id": 46,
+          "to": {
+            "node": 38,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 29,
+            "socket": "result"
+          },
+          "id": 47,
+          "to": {
+            "node": 38,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 38,
+            "socket": "result"
+          },
+          "id": 48,
+          "to": {
+            "node": 39,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 49,
+          "to": {
+            "node": 39,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 33,
+            "socket": "result"
+          },
+          "id": 50,
+          "to": {
+            "node": 40,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 23,
+            "socket": "result"
+          },
+          "id": 51,
+          "to": {
+            "node": 40,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 40,
+            "socket": "result"
+          },
+          "id": 52,
+          "to": {
+            "node": 41,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 39,
+            "socket": "result"
+          },
+          "id": 53,
+          "to": {
+            "node": 41,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 37,
+            "socket": "result"
+          },
+          "id": 54,
+          "to": {
+            "node": 43,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 42,
+            "socket": "value"
+          },
+          "id": 55,
+          "to": {
+            "node": 43,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 41,
+            "socket": "result"
+          },
+          "id": 56,
+          "to": {
+            "node": 44,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 42,
+            "socket": "value"
+          },
+          "id": 57,
+          "to": {
+            "node": 44,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "a"
+          },
+          "id": 58,
+          "to": {
+            "node": 45,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 43,
+            "socket": "result"
+          },
+          "id": 59,
+          "to": {
+            "node": 45,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "b"
+          },
+          "id": 60,
+          "to": {
+            "node": 46,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 44,
+            "socket": "result"
+          },
+          "id": 61,
+          "to": {
+            "node": 46,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 45,
+            "socket": "result"
+          },
+          "id": 62,
+          "to": {
+            "node": 47,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 46,
+            "socket": "result"
+          },
+          "id": 63,
+          "to": {
+            "node": 48,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 47,
+            "socket": "result"
+          },
+          "id": 64,
+          "to": {
+            "node": 49,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 48,
+            "socket": "result"
+          },
+          "id": 65,
+          "to": {
+            "node": 49,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 49,
+            "socket": "b"
+          },
+          "id": 66,
+          "to": {
+            "node": 50,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 49,
+            "socket": "a"
+          },
+          "id": 67,
+          "to": {
+            "node": 51,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 49,
+            "socket": "b"
+          },
+          "id": 68,
+          "to": {
+            "node": 52,
+            "socket": "value"
+          }
+        }
+      ],
+      "name": "Reaction Diffusion (Discrete) (Editable 4)",
+      "nodes": [
+        {
+          "id": 1,
+          "label": "Canvas Coordinates",
+          "parameters": {},
+          "position": [
+            0.0,
+            117.0
+          ],
+          "type": "coordinates",
+          "typeVersion": 1
+        },
+        {
+          "id": 2,
+          "label": "Horizontal Distance from Center",
+          "parameters": {
+            "b": 0.5,
+            "operation": 1.0
+          },
+          "position": [
+            242.0,
+            0.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 3,
+          "label": "Vertical Distance from Center",
+          "parameters": {
+            "b": 0.5,
+            "operation": 1.0
+          },
+          "position": [
+            242.0,
+            382.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 4,
+          "label": "Horizontal Distance Squared",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            582.0,
+            0.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 5,
+          "label": "Vertical Distance Squared",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            582.0,
+            382.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 6,
+          "label": "Distance Squared",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            922.0,
+            0.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 7,
+          "label": "Distance from Center",
+          "parameters": {
+            "b": 0.5,
+            "operation": 4.0
+          },
+          "position": [
+            1262.0,
+            0.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 8,
+          "label": "Outside Seed Circle",
+          "parameters": {
+            "threshold": 0.07500000298023224
+          },
+          "position": [
+            1602.0,
+            86.0
+          ],
+          "type": "threshold",
+          "typeVersion": 1
+        },
+        {
+          "id": 9,
+          "label": "Default Circular Seed",
+          "parameters": {
+            "a": 1.0,
+            "operation": 1.0
+          },
+          "position": [
+            1963.0,
+            0.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 10,
+          "label": "Seed Input",
+          "parameters": {
+            "key": "seed"
+          },
+          "position": [
+            1602.0,
+            296.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 11,
+          "label": "Seed Input Not Connected",
+          "parameters": {
+            "a": 1.0,
+            "operation": 1.0
+          },
+          "position": [
+            1963.0,
+            382.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 12,
+          "label": "Default Seed Contribution",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            2303.0,
+            0.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 13,
+          "label": "Supplied Seed Contribution",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            2303.0,
+            382.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 14,
+          "label": "Selected Initial Seed",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            2650.0,
+            191.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 15,
+          "label": "Half-strength Seed",
+          "parameters": {
+            "b": 0.5,
+            "operation": 2.0
+          },
+          "position": [
+            2990.0,
+            191.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 16,
+          "label": "Initial Chemical A",
+          "parameters": {
+            "a": 1.0,
+            "operation": 1.0
+          },
+          "position": [
+            3330.0,
+            191.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 17,
+          "label": "Initial Simulation State",
+          "parameters": {},
+          "position": [
+            3670.0,
+            308.0
+          ],
+          "type": "simulation_initial_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 18,
+          "label": "Previous Simulation State",
+          "parameters": {},
+          "position": [
+            582.0,
+            961.0
+          ],
+          "type": "simulation_previous_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 19,
+          "label": "Structure Scale",
+          "parameters": {
+            "key": "structureScale"
+          },
+          "position": [
+            582.0,
+            1170.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 20,
+          "label": "Chemical A Laplacian",
+          "parameters": {},
+          "position": [
+            922.0,
+            1008.0
+          ],
+          "type": "laplacian",
+          "typeVersion": 1
+        },
+        {
+          "id": 21,
+          "label": "Chemical B Laplacian",
+          "parameters": {},
+          "position": [
+            922.0,
+            1212.0
+          ],
+          "type": "laplacian",
+          "typeVersion": 1
+        },
+        {
+          "id": 22,
+          "label": "Chemical B Squared",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            922.0,
+            1416.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 23,
+          "label": "Reaction Rate",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            1262.0,
+            1990.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 24,
+          "label": "Feed Multiplier",
+          "parameters": {
+            "key": "feedMultiplier"
+          },
+          "position": [
+            582.0,
+            1361.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 25,
+          "label": "Kill Multiplier",
+          "parameters": {
+            "key": "killMultiplier"
+          },
+          "position": [
+            582.0,
+            1761.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 26,
+          "label": "Feed Rate",
+          "parameters": {
+            "key": "feed"
+          },
+          "position": [
+            582.0,
+            1561.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 27,
+          "label": "Kill Rate",
+          "parameters": {
+            "key": "kill"
+          },
+          "position": [
+            582.0,
+            1961.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 28,
+          "label": "Effective Feed Rate",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            922.0,
+            1945.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 29,
+          "label": "Effective Kill Rate",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            922.0,
+            2327.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 30,
+          "label": "Chemical A Diffusion Rate",
+          "parameters": {
+            "key": "diffA"
+          },
+          "position": [
+            922.0,
+            861.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 31,
+          "label": "Chemical B Diffusion Rate",
+          "parameters": {
+            "key": "diffB"
+          },
+          "position": [
+            922.0,
+            1798.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 32,
+          "label": "Chemical A Diffusion",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            1262.0,
+            1226.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 33,
+          "label": "Chemical B Diffusion",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            1262.0,
+            1608.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 34,
+          "label": "Available Chemical A",
+          "parameters": {
+            "a": 1.0,
+            "operation": 1.0
+          },
+          "position": [
+            1262.0,
+            844.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 35,
+          "label": "Chemical A Feed Term",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            1602.0,
+            844.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 36,
+          "label": "Chemical A Diffusion Minus Reaction",
+          "parameters": {
+            "operation": 1.0
+          },
+          "position": [
+            1602.0,
+            1226.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 37,
+          "label": "Chemical A Change",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            1963.0,
+            1226.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 38,
+          "label": "Feed Rate Plus Kill Rate",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            1262.0,
+            2372.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 39,
+          "label": "Chemical B Decay",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            1602.0,
+            2372.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 40,
+          "label": "Chemical B Diffusion Plus Reaction",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            1602.0,
+            1608.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 41,
+          "label": "Chemical B Change",
+          "parameters": {
+            "operation": 1.0
+          },
+          "position": [
+            1963.0,
+            1738.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 42,
+          "label": "Timestep",
+          "parameters": {
+            "key": "dt"
+          },
+          "position": [
+            1963.0,
+            1608.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 43,
+          "label": "Timestep-scaled Chemical A Change",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            2303.0,
+            1226.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 44,
+          "label": "Timestep-scaled Chemical B Change",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            2303.0,
+            1738.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 45,
+          "label": "Unclamped Next Chemical A",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            2650.0,
+            1226.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 46,
+          "label": "Unclamped Next Chemical B",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            2650.0,
+            1738.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 47,
+          "label": "Next Chemical A",
+          "parameters": {
+            "b": 0.0,
+            "c": 1.0,
+            "operation": 10.0
+          },
+          "position": [
+            2990.0,
+            1226.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 48,
+          "label": "Next Chemical B",
+          "parameters": {
+            "b": 0.0,
+            "c": 1.0,
+            "operation": 10.0
+          },
+          "position": [
+            2990.0,
+            1738.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 49,
+          "label": "Next Simulation State",
+          "parameters": {},
+          "position": [
+            3330.0,
+            1582.0
+          ],
+          "type": "simulation_next_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 50,
+          "label": "Image Output",
+          "parameters": {
+            "key": "image"
+          },
+          "position": [
+            3670.0,
+            1599.0
+          ],
+          "type": "subgraph_output",
+          "typeVersion": 1
+        },
+        {
+          "id": 51,
+          "label": "Chemical A Output",
+          "parameters": {
+            "key": "a"
+          },
+          "position": [
+            3670.0,
+            1746.0
+          ],
+          "type": "subgraph_output",
+          "typeVersion": 1
+        },
+        {
+          "id": 52,
+          "label": "Chemical B Output",
+          "parameters": {
+            "key": "b"
+          },
+          "position": [
+            3670.0,
+            1893.0
           ],
           "type": "subgraph_output",
           "typeVersion": 1

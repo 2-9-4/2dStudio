@@ -960,6 +960,7 @@ void Application::renderSubgraphEditor() {
     if (!definition) { leaveSubgraph(); return; }
     auto& body = definition->body;
     bool changed = false;
+    bool executionChanged = false;
     const bool navigateToGraph = positionedSubgraphId_ != editingSubgraphId_;
     if (navigateToGraph) {
         positionedSubgraphId_ = editingSubgraphId_;
@@ -990,11 +991,18 @@ void Application::renderSubgraphEditor() {
             char label[128]{}; std::snprintf(label, sizeof(label), "%s", item.label.c_str());
             if (ImGui::InputText("Label", label, sizeof(label))) { item.label = label; changed = true; }
             if (item.kind == SubgraphInterfaceKind::Slider) {
-                changed |= ImGui::DragFloat("Default", &item.defaultValue, .001F, item.minimum, item.maximum);
+                if (ImGui::DragFloat("Default", &item.defaultValue, .001F,
+                                     item.minimum, item.maximum)) {
+                    changed = true; executionChanged = true;
+                }
                 changed |= ImGui::DragFloat("Minimum", &item.minimum, .001F);
                 changed |= ImGui::DragFloat("Maximum", &item.maximum, .001F);
                 if (item.minimum > item.maximum) std::swap(item.minimum, item.maximum);
-                item.defaultValue = std::clamp(item.defaultValue, item.minimum, item.maximum);
+                const float clampedDefault = std::clamp(item.defaultValue, item.minimum, item.maximum);
+                if (clampedDefault != item.defaultValue) {
+                    item.defaultValue = clampedDefault;
+                    executionChanged = true;
+                }
             }
             ImGui::Separator();
             ImGui::PopID();
@@ -1060,7 +1068,10 @@ void Application::renderSubgraphEditor() {
                     propertyChanged = ImGui::DragFloat(property.label.c_str(), &value, speed,
                         property.minimum, property.maximum, "%.6g", ImGuiSliderFlags_AlwaysClamp);
                 }
-                if (propertyChanged) { node.parameters[property.key] = value; changed = true; }
+                if (propertyChanged) {
+                    node.parameters[property.key] = value;
+                    changed = true; executionChanged = true;
+                }
             }
         }
         ImGui::PopID();
@@ -1115,7 +1126,7 @@ void Application::renderSubgraphEditor() {
                 if (directionOk && ed::AcceptNewItem()) {
                     body.addLink(from->second.node, from->second.socket,
                                  to->second.node, to->second.socket);
-                    changed = true;
+                    changed = true; executionChanged = true;
                 }
             }
         }
@@ -1125,21 +1136,23 @@ void Application::renderSubgraphEditor() {
         ed::LinkId linkId;
         while (ed::QueryDeletedLink(&linkId)) if (ed::AcceptDeletedItem()) {
             body.removeLink(static_cast<LinkId>(linkId.Get() - (std::uintptr_t{1} << 60U)));
-            changed = true;
+            changed = true; executionChanged = true;
         }
         ed::NodeId nodeId;
         while (ed::QueryDeletedNode(&nodeId)) if (ed::AcceptDeletedItem()) {
             const auto id = static_cast<NodeId>(nodeId.Get() / 128);
             body.removeNode(id);
             positionedSubgraph_.erase(id);
-            changed = true;
+            changed = true; executionChanged = true;
         }
         ed::EndDelete();
     }
 
     static ImVec2 addNodeCanvasPosition{};
     ed::Suspend();
-    if (node_widgets::renderPopup(nodePopup_, body)) changed = true;
+    if (node_widgets::renderPopup(nodePopup_, body)) {
+        changed = true; executionChanged = true;
+    }
     if (ed::ShowBackgroundContextMenu()) {
         addNodeCanvasPosition = ed::ScreenToCanvas(ImGui::GetMousePos());
         ImGui::OpenPopup("Add subgraph node");
@@ -1157,7 +1170,7 @@ void Application::renderSubgraphEditor() {
                 auto* node = body.findNode(id);
                 node->parameters = std::move(parameters);
                 positionedSubgraph_[id] = false;
-                changed = true;
+                changed = true; executionChanged = true;
             }
         };
         for (const auto* type : {"float", "math", "threshold", "select", "coordinates", "laplacian"}) {
@@ -1194,7 +1207,8 @@ void Application::renderSubgraphEditor() {
                 node.parameters[item.key] = std::clamp(value, item.minimum, item.maximum);
             }
         }
-        dirty_ = true; rebuildRuntime();
+        dirty_ = true;
+        if (executionChanged) rebuildRuntime();
     }
 }
 

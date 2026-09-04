@@ -33,7 +33,8 @@ public:
         const auto* endpoint = endpointFor(initialization ? "initial" : "next");
         if (!endpoint) throw std::runtime_error("Simulation subgraph is missing a state endpoint");
         helpers_.str({}); helpers_.clear(); generatedHelpers_.clear();
-        statements_.str({}); statements_.clear(); mainValues_.clear();
+        statements_.str({}); statements_.clear(); mainValues_.clear(); mainStateValues_.clear();
+        usedInterfaces_.clear(); stateLaplacians_.clear(); mainStateLaplacianValues_.clear();
         const auto expression = "vec2(" + emitInput(*endpoint, "a", "uv") + "," +
                                 emitInput(*endpoint, "b", "uv") + ")";
         std::ostringstream source;
@@ -50,6 +51,10 @@ public:
         return source.str();
     }
 
+    [[nodiscard]] const std::unordered_set<std::string>& usedInterfaces() const {
+        return usedInterfaces_;
+    }
+
 private:
     const NodeRecord* endpointFor(std::string_view role) const {
         const std::string type = role == "initial" ? "simulation_initial_state"
@@ -64,9 +69,12 @@ private:
         for (const auto& item : definition_.interface) {
             const auto name = identifier(item.key);
             if (item.kind == SubgraphInterfaceKind::Input) {
-                out << "layout(binding=" << binding++ << ")uniform sampler2D in_" << name << ";\n"
-                    << "uniform int mode_" << name << ";uniform float value_" << name << ";\n";
-            } else if (item.kind == SubgraphInterfaceKind::Slider) {
+                if (usedInterfaces_.contains(item.key))
+                    out << "layout(binding=" << binding << ")uniform sampler2D in_" << name << ";\n"
+                        << "uniform int mode_" << name << ";uniform float value_" << name << ";\n";
+                ++binding;
+            } else if (item.kind == SubgraphInterfaceKind::Slider &&
+                       usedInterfaces_.contains(item.key)) {
                 out << "uniform float param_" << name << ";\n";
             }
         }
@@ -108,10 +116,22 @@ private:
         };
         if (node.type == "float") return std::to_string(parameterValue("value", 0.5F));
         if (node.type == "coordinates") return socket == "y" ? "(" + uv + ").y" : "(" + uv + ").x";
-        if (node.type == "simulation_previous_state")
-            return "sampleState(" + uv + ")." + (socket == "b" ? "y" : "x");
+        if (node.type == "simulation_previous_state") {
+            std::string value = "sampleState(" + uv + ")";
+            if (uv == "uv") {
+                auto foundState = mainStateValues_.find(node.id);
+                if (foundState == mainStateValues_.end()) {
+                    const auto variable = "v_state_" + std::to_string(node.id);
+                    statements_ << "vec2 " << variable << "=" << value << ";\n";
+                    foundState = mainStateValues_.emplace(node.id, variable).first;
+                }
+                value = foundState->second;
+            }
+            return value + "." + (socket == "b" ? "y" : "x");
+        }
         if (node.type == "subgraph_input") {
             const auto interfaceKey = node.parameters.at("key").get<std::string>();
+            usedInterfaces_.insert(interfaceKey);
             const auto* item = interfaceItem(interfaceKey);
             const auto name = identifier(interfaceKey);
             if (socket == "connected") return "(mode_" + name + "!=0?1.0:0.0)";
@@ -161,6 +181,43 @@ private:
     }
 
     std::string emitLaplacian(const NodeRecord& node, const std::string& uv) {
+        const auto* valueLink = inputLink(node.id, "value");
+        const auto valueNode = valueLink ? nodes_.find(valueLink->fromNode) : nodes_.end();
+        if (valueLink && valueNode != nodes_.end() &&
+            valueNode->second->type == "simulation_previous_state" &&
+            (valueLink->fromSocket == "a" || valueLink->fromSocket == "b")) {
+            // A state texture fetch already returns both simulation channels. Reuse
+            // one vec2 neighborhood for every direct A/B Laplacian with the same
+            // scale instead of issuing an independent neighborhood per channel.
+            const auto scale = emitInput(node, "scale", "q", 1.0F);
+            auto found = stateLaplacians_.find(scale);
+            if (found == stateLaplacians_.end()) {
+                const auto functionName = "state_lap_" + std::to_string(node.id);
+                helpers_ << "vec2 " << functionName
+                         << "At(vec2 q,float r){vec2 pixel=1.0/vec2(textureSize(stateIn,0));return -sampleState(q)+0.2*("
+                         << "sampleState(q+pixel*vec2(-r,0.0))+sampleState(q+pixel*vec2(r,0.0))+"
+                         << "sampleState(q+pixel*vec2(0.0,-r))+sampleState(q+pixel*vec2(0.0,r)))+0.05*("
+                         << "sampleState(q+pixel*vec2(-r,-r))+sampleState(q+pixel*vec2(r,-r))+"
+                         << "sampleState(q+pixel*vec2(-r,r))+sampleState(q+pixel*vec2(r,r)));}\n"
+                         << "vec2 " << functionName << "(vec2 q){float scale=" << scale
+                         << ";if(abs(scale-1.0)<0.001)return " << functionName
+                         << "At(q,1.0);vec2 v=vec2(0.0);for(int i=0;i<3;i++)v+="
+                         << functionName << "At(q,mix(1.0,scale,float(i)/2.0))/3.0;return v;}\n";
+                found = stateLaplacians_.emplace(scale, functionName).first;
+            }
+            std::string value = found->second + "(" + uv + ")";
+            if (uv == "uv") {
+                auto mainValue = mainStateLaplacianValues_.find(found->second);
+                if (mainValue == mainStateLaplacianValues_.end()) {
+                    const auto variable = "v_" + found->second;
+                    statements_ << "vec2 " << variable << "=" << value << ";\n";
+                    mainValue = mainStateLaplacianValues_.emplace(found->second, variable).first;
+                }
+                value = mainValue->second;
+            }
+            return value + "." + (valueLink->fromSocket == "b" ? "y" : "x");
+        }
+
         const auto functionName = "lap_" + std::to_string(node.id);
         if (generatedHelpers_.insert(functionName).second) {
             const auto sample = [&](const std::string& delta) {
@@ -168,7 +225,6 @@ private:
                 if (!link) return std::string("0.0");
                 return emit(link->fromNode, link->fromSocket, "fract(q+pixel*" + delta + ")");
             };
-            const auto* valueLink = inputLink(node.id, "value");
             const auto center = valueLink ? emit(valueLink->fromNode, valueLink->fromSocket, "q")
                                           : std::string("0.0");
             const auto scale = emitInput(node, "scale", "q", 1.0F);
@@ -195,23 +251,16 @@ private:
     std::ostringstream statements_;
     std::unordered_set<std::string> generatedHelpers_;
     std::unordered_map<std::string, std::string> mainValues_;
+    std::unordered_map<NodeId, std::string> mainStateValues_;
+    std::unordered_set<std::string> usedInterfaces_;
+    std::unordered_map<std::string, std::string> stateLaplacians_;
+    std::unordered_map<std::string, std::string> mainStateLaplacianValues_;
 };
 
 constexpr std::string_view kCollapseShader = R"GLSL(#version 430
 layout(local_size_x=16,local_size_y=16)in;layout(binding=0)uniform sampler2D stateIn;
 layout(std430,binding=0)buffer CollapseState{uint activityFlag;};uniform float threshold;
 void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=textureSize(stateIn,0);if(any(greaterThanEqual(p,s)))return;if(texelFetch(stateIn,p,0).g>threshold)atomicOr(activityFlag,1u);})GLSL";
-
-constexpr std::string_view kOutputShader = R"GLSL(#version 430
-layout(local_size_x=16,local_size_y=16)in;
-layout(rgba16f,binding=0)writeonly uniform image2D out0;
-layout(rgba16f,binding=1)writeonly uniform image2D out1;
-layout(rgba16f,binding=2)writeonly uniform image2D out2;
-layout(binding=0)uniform sampler2D stateIn;uniform ivec3 channels;
-float channelValue(vec2 state,int channel){return channel==0?state.x:state.y;}
-void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(out0);if(any(greaterThanEqual(p,s)))return;
-vec2 q=texelFetch(stateIn,p,0).rg;float a=channelValue(q,channels.x),b=channelValue(q,channels.y),c=channelValue(q,channels.z);
-imageStore(out0,p,vec4(a,a,a,1));imageStore(out1,p,vec4(b,b,b,1));imageStore(out2,p,vec4(c,c,c,1));})GLSL";
 
 class SimulationSubgraphNode final : public node_support::ParameterNode {
 public:
@@ -235,15 +284,24 @@ public:
                                   mapping->fromNode == next->id && mapping->fromSocket == "b";
             outputChannels_.push_back(channelB ? 1 : 0);
         }
+        requiredOutputs_.assign(outputChannels_.size(), true);
+        output_.assign(outputChannels_.size(), 0);
     }
     ~SimulationSubgraphNode() override {
         if (state_[0]) glDeleteTextures(2, state_.data());
-        if (output_[0]) glDeleteTextures(3, output_.data());
-        for (const auto program : {outputProgram_, collapseProgram_}) if (program) glDeleteProgram(program);
+        for (const auto texture : output_) if (texture) glDeleteTextures(1, &texture);
         if (collapseBuffer_) glDeleteBuffers(1, &collapseBuffer_);
     }
     const NodeDescriptor& descriptor() const override { return descriptor_; }
     void reset(EvaluationContext&) override { resetPending_ = true; collapseCheckCounter_ = 0; }
+    void setOutputRequirements(const std::vector<bool>& required) override {
+        std::vector<bool> normalized(outputChannels_.size(), false);
+        for (std::size_t index = 0; index < normalized.size() && index < required.size(); ++index)
+            normalized[index] = required[index];
+        if (normalized == requiredOutputs_) return;
+        requiredOutputs_ = std::move(normalized);
+        outputProgram_ = 0;
+    }
 
     void evaluate(EvaluationContext& context, std::span<const Value> inputs,
                   std::span<Value> outputs) override {
@@ -251,15 +309,22 @@ public:
         ensureResources(gpu, context.width, context.height);
         if (!initProgram_ || !stepProgram_) {
             SimulationGraphCompiler compiler(definition_);
-            initProgram_ = gpu.compileComputeCached(compiler.shader(true), definition_.name + " / initialize");
-            stepProgram_ = gpu.compileComputeCached(compiler.shader(false), definition_.name + " / update");
-            outputProgram_ = gpu.compileCompute(kOutputShader, definition_.name + " / output");
-            collapseProgram_ = gpu.compileCompute(kCollapseShader, definition_.name + " / collapse check");
+            const auto initializationSource = compiler.shader(true);
+            initializationInterfaces_ = compiler.usedInterfaces();
+            const auto updateSource = compiler.shader(false);
+            updateInterfaces_ = compiler.usedInterfaces();
+            initProgram_ = gpu.compileComputeCached(initializationSource,
+                                                     definition_.name + " / initialize");
+            stepProgram_ = gpu.compileComputeCached(updateSource,
+                                                     definition_.name + " / update");
+            collapseProgram_ = gpu.compileComputeCached(kCollapseShader, definition_.name + " / collapse check");
         }
+        if (!outputProgram_)
+            outputProgram_ = gpu.compileComputeCached(outputShader(), definition_.name + " / output");
         const auto initialize = [&] {
             glUseProgram(initProgram_);
             glBindImageTexture(0, state_[0], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RG16F);
-            bindInterface(initProgram_, inputs, 1);
+            bindInterface(initProgram_, inputs, 1, initializationInterfaces_);
             gpu.dispatch(initProgram_, context.width, context.height);
             index_ = 0; resetPending_ = false;
         };
@@ -271,7 +336,7 @@ public:
                 glUseProgram(stepProgram_);
                 bindTexture(0, state_[index_]);
                 glBindImageTexture(0, state_[next], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RG16F);
-                bindInterface(stepProgram_, inputs, 1);
+                bindInterface(stepProgram_, inputs, 1, updateInterfaces_);
                 gpu.dispatch(stepProgram_, context.width, context.height);
                 index_ = next;
             }
@@ -288,38 +353,71 @@ public:
             if (active == 0) initialize();
         }
         glUseProgram(outputProgram_); bindTexture(0, state_[index_]);
-        for (int output = 0; output < 3; ++output)
-            glBindImageTexture(output, output_[static_cast<std::size_t>(output)], 0, GL_FALSE, 0,
-                               GL_WRITE_ONLY, GL_RGBA16F);
-        const std::array<int, 3> channel = {
-            outputChannels_.size() > 0 ? outputChannels_[0] : 0,
-            outputChannels_.size() > 1 ? outputChannels_[1] : 0,
-            outputChannels_.size() > 2 ? outputChannels_[2] : 0};
-        glUniform3i(glGetUniformLocation(outputProgram_, "channels"), channel[0], channel[1], channel[2]);
+        for (std::size_t output = 0; output < output_.size(); ++output)
+            if (requiredOutputs_[output])
+                glBindImageTexture(static_cast<GLuint>(output), output_[output], 0, GL_FALSE, 0,
+                                   GL_WRITE_ONLY, GL_RGBA16F);
         gpu.dispatch(outputProgram_, context.width, context.height);
-        for (std::size_t output = 0; output < outputs.size() && output < output_.size(); ++output)
-            outputs[output] = ImageHandle{output_[output], context.width, context.height};
+        for (std::size_t output = 0; output < outputs.size() && output < output_.size(); ++output) {
+            if (requiredOutputs_[output])
+                outputs[output] = ImageHandle{output_[output], context.width, context.height};
+            else outputs[output] = Value{};
+        }
     }
 
 private:
+    std::string outputShader() const {
+        std::ostringstream source;
+        source << "#version 430\nlayout(local_size_x=16,local_size_y=16)in;\n"
+               << "layout(binding=0)uniform sampler2D stateIn;\n";
+        for (std::size_t output = 0; output < requiredOutputs_.size(); ++output)
+            if (requiredOutputs_[output])
+                source << "layout(rgba16f,binding=" << output
+                       << ")writeonly uniform image2D out" << output << ";\n";
+        source << "void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=textureSize(stateIn,0);"
+               << "if(any(greaterThanEqual(p,s)))return;vec2 q=texelFetch(stateIn,p,0).rg;\n";
+        for (std::size_t output = 0; output < requiredOutputs_.size(); ++output) {
+            if (!requiredOutputs_[output]) continue;
+            const char channel = outputChannels_[output] == 1 ? 'y' : 'x';
+            source << "imageStore(out" << output << ",p,vec4(q." << channel << ",q."
+                   << channel << ",q." << channel << ",1.0));\n";
+        }
+        source << "}";
+        return source.str();
+    }
+
     void ensureResources(GpuRuntime& gpu, int width, int height) {
-        if (width_ == width && height_ == height && state_[0]) return;
-        if (state_[0]) glDeleteTextures(2, state_.data());
-        if (output_[0]) glDeleteTextures(3, output_.data());
-        for (auto& texture : state_) texture = gpu.createTexture(width, height, GL_RG16F);
-        for (auto& texture : output_) texture = gpu.createTexture(width, height, GL_RGBA16F);
-        width_ = width; height_ = height; resetPending_ = true;
+        const bool resized = width_ != width || height_ != height || !state_[0];
+        if (resized) {
+            if (state_[0]) glDeleteTextures(2, state_.data());
+            for (auto& texture : state_) texture = gpu.createTexture(width, height, GL_RG16F);
+            width_ = width; height_ = height; resetPending_ = true;
+        }
+        for (std::size_t output = 0; output < output_.size(); ++output) {
+            if (!requiredOutputs_[output]) {
+                if (output_[output]) glDeleteTextures(1, &output_[output]);
+                output_[output] = 0;
+            } else if (resized || !output_[output]) {
+                if (output_[output]) glDeleteTextures(1, &output_[output]);
+                output_[output] = gpu.createTexture(width, height, GL_RGBA16F);
+            }
+        }
         if (!collapseBuffer_) {
             glGenBuffers(1, &collapseBuffer_); glBindBuffer(GL_SHADER_STORAGE_BUFFER, collapseBuffer_);
             const GLuint zero = 0; glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(zero), &zero, GL_DYNAMIC_READ);
         }
     }
 
-    void bindInterface(GLuint program, std::span<const Value> inputs, int firstTexture) {
+    void bindInterface(GLuint program, std::span<const Value> inputs, int firstTexture,
+                       const std::unordered_set<std::string>& used) {
         std::size_t inputIndex = 0; int textureUnit = firstTexture;
         for (const auto& item : definition_.interface) {
             const auto name = identifier(item.key);
             if (item.kind == SubgraphInterfaceKind::Input) {
+                if (!used.contains(item.key)) {
+                    ++textureUnit; ++inputIndex;
+                    continue;
+                }
                 const Value* value = inputIndex < inputs.size() ? &inputs[inputIndex] : nullptr;
                 int mode = 0; float scalar = item.defaultValue;
                 if (value) {
@@ -332,7 +430,7 @@ private:
                 uniform(program, ("mode_" + name).c_str(), mode);
                 uniform(program, ("value_" + name).c_str(), scalar);
                 ++textureUnit; ++inputIndex;
-            } else if (item.kind == SubgraphInterfaceKind::Slider) {
+            } else if (item.kind == SubgraphInterfaceKind::Slider && used.contains(item.key)) {
                 uniform(program, ("param_" + name).c_str(),
                         parameter(parameters_, item.key.c_str(), item.defaultValue));
             }
@@ -343,7 +441,10 @@ private:
     NodeDescriptor descriptor_;
     std::vector<int> outputChannels_;
     std::array<GLuint, 2> state_{};
-    std::array<GLuint, 3> output_{};
+    std::vector<GLuint> output_;
+    std::vector<bool> requiredOutputs_;
+    std::unordered_set<std::string> initializationInterfaces_;
+    std::unordered_set<std::string> updateInterfaces_;
     GLuint initProgram_ = 0, stepProgram_ = 0, outputProgram_ = 0, collapseProgram_ = 0;
     GLuint collapseBuffer_ = 0;
     int width_ = 0, height_ = 0, index_ = 0, collapseCheckCounter_ = 0;
@@ -351,6 +452,10 @@ private:
 };
 
 } // namespace
+
+std::string generateSimulationShader(const SubgraphDefinition& definition, bool initialization) {
+    return SimulationGraphCompiler(definition).shader(initialization);
+}
 
 std::unique_ptr<NodeInstance> createSubgraphInstance(const SubgraphDefinition& definition,
                                                      const NodeRegistry& registry) {

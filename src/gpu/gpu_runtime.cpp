@@ -50,6 +50,32 @@ std::string sourceExcerpt(std::string_view source, std::size_t reported) {
     return result;
 }
 
+std::string simulationSignature(const SubgraphDefinition& definition) {
+    std::string result = generateSimulationShader(definition, true);
+    result.push_back('\0');
+    result += generateSimulationShader(definition, false);
+    // Init/update endpoints do not include presentation outputs. Include their
+    // mappings so changing an exported channel still refreshes the executor.
+    for (const auto& item : definition.interface) {
+        result.push_back('\0');
+        result += item.key + ":" + std::to_string(static_cast<int>(item.kind)) + ":" +
+                  std::to_string(static_cast<int>(item.type)) + ":" +
+                  std::to_string(item.defaultValue);
+        if (item.kind != SubgraphInterfaceKind::Output) continue;
+        const auto endpoint = std::ranges::find_if(definition.body.nodes(), [&](const auto& node) {
+            return node.type == "subgraph_output" &&
+                   node.parameters.value("key", std::string{}) == item.key;
+        });
+        if (endpoint == definition.body.nodes().end()) continue;
+        const auto link = std::ranges::find_if(definition.body.links(), [&](const auto& candidate) {
+            return candidate.toNode == endpoint->id && candidate.toSocket == "value";
+        });
+        if (link != definition.body.links().end())
+            result += ":" + std::to_string(link->fromNode) + ":" + link->fromSocket;
+    }
+    return result;
+}
+
 GLuint compile(GLenum kind, std::string_view source, std::string_view label) {
     const auto shader = glCreateShader(kind);
     const auto* text = source.data();
@@ -249,6 +275,7 @@ void GraphRuntime::clear() {
     instances_.clear();
     timings_.clear();
     previousParameters_.clear();
+    subgraphSignatures_.clear();
     pendingResets_.clear();
     frame_ = 0;
 }
@@ -268,9 +295,17 @@ void GraphRuntime::rebuild() {
             next.emplace(node.id, std::move(found->second));
         } else if (node.type == "subgraph") {
             if (const auto* definition = resolveSubgraph(graph_, node.subgraphId)) {
-                auto instance = createSubgraphInstance(*definition, registry_);
-                pendingResets_.insert(node.id);
-                next.emplace(node.id, std::move(instance));
+                const auto signature = simulationSignature(*definition);
+                const auto previous = subgraphSignatures_.find(node.id);
+                if (found != instances_.end() && previous != subgraphSignatures_.end() &&
+                    previous->second == signature) {
+                    next.emplace(node.id, std::move(found->second));
+                } else {
+                    auto instance = createSubgraphInstance(*definition, registry_);
+                    pendingResets_.insert(node.id);
+                    next.emplace(node.id, std::move(instance));
+                }
+                subgraphSignatures_[node.id] = signature;
             }
         } else if (auto instance = registry_.create(node.type)) {
             if (instance->descriptor().stateful) pendingResets_.insert(node.id);
@@ -278,6 +313,24 @@ void GraphRuntime::rebuild() {
         }
     }
     instances_ = std::move(next);
+    for (const auto& node : graph_.nodes()) {
+        if (node.type != "subgraph") continue;
+        const auto instance = instances_.find(node.id);
+        if (instance == instances_.end()) continue;
+        std::vector<bool> requiredOutputs;
+        for (const auto& socket : instance->second->descriptor().sockets) {
+            if (socket.direction != SocketDirection::Output) continue;
+            bool required = requiredOutputs.empty(); // Keep the normal node thumbnail/output.
+            required |= std::ranges::any_of(graph_.links(), [&](const auto& link) {
+                return link.fromNode == node.id && link.fromSocket == socket.key;
+            });
+            requiredOutputs.push_back(required);
+        }
+        instance->second->setOutputRequirements(requiredOutputs);
+    }
+    std::erase_if(subgraphSignatures_, [&](const auto& item) {
+        return !instances_.contains(item.first);
+    });
     std::erase_if(pendingResets_, [&](NodeId id) { return !instances_.contains(id); });
     std::erase_if(values_, [&](const auto& item) { return !instances_.contains(item.first); });
     for (auto it = timerQueries_.begin(); it != timerQueries_.end();) {

@@ -61,6 +61,27 @@ double median(std::vector<double> values) {
 
 } // namespace
 
+TEST_CASE("simulation shader prunes interfaces and shares state neighborhoods") {
+    const auto& definition = builtInSubgraphs().front();
+    const auto initialization = generateSimulationShader(definition, true);
+    const auto update = generateSimulationShader(definition, false);
+
+    REQUIRE(initialization.find("in_seed") != std::string::npos);
+    REQUIRE(initialization.find("in_feedMultiplier") == std::string::npos);
+    REQUIRE(initialization.find("param_feed") == std::string::npos);
+    REQUIRE(update.find("in_seed") == std::string::npos);
+    REQUIRE(update.find("in_feedMultiplier") != std::string::npos);
+    REQUIRE(update.find("param_structureScale") != std::string::npos);
+    REQUIRE(update.find("param_iterations") == std::string::npos);
+    REQUIRE(update.find("float lap_") == std::string::npos);
+    REQUIRE(update.find("vec2 v_state_lap_") != std::string::npos);
+
+    std::size_t neighborhoodSamples = 0;
+    for (std::size_t at = update.find("sampleState(q+pixel*"); at != std::string::npos;
+         at = update.find("sampleState(q+pixel*", at + 1)) ++neighborhoodSamples;
+    REQUIRE(neighborhoodSamples == 8);
+}
+
 TEST_CASE("Math shader planner specializes and fuses a linear image chain") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph;
@@ -651,6 +672,10 @@ TEST_CASE("discrete reaction evolves, pauses, resets, resizes, and exposes A and
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph; graph.settings = {32, 32, 60};
     const auto reaction = addDiscreteReaction(graph);
+    const auto exposeA = graph.addNode("output");
+    const auto exposeB = graph.addNode("output");
+    graph.addLink(reaction, "a", exposeA, "image");
+    graph.addLink(reaction, "b", exposeB, "image");
     GpuRuntime gpu; GraphRuntime runtime(graph, registry, gpu);
     REQUIRE(runtime.evaluate(0, 0, false));
     const auto initialValues = runtime.values().at(reaction);
@@ -671,6 +696,44 @@ TEST_CASE("discrete reaction evolves, pauses, resets, resizes, and exposes A and
     REQUIRE(readImage(std::get<ImageHandle>(runtime.values().at(reaction)[0])) == initial);
     graph.settings = {40, 24, 60}; REQUIRE(runtime.evaluate(0, 0, false));
     REQUIRE(std::get<ImageHandle>(runtime.values().at(reaction)[0]).width == 40);
+}
+
+TEST_CASE("simulation subgraphs do not materialize unconnected secondary outputs") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {24, 24, 60};
+    const auto reaction = addDiscreteReaction(graph);
+    GpuRuntime gpu; GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    const auto& outputs = runtime.values().at(reaction);
+    REQUIRE(std::holds_alternative<ImageHandle>(outputs[0]));
+    REQUIRE(std::holds_alternative<std::monostate>(outputs[1]));
+    REQUIRE(std::holds_alternative<std::monostate>(outputs[2]));
+}
+
+TEST_CASE("unused subgraph edits preserve live simulation state") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {24, 24, 60};
+    auto definition = builtInSubgraphs().front();
+    definition.id = "project.unused_edit";
+    definition.immutable = false;
+    graph.subgraphs().push_back(std::move(definition));
+    const auto reaction = graph.addNode("subgraph");
+    graph.findNode(reaction)->subgraphId = "project.unused_edit";
+    graph.findNode(reaction)->parameters = {{"feed", .055F}, {"kill", .062F},
+        {"diffA", 1.0F}, {"diffB", .5F}, {"structureScale", 1.0F},
+        {"dt", 1.0F}, {"iterations", 8.0F}, {"autoReset", 0.0F}};
+    GpuRuntime gpu; GraphRuntime runtime(graph, registry, gpu);
+    for (int frame = 0; frame < 8; ++frame)
+        REQUIRE(runtime.evaluate(frame / 60.0, 1.0 / 60.0, true));
+    const auto evolved = readImage(std::get<ImageHandle>(runtime.values().at(reaction)[0]));
+
+    const auto unused = graph.findSubgraph("project.unused_edit")->body.addNode("float");
+    graph.findSubgraph("project.unused_edit")->body.findNode(unused)->parameters["value"] = .25F;
+    runtime.rebuild();
+    REQUIRE(runtime.evaluate(1.0, 0.0, false));
+    REQUIRE(readImage(std::get<ImageHandle>(runtime.values().at(reaction)[0])) == evolved);
 }
 
 TEST_CASE("discrete reaction accepts scalar and image multiplier inputs") {
@@ -724,6 +787,8 @@ TEST_CASE("structural subgraph edits change the fused simulation") {
     graph.findNode(reaction)->parameters = {{"feed", .055F}, {"kill", .062F},
         {"diffA", 1.0F}, {"diffB", .5F}, {"structureScale", 1.0F},
         {"dt", 1.0F}, {"iterations", 1.0F}, {"autoReset", 0.0F}};
+    const auto exposeB = graph.addNode("output");
+    graph.addLink(reaction, "b", exposeB, "image");
 
     GpuRuntime gpu; GraphRuntime runtime(graph, registry, gpu);
     REQUIRE(runtime.evaluate(0, 1.0 / 60.0, true));
