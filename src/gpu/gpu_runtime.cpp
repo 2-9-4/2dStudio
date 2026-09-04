@@ -50,6 +50,21 @@ std::string sourceExcerpt(std::string_view source, std::size_t reported) {
     return result;
 }
 
+nlohmann::json withConnectedParameterOverrides(const NodeDescriptor& descriptor,
+                                               const std::vector<std::string>& keys,
+                                               const std::vector<Value>& inputs,
+                                               const nlohmann::json& parameters) {
+    nlohmann::json result = parameters;
+    for (std::size_t index = 0; index < keys.size() && index < inputs.size(); ++index) {
+        const auto* number = std::get_if<float>(&inputs[index]);
+        if (!number) continue;
+        const bool isParameter = std::ranges::any_of(descriptor.parameters,
+            [&](const ParameterDescriptor& parameter) { return parameter.key == keys[index]; });
+        if (isParameter) result[keys[index]] = *number;
+    }
+    return result;
+}
+
 std::string simulationSignature(const SubgraphDefinition& definition) {
     std::string result = generateSimulationShader(definition, true);
     result.push_back('\0');
@@ -277,6 +292,7 @@ void GraphRuntime::clear() {
     previousParameters_.clear();
     subgraphSignatures_.clear();
     pendingResets_.clear();
+    evaluated_.clear();
     frame_ = 0;
 }
 
@@ -453,6 +469,7 @@ std::optional<std::size_t> descriptorOutputIndex(const Graph& graph, const NodeR
 } // namespace
 
 bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
+    evaluated_.clear();
     if (!compiled_.valid) return false;
     if (!fusion_) fusion_ = std::make_unique<FusionState>();
     if (fusion_->signature != fusionSignature()) rebuildFusion();
@@ -471,7 +488,10 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
         if (!record || instanceIt == instances_.end()) continue;
         auto& instance = *instanceIt->second;
         instance.setParameters(record->parameters);
-        const auto& desc = instance.descriptor();
+        NodeDescriptor descriptorStorage;
+        const auto* resolved = resolveDescriptor(graph_, *record, registry_, descriptorStorage);
+        if (!resolved) continue;
+        const auto& desc = *resolved;
 
         const auto fused = fusion_->regionForNode.find(id);
         if (fused != fusion_->regionForNode.end()) {
@@ -533,10 +553,13 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                         const auto memberInstance = instances_.find(member);
                         if (!memberRecord || memberInstance == instances_.end()) continue;
                         auto& fallbackInstance = *memberInstance->second;
-                        fallbackInstance.setParameters(memberRecord->parameters);
+                        NodeDescriptor fallbackStorage;
+                        const auto* fallbackDescriptor = resolveDescriptor(
+                            graph_, *memberRecord, registry_, fallbackStorage);
+                        if (!fallbackDescriptor) continue;
                         std::vector<std::string> keys;
                         std::size_t outputCount = 0;
-                        for (const auto& socket : fallbackInstance.descriptor().sockets) {
+                        for (const auto& socket : fallbackDescriptor->sockets) {
                             if (socket.direction == SocketDirection::Input) keys.push_back(socket.key);
                             else ++outputCount;
                         }
@@ -549,6 +572,8 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                                 inputs[inputIndex] = outputValue(graph_, registry_, values_,
                                                                  link->fromNode, link->fromSocket);
                         }
+                        fallbackInstance.setParameters(withConnectedParameterOverrides(
+                            *fallbackDescriptor, keys, inputs, memberRecord->parameters));
                         auto& outputs = values_[member];
                         outputs.resize(outputCount);
                         const GLuint query = timerQueries_.at(member);
@@ -672,6 +697,8 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
         }
         auto& outputs = values_[id];
         outputs.resize(outputCount);
+        instance.setParameters(withConnectedParameterOverrides(
+            desc, inputKeys, inputs, record->parameters));
         if ((needsReset_ || nodeReset) && desc.stateful) instance.reset(context);
         const GLuint query = timerQueries_.at(id);
         glBeginQuery(GL_TIME_ELAPSED, query);
@@ -684,6 +711,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
     }
     needsReset_ = false;
     forceDirty_ = false;
+    evaluated_ = std::move(dirtyNodes);
     if (playing) ++frame_;
     return true;
 }

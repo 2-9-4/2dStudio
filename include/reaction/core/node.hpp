@@ -14,6 +14,12 @@
 namespace reaction {
 
 class ShaderLoweringContext;
+struct NodeDescriptor;
+
+// Exposes every slider-style parameter (Float or Integer control) as an optional
+// input socket, so a connection can override the slider value. Enum selectors,
+// checkboxes, and node-specific editors are left socket-free.
+void addParameterInputSockets(NodeDescriptor& descriptor);
 
 struct SocketDescriptor {
     std::string key;
@@ -24,7 +30,7 @@ struct SocketDescriptor {
 };
 
 struct ParameterDescriptor {
-    enum class Control { Float, Integer, Boolean };
+    enum class Control { Float, Integer, Boolean, Enum };
     std::string key;
     std::string label;
     float defaultValue = 0.0F;

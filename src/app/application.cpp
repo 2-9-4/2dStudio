@@ -80,6 +80,59 @@ void renderSocketPin(NodeId nodeId, const NodeDescriptor& descriptor, std::size_
     ed::EndPin();
 }
 
+std::ptrdiff_t inputSocketIndex(const NodeDescriptor& descriptor, std::string_view key) {
+    for (std::size_t index = 0; index < descriptor.sockets.size(); ++index) {
+        const auto& socket = descriptor.sockets[index];
+        if (socket.direction == SocketDirection::Input && socket.key == key)
+            return static_cast<std::ptrdiff_t>(index);
+    }
+    return -1;
+}
+
+bool renderParameterRow(NodeId nodeId, const NodeDescriptor& descriptor,
+                        const ParameterDescriptor& property, NodeRecord& node,
+                        node_widgets::PopupState& popup,
+                        std::unordered_map<std::uintptr_t, PinTarget>& pins,
+                        bool connected) {
+    const auto socketIndex = inputSocketIndex(descriptor, property.key);
+    const bool hasSocket = socketIndex >= 0;
+    if (hasSocket)
+        renderSocketPin(nodeId, descriptor, static_cast<std::size_t>(socketIndex), pins);
+    if (connected) ImGui::BeginDisabled();
+    ImGui::SetNextItemWidth(150);
+    const std::string hiddenLabel = "##" + property.key;
+    const char* label = hasSocket ? hiddenLabel.c_str() : property.label.c_str();
+    bool changed = false;
+    if (property.key == "operation" && node.type == "math") {
+        node_widgets::renderMathOperationSelector(node, popup);
+    } else if (property.key == "mode" && node.type == "mix") {
+        node_widgets::renderMixModeSelector(node, popup);
+    } else if (property.control == ParameterDescriptor::Control::Boolean) {
+        bool enabled = node.parameters.value(property.key, property.defaultValue) > 0.5F;
+        changed = ImGui::Checkbox(label, &enabled);
+        if (changed) node.parameters[property.key] = enabled ? 1.0F : 0.0F;
+    } else if (property.control == ParameterDescriptor::Control::Integer ||
+               property.key == "iterations" || property.key == "octaves" || property.key == "seed") {
+        int integer = static_cast<int>(node.parameters.value(property.key, property.defaultValue));
+        changed = ImGui::SliderInt(label, &integer,
+                                   static_cast<int>(property.minimum),
+                                   static_cast<int>(property.maximum));
+        if (changed) node.parameters[property.key] = static_cast<float>(integer);
+    } else {
+        float value = node.parameters.value(property.key, property.defaultValue);
+        const float speed = std::max((property.maximum - property.minimum) / 500.0F, 0.0001F);
+        changed = ImGui::DragFloat(label, &value, speed, property.minimum, property.maximum,
+                                   "%.6g", ImGuiSliderFlags_AlwaysClamp);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Drag to adjust; Ctrl+click to type an exact value");
+        if (changed) node.parameters[property.key] = value;
+    }
+    if (connected) ImGui::EndDisabled();
+    if (connected && ImGui::IsItemHovered())
+        ImGui::SetTooltip("Connected input overrides this value");
+    return changed;
+}
+
 ImVec4 contributorColor(NodeId id) {
     const float hue = std::fmod(static_cast<float>(id) * 0.61803398875F, 1.0F);
     return ImColor::HSV(hue, 0.55F, 0.95F);
@@ -577,6 +630,9 @@ void Application::renderGraph() {
     if (copyRequested_) { copySelectedNodes(); copyRequested_ = false; }
     if (pasteRequested_) { pasteNodes(); pasteRequested_ = false; }
     std::unordered_map<std::uintptr_t, PinTarget> pins;
+    std::unordered_set<std::string> connectedInputs;
+    for (const auto& link : graph_.links())
+        connectedInputs.insert(std::to_string(link.toNode) + "\x1f" + link.toSocket);
 
     for (auto& node : graph_.nodes()) {
         NodeDescriptor descriptorStorage;
@@ -590,42 +646,22 @@ void Application::renderGraph() {
             ImGui::Separator();
             ImGui::BeginGroup();
             for (std::size_t socketIndex = 0; socketIndex < descriptor->sockets.size(); ++socketIndex) {
-                if (descriptor->sockets[socketIndex].direction == SocketDirection::Input)
+                const auto& socket = descriptor->sockets[socketIndex];
+                if (socket.direction != SocketDirection::Input) continue;
+                const bool isParameter = std::ranges::any_of(descriptor->parameters,
+                    [&](const ParameterDescriptor& parameter) { return parameter.key == socket.key; });
+                if (!isParameter)
                     renderSocketPin(node.id, *descriptor, socketIndex, pins);
+            }
+            for (const auto& property : descriptor->parameters) {
+                const bool connected = connectedInputs.contains(
+                    std::to_string(node.id) + "\x1f" + property.key);
+                if (renderParameterRow(node.id, *descriptor, property, node, nodePopup_, pins, connected))
+                    dirty_ = true;
             }
             ImGui::EndGroup();
             ImGui::SameLine();
             ImGui::BeginGroup();
-            for (const auto& property : descriptor->parameters) {
-                float value = node.parameters.value(property.key, property.defaultValue);
-                ImGui::SetNextItemWidth(150);
-                bool changed = false;
-                if (property.key == "operation" && node.type == "math") {
-                    node_widgets::renderMathOperationSelector(node, nodePopup_);
-                    continue;
-                } else if (property.key == "mode" && node.type == "mix") {
-                    node_widgets::renderMixModeSelector(node, nodePopup_);
-                    continue;
-                } else if (property.control == ParameterDescriptor::Control::Boolean) {
-                    bool enabled = value > 0.5F;
-                    changed = ImGui::Checkbox(property.label.c_str(), &enabled);
-                    value = enabled ? 1.0F : 0.0F;
-                } else if (property.control == ParameterDescriptor::Control::Integer ||
-                           property.key == "iterations" || property.key == "octaves" || property.key == "seed") {
-                    int integer = static_cast<int>(value);
-                    changed = ImGui::SliderInt(property.label.c_str(), &integer, static_cast<int>(property.minimum), static_cast<int>(property.maximum));
-                    value = static_cast<float>(integer);
-                } else {
-                    const float speed = std::max((property.maximum - property.minimum) / 500.0F, 0.0001F);
-                    changed = ImGui::DragFloat(property.label.c_str(), &value, speed,
-                                               property.minimum, property.maximum, "%.6g",
-                                               ImGuiSliderFlags_AlwaysClamp);
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Drag to adjust; Ctrl+click to type an exact value");
-                    }
-                }
-                if (changed) { node.parameters[property.key] = value; dirty_ = true; }
-            }
             if (node.type == "convolution" &&
                 node_widgets::renderConvolutionEditor(node, nodePopup_)) dirty_ = true;
             if (node.type == "image" && node_widgets::renderImagePicker(node)) dirty_ = true;
@@ -693,8 +729,14 @@ void Application::renderGraph() {
                 ? fusion->tail : node.id;
             if (const auto timing = runtime_->gpuMilliseconds().find(timingNode);
                 timing != runtime_->gpuMilliseconds().end()) {
-                ImGui::TextDisabled(fusion && fusion->mode == GeneratedExecutionMode::Generated
-                    ? "Group GPU %.3f ms" : "GPU %.3f ms", timing->second);
+                const bool evaluated = runtime_->wasEvaluated(timingNode);
+                if (fusion && fusion->mode == GeneratedExecutionMode::Generated)
+                    ImGui::TextDisabled(evaluated ? "Group GPU %.3f ms"
+                                                  : "Group GPU %.3f ms (cached)",
+                                        timing->second);
+                else
+                    ImGui::TextDisabled(evaluated ? "GPU %.3f ms" : "GPU %.3f ms (cached)",
+                                        timing->second);
             }
             ImGui::EndGroup();
             ImGui::SameLine();
@@ -1049,6 +1091,9 @@ void Application::renderSubgraphEditor() {
     }
     ed::Begin("Node graph");
     std::unordered_map<std::uintptr_t, PinTarget> pins;
+    std::unordered_set<std::string> connectedInputs;
+    for (const auto& link : body.links())
+        connectedInputs.insert(std::to_string(link.toNode) + "\x1f" + link.toSocket);
     for (auto& node : body.nodes()) {
         if (node.needsAttention && node.type == "simulation_previous_state" &&
             std::ranges::none_of(body.links(), [&](const LinkRecord& link) {
@@ -1073,36 +1118,17 @@ void Application::renderSubgraphEditor() {
             ImGui::Separator();
             ImGui::BeginGroup();
             for (std::size_t socketIndex = 0; socketIndex < descriptor->sockets.size(); ++socketIndex) {
-                if (descriptor->sockets[socketIndex].direction == SocketDirection::Input)
+                const auto& socket = descriptor->sockets[socketIndex];
+                if (socket.direction != SocketDirection::Input) continue;
+                const bool isParameter = std::ranges::any_of(descriptor->parameters,
+                    [&](const ParameterDescriptor& parameter) { return parameter.key == socket.key; });
+                if (!isParameter)
                     renderSocketPin(node.id, *descriptor, socketIndex, pins);
             }
-            ImGui::EndGroup();
-            ImGui::SameLine();
-            ImGui::BeginGroup();
             for (const auto& property : descriptor->parameters) {
-                float value = node.parameters.value(property.key, property.defaultValue);
-                ImGui::SetNextItemWidth(150);
-                bool propertyChanged = false;
-                if (property.key == "operation" && node.type == "math") {
-                    node_widgets::renderMathOperationSelector(node, nodePopup_);
-                    continue;
-                } else if (property.control == ParameterDescriptor::Control::Boolean) {
-                    bool enabled = value > .5F;
-                    propertyChanged = ImGui::Checkbox(property.label.c_str(), &enabled);
-                    value = enabled ? 1.0F : 0.0F;
-                } else if (property.control == ParameterDescriptor::Control::Integer) {
-                    int integer = static_cast<int>(value);
-                    propertyChanged = ImGui::SliderInt(property.label.c_str(), &integer,
-                        static_cast<int>(property.minimum), static_cast<int>(property.maximum));
-                    value = static_cast<float>(integer);
-                } else {
-                    const float speed = std::max((property.maximum - property.minimum) / 500.0F,
-                                                 .0001F);
-                    propertyChanged = ImGui::DragFloat(property.label.c_str(), &value, speed,
-                        property.minimum, property.maximum, "%.6g", ImGuiSliderFlags_AlwaysClamp);
-                }
-                if (propertyChanged) {
-                    node.parameters[property.key] = value;
+                const bool connected = connectedInputs.contains(
+                    std::to_string(node.id) + "\x1f" + property.key);
+                if (renderParameterRow(node.id, *descriptor, property, node, nodePopup_, pins, connected)) {
                     changed = true; executionChanged = true;
                 }
             }

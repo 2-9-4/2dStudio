@@ -500,6 +500,14 @@ NodeDescriptor describeSubgraph(const SubgraphDefinition& definition) {
         } else {
             result.parameters.push_back({item.key, item.label, item.defaultValue,
                                          item.minimum, item.maximum, item.control});
+            // Slider controls double as optional inputs, mirroring slider-style
+            // parameters on built-in nodes. Sockets stay in interface order so the
+            // runtime's input layout matches SimulationSubgraphNode::bindInterface.
+            if (item.control == ParameterDescriptor::Control::Float ||
+                item.control == ParameterDescriptor::Control::Integer) {
+                result.sockets.push_back({item.key, item.label, ValueType::Float,
+                                          SocketDirection::Input, true});
+            }
         }
     }
     result.timeDependent = definition.execution == SubgraphExecution::Simulation;

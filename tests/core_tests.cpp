@@ -207,10 +207,14 @@ TEST_CASE("built-in discrete reaction exposes a stable dynamic interface") {
     REQUIRE(descriptor->displayName == "Reaction Diffusion (Discrete)");
     REQUIRE(descriptor->stateful);
     REQUIRE(std::ranges::count_if(descriptor->sockets, [](const auto& socket) {
+        return socket.direction == SocketDirection::Input;
+    }) == 10);
+    REQUIRE(std::ranges::count_if(descriptor->sockets, [](const auto& socket) {
         return socket.direction == SocketDirection::Output;
     }) == 3);
-    REQUIRE(descriptor->sockets[4].label == "Chemical A");
-    REQUIRE(descriptor->sockets[5].label == "Chemical B");
+    REQUIRE(descriptor->sockets[10].label == "Image");
+    REQUIRE(descriptor->sockets[11].label == "Chemical A");
+    REQUIRE(descriptor->sockets[12].label == "Chemical B");
     REQUIRE(graph.compile(nodes).valid);
 }
 

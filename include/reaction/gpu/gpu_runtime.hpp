@@ -93,6 +93,7 @@ public:
     [[nodiscard]] ImageHandle outputImage() const;
     [[nodiscard]] const CompileResult& compileResult() const { return compiled_; }
     [[nodiscard]] const std::unordered_map<NodeId, double>& gpuMilliseconds() const { return timings_; }
+    [[nodiscard]] bool wasEvaluated(NodeId id) const { return evaluated_.contains(id); }
     [[nodiscard]] const std::unordered_map<NodeId, std::vector<Value>>& values() const { return values_; }
     [[nodiscard]] std::vector<GeneratedShaderInfo> generatedShaders() const;
     [[nodiscard]] std::optional<NodeFusionInfo> fusionInfo(NodeId id) const;
@@ -112,6 +113,7 @@ private:
     std::unordered_map<NodeId, std::unique_ptr<NodeInstance>> instances_;
     std::unordered_map<NodeId, std::vector<Value>> values_;
     std::unordered_map<NodeId, double> timings_;
+    std::unordered_set<NodeId> evaluated_;
     std::unordered_map<NodeId, GLuint> timerQueries_;
     std::unordered_map<NodeId, nlohmann::json> previousParameters_;
     std::unordered_map<NodeId, std::string> subgraphSignatures_;

@@ -158,7 +158,8 @@ public:
              {"b", "B", ValueType::AnyNumeric, SocketDirection::Input, true},
              {"c", "C", ValueType::AnyNumeric, SocketDirection::Input, true},
              {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
-            {{"operation", "Operation", 0, 0, 11}, {"a", "A", 0, -10, 10}, {"b", "B", 0, -10, 10},
+            {{"operation", "Operation", 0, 0, 11, ParameterDescriptor::Control::Enum},
+             {"a", "A", 0, -10, 10}, {"b", "B", 0, -10, 10},
              {"c", "C", 1, -10, 10}, {"inMin", "Input Min", 0, -10, 10}, {"inMax", "Input Max", 1, -10, 10},
              {"outMin", "Output Min", 0, -10, 10}, {"outMax", "Output Max", 1, -10, 10}}};
         result.lowerable = true;
@@ -256,7 +257,7 @@ public:
     static NodeDescriptor describe() { auto result = NodeDescriptor{"mix",1,"Mix","Color",
         {{"a","A",ValueType::AnyNumeric,SocketDirection::Input,true},{"b","B",ValueType::AnyNumeric,SocketDirection::Input,true},
          {"factor","Factor",ValueType::AnyNumeric,SocketDirection::Input,true},{"result","Result",ValueType::AnyNumeric,SocketDirection::Output}},
-        {{"mode","Mode",0,0,9,ParameterDescriptor::Control::Integer},{"a","A",0,0,1},{"b","B",1,0,1},{"factor","Factor",0.5F,0,1}}}; result.lowerable=true; return result; }
+        {{"mode","Mode",0,0,9,ParameterDescriptor::Control::Enum},{"a","A",0,0,1},{"b","B",1,0,1},{"factor","Factor",0.5F,0,1}}}; result.lowerable=true; return result; }
     const NodeDescriptor& descriptor() const override { static const auto value=describe();return value; }
     bool lowerShader(ShaderLoweringContext& context) const override {
         const auto type = context.valueType();

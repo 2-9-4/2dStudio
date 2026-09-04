@@ -127,6 +127,9 @@ public:
     }
 
     ShaderValue parameter(std::string_view key, float fallback) override {
+        // A connected slider-style input socket overrides the parameter uniform.
+        if (inputLink(graph_, currentNode_->id, key))
+            return input(key, key, fallback);
         const std::string requirementKey = "parameter:" + std::to_string(currentNode_->id) +
                                            ":" + std::string(key);
         return requireInput(requirementKey, ShaderInputKind::Scalar, 0, {}, currentNode_->id,

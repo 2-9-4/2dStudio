@@ -72,6 +72,8 @@ public:
 
     ShaderValue parameter(std::string_view key, float fallback) override {
         const auto& node = *frames_.back().node;
+        if (inputLink(node.id, key))
+            return input(key, key, fallback);
         const float value = node.parameters.contains(key) && node.parameters[key].is_number()
             ? node.parameters[key].get<float>() : fallback;
         return {ShaderValueType::Scalar, std::to_string(value)};
@@ -458,9 +460,17 @@ private:
                 uniform(program, ("mode_" + name).c_str(), mode);
                 uniform(program, ("value_" + name).c_str(), scalar);
                 ++textureUnit; ++inputIndex;
-            } else if (item.kind == SubgraphInterfaceKind::Slider && used.contains(item.key)) {
-                uniform(program, ("param_" + name).c_str(),
-                        parameter(parameters_, item.key.c_str(), item.defaultValue));
+            } else if (item.kind == SubgraphInterfaceKind::Slider) {
+                if (inputIndex < inputs.size() &&
+                    std::holds_alternative<float>(inputs[inputIndex])) {
+                    if (used.contains(item.key))
+                        uniform(program, ("param_" + name).c_str(),
+                                std::get<float>(inputs[inputIndex]));
+                } else if (used.contains(item.key)) {
+                    uniform(program, ("param_" + name).c_str(),
+                            parameter(parameters_, item.key.c_str(), item.defaultValue));
+                }
+                ++inputIndex;
             }
         }
     }
