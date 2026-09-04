@@ -194,9 +194,14 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
         result.inferredOutputs[id] = inferred;
     }
 
-    for (const auto& definition : subgraphs_) {
-        for (const auto& error : validateSubgraph(definition, registry)) {
-            result.errors.push_back("Subgraph '" + definition.name + "': " + error);
+    std::unordered_set<std::string> validatedSubgraphs;
+    for (const auto& node : nodes_) {
+        if (node.type != "subgraph" || !validatedSubgraphs.insert(node.subgraphId).second)
+            continue;
+        const auto* definition = resolveSubgraph(*this, node.subgraphId);
+        if (!definition) continue; // The missing-definition error was added above.
+        for (const auto& error : validateSubgraph(*definition, registry)) {
+            result.errors.push_back("Subgraph '" + definition->name + "': " + error);
         }
     }
 

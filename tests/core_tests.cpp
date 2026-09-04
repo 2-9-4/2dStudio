@@ -450,13 +450,21 @@ TEST_CASE("legacy previous-state channel wiring is flagged and remains invalid")
     outgoing->fromSocket = "a";
     graph.subgraphs().push_back(std::move(definition));
 
-    const auto restored = deserializeProject(serializeProject(graph), nodes);
+    auto restored = deserializeProject(serializeProject(graph), nodes);
     const auto& loaded = restored.subgraphs().front();
     const auto loadedPrevious = std::ranges::find(loaded.body.nodes(),
         std::string("simulation_previous_state"), &NodeRecord::type);
     REQUIRE(loadedPrevious != loaded.body.nodes().end());
     REQUIRE(loadedPrevious->needsAttention);
     REQUIRE_FALSE(validateSubgraph(loaded, nodes).empty());
+
+    // A stale editable definition that is not instantiated must not disable the
+    // otherwise independent root graph.
+    REQUIRE(restored.compile(nodes).valid);
+
+    const auto instance = restored.addNode("subgraph");
+    restored.findNode(instance)->subgraphId = loaded.id;
+    REQUIRE_FALSE(restored.compile(nodes).valid);
 }
 
 TEST_CASE("missing subgraph definitions fail graph compilation") {

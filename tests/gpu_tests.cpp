@@ -1,5 +1,6 @@
 #include "reaction/gpu/gpu_runtime.hpp"
 #include "reaction/gpu/shader_ir.hpp"
+#include "reaction/core/persistence.hpp"
 
 #include <GLFW/glfw3.h>
 #include <catch2/catch_approx.hpp>
@@ -133,6 +134,45 @@ LoweredChain lowerMathThresholdSelect(const NodeRegistry& registry, ShaderValueT
 }
 
 } // namespace
+
+TEST_CASE("unused legacy subgraphs do not invalidate the text test root graph") {
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    const auto projectPath = std::filesystem::path(__FILE__).parent_path().parent_path() /
+                             "text_test";
+    const auto graph = loadProject(projectPath, registry);
+    const auto result = graph.compile(registry);
+    INFO(nlohmann::json(result.errors).dump());
+    REQUIRE(result.valid);
+}
+
+TEST_CASE("text test evaluates a non-black output and materializes node previews") {
+    HiddenContext context;
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    const auto projectPath = std::filesystem::path(__FILE__).parent_path().parent_path() /
+                             "text_test";
+    auto graph = loadProject(projectPath, registry);
+    graph.settings = {64, 96, 60};
+
+    GpuRuntime gpu;
+    GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0.0, 1.0 / 60.0, true));
+    REQUIRE(runtime.outputImage());
+
+    const auto pixels = readImage(runtime.outputImage());
+    REQUIRE(std::ranges::any_of(pixels, [](float value) {
+        return std::isfinite(value) && std::abs(value) > 1.0e-4F;
+    }));
+
+    const auto previewCount = std::ranges::count_if(runtime.values(), [](const auto& entry) {
+        return std::ranges::any_of(entry.second, [](const Value& value) {
+            const auto* image = std::get_if<ImageHandle>(&value);
+            return image && static_cast<bool>(*image);
+        });
+    });
+    REQUIRE(previewCount > 0);
+}
 
 TEST_CASE("simulation shader prunes interfaces and lowers one vec2 state neighborhood") {
     const auto& definition = builtInSubgraphs().front();
