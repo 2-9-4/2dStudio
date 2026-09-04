@@ -1,3 +1,4 @@
+#include "reaction/core/layout.hpp"
 #include "reaction/core/persistence.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -390,6 +391,56 @@ TEST_CASE("missing subgraph definitions fail graph compilation") {
     const auto result = graph.compile(nodes);
     REQUIRE_FALSE(result.valid);
     REQUIRE(result.errors.front().find("Missing subgraph") != std::string::npos);
+}
+
+TEST_CASE("auto-layout keeps sequential nodes in a line") {
+    GraphBody body;
+    const auto a = body.addNode("float", {0, 0});
+    const auto b = body.addNode("math", {500, 700});
+    const auto c = body.addNode("math", {900, 300});
+    body.addLink(a, "value", b, "a");
+    body.addLink(b, "result", c, "a");
+    layoutGraph(body);
+    REQUIRE(body.findNode(b)->position.y == body.findNode(a)->position.y);
+    REQUIRE(body.findNode(c)->position.y == body.findNode(a)->position.y);
+    REQUIRE(body.findNode(b)->position.x > body.findNode(a)->position.x);
+    REQUIRE(body.findNode(c)->position.x > body.findNode(b)->position.x);
+}
+
+TEST_CASE("auto-layout places merges at the average of their source lines") {
+    GraphBody body;
+    const auto s1 = body.addNode("float", {0, 0});
+    const auto s2 = body.addNode("float", {0, 1000});
+    const auto m = body.addNode("math", {500, 0});
+    body.addLink(s1, "value", m, "a");
+    body.addLink(s2, "value", m, "b");
+    layoutGraph(body);
+    const float first = body.findNode(s1)->position.y;
+    const float second = body.findNode(s2)->position.y;
+    REQUIRE(first < second);
+    REQUIRE(body.findNode(m)->position.y == (first + second) / 2.0F);
+}
+
+TEST_CASE("auto-layout leaves nodes in disjoint components on distinct rows") {
+    GraphBody body;
+    const auto a = body.addNode("float", {0, 0});
+    const auto b = body.addNode("float", {0, 0});
+    const auto isolated = body.addNode("float", {0, 0});
+    body.addLink(a, "value", b, "a");
+    layoutGraph(body);
+    REQUIRE(body.findNode(a)->position.x == body.findNode(isolated)->position.x);
+    REQUIRE(body.findNode(a)->position.y != body.findNode(isolated)->position.y);
+    REQUIRE(body.findNode(b)->position.x > body.findNode(a)->position.x);
+}
+
+TEST_CASE("auto-layout layers nodes fed by several links from one source") {
+    GraphBody body;
+    const auto s = body.addNode("float", {0, 0});
+    const auto m = body.addNode("math", {0, 0});
+    body.addLink(s, "value", m, "a");
+    body.addLink(s, "value", m, "b");
+    layoutGraph(body);
+    REQUIRE(body.findNode(m)->position.x > body.findNode(s)->position.x);
 }
 
 } // namespace reaction

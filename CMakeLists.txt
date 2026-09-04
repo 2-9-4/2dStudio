@@ -14,6 +14,7 @@ find_package(nlohmann_json 3.11 REQUIRED)
 
 add_library(reaction_core
     src/core/graph.cpp
+    src/core/layout.cpp
     src/core/persistence.cpp
     src/core/registry.cpp
     src/core/subgraph.cpp)

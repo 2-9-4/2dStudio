@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "reaction/core/layout.hpp"
 #include "reaction/core/persistence.hpp"
 
 #include <GLFW/glfw3.h>
@@ -410,6 +411,7 @@ void Application::handleShortcuts() {
     if (ImGui::IsKeyPressed(ImGuiKey_S, false)) saveProjectDialog(io.KeyShift);
     if (ImGui::IsKeyPressed(ImGuiKey_O, false)) loadProjectDialog();
     if (ImGui::IsKeyPressed(ImGuiKey_N, false)) newProject();
+    if (ImGui::IsKeyPressed(ImGuiKey_L, false)) layoutRequested_ = true;
     if (editingSubgraphId_.empty() && !io.WantTextInput &&
         ImGui::IsKeyPressed(ImGuiKey_C, false)) copyRequested_ = true;
     if (editingSubgraphId_.empty() && !io.WantTextInput &&
@@ -526,8 +528,24 @@ void Application::pasteNodes() {
     }
 }
 
+void Application::autoLayoutBody(GraphBody& body, std::unordered_map<NodeId, bool>& positioned) {
+    std::unordered_map<NodeId, Vec2> sizes;
+    for (const auto& node : body.nodes()) {
+        const auto size = ed::GetNodeSize(ed::NodeId(nodeUiId(node.id)));
+        if (size.x > 1.0F && size.y > 1.0F) sizes[node.id] = {size.x, size.y};
+    }
+    layoutGraph(body, &sizes);
+    for (const auto& node : body.nodes()) positioned[node.id] = false;
+    dirty_ = true;
+}
+
 void Application::renderGraph() {
     ed::SetCurrentEditor(nodeEditor_);
+    if (layoutRequested_) {
+        layoutRequested_ = false;
+        autoLayoutBody(graph_, positioned_);
+        fitRootGraph_ = true;
+    }
     ed::Begin("Node graph");
     if (copyRequested_) { copySelectedNodes(); copyRequested_ = false; }
     if (pasteRequested_) { pasteNodes(); pasteRequested_ = false; }
@@ -844,6 +862,11 @@ void Application::renderSubgraphEditor() {
     // This is the same full-size canvas interaction model as the root graph. The
     // separate context is only an independent camera; it is not a separate UI.
     ed::SetCurrentEditor(subgraphEditor_);
+    if (layoutRequested_) {
+        layoutRequested_ = false;
+        autoLayoutBody(body, positionedSubgraph_);
+        fitSubgraphRequested_ = true;
+    }
     ed::Begin("Node graph");
     std::unordered_map<std::uintptr_t, PinTarget> pins;
     for (auto& node : body.nodes()) {
@@ -1013,7 +1036,10 @@ void Application::renderSubgraphEditor() {
         ImGui::EndPopup();
     }
     ed::Resume();
-    if (navigateToGraph) ed::NavigateToContent(0.0F);
+    if (navigateToGraph || fitSubgraphRequested_) {
+        ed::NavigateToContent(0.0F);
+        fitSubgraphRequested_ = false;
+    }
     ed::End();
     ed::SetCurrentEditor(nullptr);
 
@@ -1051,6 +1077,8 @@ void Application::renderEditor() {
             const bool rootGraph = editingSubgraphId_.empty();
             if (ImGui::MenuItem("Copy Nodes", "Ctrl+C", false, rootGraph)) copyRequested_ = true;
             if (ImGui::MenuItem("Paste Nodes", "Ctrl+V", false, rootGraph)) pasteRequested_ = true;
+            ImGui::Separator();
+            if (ImGui::MenuItem("Auto-Layout", "Ctrl+L")) layoutRequested_ = true;
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Window")) {
@@ -1067,6 +1095,7 @@ void Application::renderEditor() {
                  ImGuiWindowFlags_NoScrollWithMouse);
     if (ImGui::Button(playing_ ? "Pause" : "Play")) playing_ = !playing_;
     ImGui::SameLine(); if (ImGui::Button("Reset")) { runtime_->reset(); elapsed_ = 0; }
+    ImGui::SameLine(); if (ImGui::Button("Auto-Layout")) layoutRequested_ = true;
     ImGui::SameLine();
     if (recordingPipe_ < 0) {
         if (ImGui::Button("Record")) startRecordingDialog();

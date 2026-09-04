@@ -35,6 +35,7 @@ private:
     void renderEditor();
     void renderGraph();
     void renderSubgraphEditor();
+    void autoLayoutBody(GraphBody& body, std::unordered_map<NodeId, bool>& positioned);
     void duplicateSubgraph(NodeRecord& node);
     void renderPreview();
     void handleShortcuts();
@@ -70,11 +71,13 @@ private:
     node_widgets::PopupState nodePopup_;
     bool copyRequested_ = false;
     bool pasteRequested_ = false;
+    bool layoutRequested_ = false;
     std::vector<NodeId> pendingSelection_;
     bool fitRootGraph_ = true;
     std::string editingSubgraphId_;
     std::string positionedSubgraphId_;
     std::unordered_map<NodeId, bool> positionedSubgraph_;
+    bool fitSubgraphRequested_ = false;
     NodeId editingSubgraphInstance_ = 0;
 };
 
