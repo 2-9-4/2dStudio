@@ -11,6 +11,7 @@
 #include <cmath>
 #include <filesystem>
 #include <numeric>
+#include <unordered_map>
 #include <vector>
 
 namespace reaction {
@@ -59,9 +60,81 @@ double median(std::vector<double> values) {
     return values.size() % 2 ? values[middle] : (values[middle - 1] + values[middle]) * .5;
 }
 
+class CapturingLoweringContext final : public ShaderLoweringContext {
+public:
+    explicit CapturingLoweringContext(ShaderValueType target) : target_(target) {}
+
+    ShaderValue input(std::string_view socket, std::string_view parameterKey,
+                      float fallback) override {
+        return inputAt(socket, "uv", parameterKey, fallback);
+    }
+    ShaderValue inputAt(std::string_view socket, std::string_view,
+                        std::string_view parameterKey, float fallback) override {
+        trace.push_back("input:" + std::string(socket));
+        if (const auto found = inputs.find(std::string(socket)); found != inputs.end())
+            return found->second;
+        return parameter(parameterKey, fallback);
+    }
+    ShaderValue parameter(std::string_view key, float) override {
+        trace.push_back("parameter:" + std::string(key));
+        return {ShaderValueType::Scalar, "p_" + std::string(key)};
+    }
+    std::string helper(std::string_view name, std::string) override {
+        trace.push_back("helper:" + std::string(name));
+        return std::string(name);
+    }
+    ShaderValue emit(std::string expression, std::string_view socket = {}) override {
+        trace.push_back("emit:" + std::string(socket));
+        emitted = {target_, std::move(expression)};
+        return emitted;
+    }
+    ShaderValueType valueType() const override { return target_; }
+
+    std::unordered_map<std::string, ShaderValue> inputs;
+    std::vector<std::string> trace;
+    ShaderValue emitted;
+
+private:
+    ShaderValueType target_;
+};
+
+struct LoweredChain {
+    std::vector<std::string> trace;
+    std::vector<std::string> expressions;
+};
+
+LoweredChain lowerMathThresholdSelect(const NodeRegistry& registry, ShaderValueType type) {
+    LoweredChain result;
+    auto math = registry.create("math");
+    math->setParameters({{"operation", 0.0F}});
+    CapturingLoweringContext mathContext(type);
+    mathContext.inputs = {{"a", {type, "source"}},
+                          {"b", {ShaderValueType::Scalar, "amount"}}};
+    REQUIRE(math->lowerShader(mathContext));
+    result.trace.insert(result.trace.end(), mathContext.trace.begin(), mathContext.trace.end());
+    result.expressions.push_back(mathContext.emitted.name);
+
+    auto threshold = registry.create("threshold");
+    CapturingLoweringContext thresholdContext(type);
+    thresholdContext.inputs = {{"value", {type, mathContext.emitted.name}}};
+    REQUIRE(threshold->lowerShader(thresholdContext));
+    result.trace.insert(result.trace.end(), thresholdContext.trace.begin(), thresholdContext.trace.end());
+    result.expressions.push_back(thresholdContext.emitted.name);
+
+    auto select = registry.create("select");
+    CapturingLoweringContext selectContext(type);
+    selectContext.inputs = {{"condition", {type, thresholdContext.emitted.name}},
+                            {"ifTrue", {type, mathContext.emitted.name}},
+                            {"ifFalse", {ShaderValueType::Scalar, "fallback"}}};
+    REQUIRE(select->lowerShader(selectContext));
+    result.trace.insert(result.trace.end(), selectContext.trace.begin(), selectContext.trace.end());
+    result.expressions.push_back(selectContext.emitted.name);
+    return result;
+}
+
 } // namespace
 
-TEST_CASE("simulation shader prunes interfaces and shares state neighborhoods") {
+TEST_CASE("simulation shader prunes interfaces and lowers one vec2 state neighborhood") {
     const auto& definition = builtInSubgraphs().front();
     const auto initialization = generateSimulationShader(definition, true);
     const auto update = generateSimulationShader(definition, false);
@@ -74,7 +147,13 @@ TEST_CASE("simulation shader prunes interfaces and shares state neighborhoods") 
     REQUIRE(update.find("param_structureScale") != std::string::npos);
     REQUIRE(update.find("param_iterations") == std::string::npos);
     REQUIRE(update.find("float lap_") == std::string::npos);
-    REQUIRE(update.find("vec2 v_state_lap_") != std::string::npos);
+    REQUIRE(update.find("float laplacianKernel_") == std::string::npos);
+    REQUIRE(update.find("vec2 laplacianKernel_") != std::string::npos);
+    const auto helperAt = update.find("At(vec2 q,float r)");
+    REQUIRE(helperAt != std::string::npos);
+    REQUIRE(update.find("At(vec2 q,float r)", helperAt + 1) == std::string::npos);
+    REQUIRE(update.find(".x") != std::string::npos);
+    REQUIRE(update.find(".y") != std::string::npos);
 
     std::size_t neighborhoodSamples = 0;
     for (std::size_t at = update.find("sampleState(q+pixel*"); at != std::string::npos;
@@ -82,7 +161,7 @@ TEST_CASE("simulation shader prunes interfaces and shares state neighborhoods") 
     REQUIRE(neighborhoodSamples == 8);
 }
 
-TEST_CASE("Math shader planner specializes and fuses a linear image chain") {
+TEST_CASE("shader planner specializes and fuses a linear image chain") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph;
     const auto source = graph.addNode("perlin");
@@ -95,35 +174,104 @@ TEST_CASE("Math shader planner specializes and fuses a linear image chain") {
     const auto compiled = graph.compile(registry);
     REQUIRE(compiled.valid);
 
-    const auto regions = planMathShaderRegions(graph, registry, compiled, 16, 1024);
+    const auto regions = planShaderRegions(graph, registry, compiled, 16, 1024);
     REQUIRE(regions.size() == 1);
-    REQUIRE(regions.front().nodes == std::vector<NodeId>{add, absolute});
+    REQUIRE(regions.front().nodes == std::vector<NodeId>{source, add, absolute});
     const auto generated = generateComputeShader(regions.front(), {absolute});
+    const auto originalSpecialization = generated.specializationKey;
     REQUIRE(generated.outputs.size() == 1);
-    REQUIRE(generated.inputs.size() == 2);
+    REQUIRE(generated.inputs.size() == 10);
     REQUIRE(generated.source.find("operation") == std::string::npos);
     REQUIRE(generated.source.find("hasA") == std::string::npos);
     REQUIRE(generated.source.find("// node " + std::to_string(add)) != std::string::npos);
     REQUIRE(generated.source.find("// node " + std::to_string(absolute)) != std::string::npos);
-    REQUIRE(generated.annotations.size() == 3);
+    REQUIRE(generated.annotations.size() == 4);
 
     const auto originalSource = generated.source;
     graph.findNode(add)->parameters["b"] = .75F;
     const auto numericEdit = generateComputeShader(
-        planMathShaderRegions(graph, registry, graph.compile(registry), 16, 1024).front(),
+        planShaderRegions(graph, registry, graph.compile(registry), 16, 1024).front(),
         {absolute});
     REQUIRE(numericEdit.source == originalSource);
+    REQUIRE(numericEdit.specializationKey == originalSpecialization);
     graph.findNode(add)->parameters["operation"] = 2.0F;
     const auto operationEdit = generateComputeShader(
-        planMathShaderRegions(graph, registry, graph.compile(registry), 16, 1024).front(),
+        planShaderRegions(graph, registry, graph.compile(registry), 16, 1024).front(),
         {absolute});
     REQUIRE(operationEdit.source != originalSource);
+    REQUIRE(operationEdit.specializationKey != originalSpecialization);
 }
 
-TEST_CASE("Math shader planner keeps branch and join boundaries materialized") {
+TEST_CASE("shared node lowering follows the same contract for Scalar and Vec4 planners") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto scalar = lowerMathThresholdSelect(registry, ShaderValueType::Scalar);
+    const auto vector = lowerMathThresholdSelect(registry, ShaderValueType::Vec4);
+    REQUIRE(scalar.trace == vector.trace);
+    REQUIRE(scalar.expressions[0].find('+') != std::string::npos);
+    REQUIRE(vector.expressions[0].find('+') != std::string::npos);
+    REQUIRE(scalar.expressions[1].find("step(") != std::string::npos);
+    REQUIRE(vector.expressions[1].find("step(") != std::string::npos);
+    REQUIRE(scalar.expressions[2].find('?') != std::string::npos);
+    REQUIRE(vector.expressions[2].find(".r") != std::string::npos);
+}
+
+TEST_CASE("general shader planner fuses threshold and select and preserves multi-output sockets") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    for (const auto* type : {"float", "math", "threshold", "select", "coordinates", "laplacian",
+                             "invert", "color_ramp", "mix", "perlin"}) {
+        INFO(type);
+        REQUIRE(registry.descriptor(type)->lowerable);
+    }
+    Graph graph;
+    const auto source = graph.addNode("image");
+    const auto threshold = graph.addNode("threshold");
+    const auto select = graph.addNode("select");
+    graph.addLink(source, "image", threshold, "value");
+    graph.addLink(threshold, "result", select, "condition");
+    graph.addLink(source, "image", select, "ifTrue");
+    const auto regions = planShaderRegions(graph, registry, graph.compile(registry), 16, 1024);
+    REQUIRE(regions.size() == 1);
+    REQUIRE(regions.front().nodes == std::vector<NodeId>{threshold, select});
+    const auto generated = generateComputeShader(regions.front(), {select});
+    REQUIRE(generated.source.find("step(") != std::string::npos);
+    REQUIRE(generated.source.find(".r") != std::string::npos);
+
+    Graph coordinatesGraph;
+    const auto coordinates = coordinatesGraph.addNode("coordinates");
+    const auto coordinateRegions = planShaderRegions(
+        coordinatesGraph, registry, coordinatesGraph.compile(registry), 16, 1024);
+    REQUIRE(coordinateRegions.size() == 1);
+    const auto coordinateShader = generateComputeShader(coordinateRegions.front(), {coordinates});
+    REQUIRE(coordinateShader.outputs.size() == 2);
+    REQUIRE(coordinateShader.outputs[0].socket == "x");
+    REQUIRE(coordinateShader.outputs[1].socket == "y");
+}
+
+TEST_CASE("Laplacian neighborhood inputs form region boundaries") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph;
     const auto source = graph.addNode("perlin");
+    const auto laplacian = graph.addNode("laplacian");
+    const auto threshold = graph.addNode("threshold");
+    graph.addLink(source, "image", laplacian, "value");
+    graph.addLink(laplacian, "result", threshold, "value");
+    const auto compiled = graph.compile(registry);
+    REQUIRE(compiled.valid);
+    const auto regions = planShaderRegions(graph, registry, compiled, 16, 1024);
+    REQUIRE(regions.size() == 2);
+    REQUIRE(regions[0].nodes == std::vector<NodeId>{source});
+    REQUIRE(regions[1].nodes == std::vector<NodeId>{laplacian, threshold});
+    const auto generated = generateComputeShader(regions[1], {threshold});
+    REQUIRE(generated.source.find("laplacianKernel_") != std::string::npos);
+    REQUIRE(std::ranges::count_if(generated.inputs, [](const auto& input) {
+        return input.kind == ShaderInputKind::Image;
+    }) == 1);
+}
+
+TEST_CASE("shader planner keeps branch and join boundaries materialized") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph;
+    const auto source = graph.addNode("image");
     const auto branch = graph.addNode("math");
     const auto left = graph.addNode("math");
     const auto right = graph.addNode("math");
@@ -135,31 +283,31 @@ TEST_CASE("Math shader planner keeps branch and join boundaries materialized") {
     graph.addLink(right, "result", join, "b");
     const auto compiled = graph.compile(registry);
     REQUIRE(compiled.valid);
-    const auto regions = planMathShaderRegions(graph, registry, compiled, 16, 1024);
+    const auto regions = planShaderRegions(graph, registry, compiled, 16, 1024);
     REQUIRE(regions.size() == 4);
     REQUIRE(std::ranges::all_of(regions, [](const auto& region) {
         return region.nodes.size() == 1;
     }));
 }
 
-TEST_CASE("Math shader requirements deduplicate bindings and split at resource limits") {
+TEST_CASE("shader requirements deduplicate bindings and split at resource limits") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph deduplicated;
-    const auto source = deduplicated.addNode("perlin");
+    const auto source = deduplicated.addNode("image");
     const auto math = deduplicated.addNode("math");
     deduplicated.addLink(source, "image", math, "a");
     deduplicated.addLink(source, "image", math, "b");
     auto compiled = deduplicated.compile(registry);
-    const auto one = planMathShaderRegions(deduplicated, registry, compiled, 16, 1024);
+    const auto one = planShaderRegions(deduplicated, registry, compiled, 16, 1024);
     REQUIRE(one.size() == 1);
     REQUIRE(std::ranges::count_if(one.front().inputs, [](const auto& input) {
         return input.kind == ShaderInputKind::Image;
     }) == 1);
 
     Graph limited;
-    const auto a = limited.addNode("perlin");
-    const auto b = limited.addNode("perlin");
-    const auto c = limited.addNode("perlin");
+    const auto a = limited.addNode("image");
+    const auto b = limited.addNode("image");
+    const auto c = limited.addNode("image");
     const auto first = limited.addNode("math");
     const auto second = limited.addNode("math");
     const auto third = limited.addNode("math");
@@ -169,19 +317,19 @@ TEST_CASE("Math shader requirements deduplicate bindings and split at resource l
     limited.addLink(second, "result", third, "a");
     limited.addLink(c, "image", third, "b");
     compiled = limited.compile(registry);
-    const auto split = planMathShaderRegions(limited, registry, compiled, 2, 1024);
+    const auto split = planShaderRegions(limited, registry, compiled, 2, 1024);
     REQUIRE(split.size() == 2);
     REQUIRE(split[0].nodes == std::vector<NodeId>{first, second});
     REQUIRE(split[1].nodes == std::vector<NodeId>{third});
 
     Graph uniformLimited;
-    const auto image = uniformLimited.addNode("perlin");
+    const auto image = uniformLimited.addNode("image");
     const auto addOne = uniformLimited.addNode("math");
     const auto addTwo = uniformLimited.addNode("math");
     uniformLimited.addLink(image, "image", addOne, "a");
     uniformLimited.addLink(addOne, "result", addTwo, "a");
     compiled = uniformLimited.compile(registry);
-    const auto uniformSplit = planMathShaderRegions(
+    const auto uniformSplit = planShaderRegions(
         uniformLimited, registry, compiled, 16, 1);
     REQUIRE(uniformSplit.size() == 2);
     REQUIRE(uniformSplit[0].nodes == std::vector<NodeId>{addOne});
@@ -329,12 +477,12 @@ TEST_CASE("spatial simulation operators are ordinary registered nodes") {
     REQUIRE(laplacian->category == "Filter");
     REQUIRE(laplacian->sockets.size() == 3);
     REQUIRE(laplacian->sockets[0].key == "value");
-    REQUIRE(laplacian->sockets[0].type == ValueType::Image2D);
+    REQUIRE(laplacian->sockets[0].type == ValueType::AnyVector);
     REQUIRE(laplacian->sockets[1].key == "scale");
     REQUIRE(laplacian->sockets[1].type == ValueType::Float);
     REQUIRE(laplacian->sockets[1].optional);
     REQUIRE(laplacian->sockets[2].key == "result");
-    REQUIRE(laplacian->sockets[2].type == ValueType::Image2D);
+    REQUIRE(laplacian->sockets[2].type == ValueType::AnyVector);
     REQUIRE(laplacian->parameters.size() == 1);
     REQUIRE(laplacian->parameters[0].defaultValue == 1.0F);
     REQUIRE(laplacian->parameters[0].minimum == .25F);
@@ -444,7 +592,7 @@ TEST_CASE("generated Math chain matches legacy execution and materializes previe
     REQUIRE(runtime.evaluate(0, 0, false));
     REQUIRE(runtime.fusionInfo(add).has_value());
     REQUIRE(runtime.fusionInfo(add)->interior);
-    REQUIRE(runtime.fusionInfo(multiply)->nodeCount == 2);
+    REQUIRE(runtime.fusionInfo(multiply)->nodeCount == 3);
     REQUIRE_FALSE(runtime.values().contains(add));
     const auto generated = readImage(std::get<ImageHandle>(runtime.values().at(multiply).front()));
 

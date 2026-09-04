@@ -43,6 +43,7 @@ struct NodeRecord {
     Vec2 position;
     nlohmann::json parameters = nlohmann::json::object();
     bool missing = false;
+    bool needsAttention = false;
     nlohmann::json preservedJson;
 };
 

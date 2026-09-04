@@ -1,5 +1,6 @@
 #include "nodes_internal.hpp"
 #include "node_support.hpp"
+#include "reaction/gpu/shader_ir.hpp"
 
 #include <glad/glad.h>
 #include <png.h>
@@ -111,11 +112,20 @@ using node_support::parameter;
 class FloatNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() {
-        return {"float", 1, "Float", "Input",
+        auto result = NodeDescriptor{"float", 1, "Float", "Input",
                 {{"value", "Value", ValueType::Float, SocketDirection::Output}},
                 {{"value", "Value", 0.5F, -10.0F, 10.0F}}};
+        result.lowerable = true;
+        return result;
     }
     const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto value = context.parameter("value", 0.5F);
+        const auto expression = context.valueType() == ShaderValueType::Vec4
+            ? "vec4(" + value.name + ")" : value.name;
+        (void)context.emit(expression, "value");
+        return true;
+    }
     void evaluate(EvaluationContext&, std::span<const Value>, std::span<Value> outputs) override {
         outputs[0] = parameter(parameters_, "value", 0.5F);
     }

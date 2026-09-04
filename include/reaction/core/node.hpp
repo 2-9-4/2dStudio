@@ -42,6 +42,9 @@ struct NodeDescriptor {
     std::vector<ParameterDescriptor> parameters;
     bool timeDependent = false;
     bool stateful = false;
+    // Lowerable nodes can participate in generated shader regions. Whether a
+    // particular instance is eligible still depends on its inferred output type.
+    bool lowerable = false;
 };
 
 struct EvaluationContext {

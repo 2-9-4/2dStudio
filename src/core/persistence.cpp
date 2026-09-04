@@ -13,8 +13,10 @@ namespace {
 
 std::string valueTypeName(ValueType value) { return toString(value); }
 ValueType valueType(const std::string& value) {
+    if (value == "vec2") return ValueType::Vec2;
     if (value == "image2d") return ValueType::Image2D;
     if (value == "numeric") return ValueType::AnyNumeric;
+    if (value == "vector") return ValueType::AnyVector;
     return ValueType::Float;
 }
 
@@ -69,6 +71,17 @@ void deserializeBody(GraphBody& body, const nlohmann::json& nodes,
     for (const auto& value : links) {
         body.links().push_back(deserializeLink(value));
         body.nextLinkId = std::max(body.nextLinkId, body.links().back().id + 1);
+    }
+}
+
+void markLegacyPreviousStateWiring(SubgraphDefinition& definition) {
+    for (auto& node : definition.body.nodes()) {
+        if (node.type != "simulation_previous_state") continue;
+        node.needsAttention = std::ranges::any_of(
+            definition.body.links(), [&](const LinkRecord& link) {
+                return link.fromNode == node.id &&
+                       (link.fromSocket == "a" || link.fromSocket == "b");
+            });
     }
 }
 
@@ -190,7 +203,10 @@ void migrateLegacyKernel(SubgraphDefinition& definition, const nlohmann::json& k
             result = {{id, "x", {}}, {id, "y", {}}};
         } else if (old.operation == "previous_state") {
             const auto id = add("simulation_previous_state", label, old.position);
-            result = {{id, "a", {}}, {id, "b", {}}};
+            const auto split = add("simulation_channel", label + " Channels",
+                                   {old.position.x + 180.0F, old.position.y});
+            definition.body.addLink(id, "state", split, "state");
+            result = {{split, "a", {}}, {split, "b", {}}};
         } else if (old.operation == "interface" || old.operation == "connected") {
             const auto interfaceKey = old.properties.value("key", std::string{});
             const auto id = inputNode(interfaceKey, old.position, label);
@@ -463,6 +479,7 @@ SubgraphDefinition deserializeSubgraph(const nlohmann::json& value,
     if (value.contains("nodes")) {
         const auto& nodes = value.at("nodes");
         deserializeBody(result.body, nodes, value.value("links", nlohmann::json::array()));
+        markLegacyPreviousStateWiring(result);
         for (std::size_t index = 0; index < result.body.nodes().size(); ++index) {
             auto& node = result.body.nodes()[index];
             NodeDescriptor descriptorStorage;

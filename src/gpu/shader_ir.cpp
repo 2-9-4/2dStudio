@@ -1,6 +1,7 @@
 #include "reaction/gpu/shader_ir.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -13,6 +14,27 @@ std::string commentLabel(std::string value) {
     std::replace(value.begin(), value.end(), '\n', ' ');
     std::replace(value.begin(), value.end(), '\r', ' ');
     return value;
+}
+
+std::string identifier(std::string value) {
+    for (char& c : value)
+        if (!std::isalnum(static_cast<unsigned char>(c))) c = '_';
+    return value;
+}
+
+std::string glslType(ShaderValueType type) {
+    switch (type) {
+    case ShaderValueType::Scalar: return "float";
+    case ShaderValueType::Vec2: return "vec2";
+    case ShaderValueType::Vec4: return "vec4";
+    }
+    return "float";
+}
+
+void replaceAll(std::string& value, std::string_view from, std::string_view to) {
+    if (from.empty()) return;
+    for (std::size_t at = 0; (at = value.find(from, at)) != std::string::npos;
+         at += to.size()) value.replace(at, from.size(), to);
 }
 
 const LinkRecord* inputLink(const Graph& graph, NodeId node, std::string_view socket) {
@@ -42,18 +64,27 @@ public:
             currentNode_ = record;
             NodeDescriptor storage;
             const auto* descriptor = resolveDescriptor(graph_, *record, registry, storage);
+            if (!descriptor) throw std::runtime_error("Generated shader has no descriptor");
+            currentDescriptor_ = descriptor;
             currentLabel_ = record->label.empty() && descriptor
                 ? descriptor->displayName : record->label;
             if (!instance->lowerShader(*this))
                 throw std::runtime_error("Node does not support shader lowering: " + record->type);
-            const auto value = values_.at(id);
-            result.candidateOutputs.push_back(
-                ShaderOutputRequirement{id, "result", value, -1, {}});
-            const float operation = record->parameters.contains("operation") &&
-                                    record->parameters["operation"].is_number()
-                ? record->parameters["operation"].get<float>() : 0.0F;
-            result.specializationKey += std::to_string(id) + ":" +
-                std::to_string(static_cast<int>(mathOperation(operation))) + ";";
+            for (const auto& socket : descriptor->sockets) {
+                if (socket.direction != SocketDirection::Output) continue;
+                const auto found = values_.find(valueKey(id, socket.key));
+                if (found != values_.end())
+                    result.candidateOutputs.push_back(
+                        ShaderOutputRequirement{id, socket.key, found->second, -1, {}});
+            }
+            if (record->type == "math") {
+                const auto operation = record->parameters.value("operation", 0.0F);
+                result.specializationKey += std::to_string(id) + ":operation=" +
+                    std::to_string(static_cast<int>(mathOperation(operation))) + ";";
+            } else if (record->type == "mix") {
+                result.specializationKey += std::to_string(id) + ":mode=" +
+                    std::to_string(static_cast<int>(record->parameters.value("mode", 0.0F))) + ";";
+            }
         }
         region_ = nullptr;
         return result;
@@ -61,9 +92,16 @@ public:
 
     ShaderValue input(std::string_view socket, std::string_view parameterKey,
                       float fallback) override {
+        return inputAt(socket, "uv", parameterKey, fallback);
+    }
+
+    ShaderValue inputAt(std::string_view socket, std::string_view uvExpression,
+                        std::string_view parameterKey, float fallback) override {
         const auto* link = inputLink(graph_, currentNode_->id, socket);
         if (link && regionNodes_.contains(link->fromNode)) {
-            const auto found = values_.find(link->fromNode);
+            if (uvExpression != "uv")
+                throw std::runtime_error("Neighborhood input crosses an in-region value");
+            const auto found = values_.find(valueKey(link->fromNode, link->fromSocket));
             if (found == values_.end())
                 throw std::runtime_error("Generated region is not in dependency order");
             return found->second;
@@ -73,8 +111,14 @@ public:
                                compiled_.inferredOutputs.at(link->fromNode) == ValueType::Image2D;
             const std::string key = std::string(image ? "image:" : "scalar:") +
                 std::to_string(link->fromNode) + ":" + link->fromSocket;
-            return requireInput(key, image ? ShaderInputKind::Image : ShaderInputKind::Scalar,
-                                link->fromNode, link->fromSocket, 0, {}, fallback);
+            const auto required = requireInput(
+                key, image ? ShaderInputKind::Image : ShaderInputKind::Scalar,
+                link->fromNode, link->fromSocket, 0, {}, fallback);
+            if (image && uvExpression != "uv")
+                return {ShaderValueType::Vec4, "texture(" +
+                    region_->inputs[requirements_.at(key)].uniformName + ",fract(" +
+                    std::string(uvExpression) + "))"};
+            return required;
         }
         const std::string key = "parameter:" + std::to_string(currentNode_->id) + ":" +
                                 std::string(parameterKey);
@@ -89,17 +133,39 @@ public:
                             std::string(key), fallback);
     }
 
-    ShaderValue emit(std::string expression) override {
-        ShaderValue result{ShaderValueType::Vec4, "v_" + std::to_string(currentNode_->id)};
+    std::string helper(std::string_view name, std::string source) override {
+        const std::string actual = identifier(std::string(name) + "_" +
+                                              std::to_string(currentNode_->id));
+        if (helperNames_.insert(actual).second) {
+            replaceAll(source, name, actual);
+            region_->helpers.push_back({actual, std::move(source)});
+        }
+        return actual;
+    }
+
+    ShaderValue emit(std::string expression, std::string_view socket = {}) override {
+        const auto outputSocket = socket.empty() ? defaultOutputSocket() : std::string(socket);
+        ShaderValue result{ShaderValueType::Vec4, "v_" + std::to_string(currentNode_->id) +
+                           "_" + identifier(outputSocket)};
         region_->instructions.push_back(
             ShaderInstruction{result, std::move(expression), currentNode_->id, currentLabel_});
-        values_[currentNode_->id] = result;
+        values_[valueKey(currentNode_->id, outputSocket)] = result;
         return result;
     }
 
     ShaderValueType valueType() const override { return ShaderValueType::Vec4; }
 
 private:
+    static std::string valueKey(NodeId id, std::string_view socket) {
+        return std::to_string(id) + ":" + std::string(socket);
+    }
+
+    std::string defaultOutputSocket() const {
+        if (currentDescriptor_) for (const auto& socket : currentDescriptor_->sockets)
+            if (socket.direction == SocketDirection::Output) return socket.key;
+        return "result";
+    }
+
     ShaderValue requireInput(const std::string& key, ShaderInputKind kind,
                              NodeId sourceNode, std::string sourceSocket,
                              NodeId parameterNode, std::string parameterKey,
@@ -110,8 +176,10 @@ private:
         const std::string uniform = kind == ShaderInputKind::Image
             ? "inputImage_" + std::to_string(index)
             : "inputScalar_" + std::to_string(index);
-        ShaderValue value{ShaderValueType::Vec4, kind == ShaderInputKind::Image
-            ? "sample_" + std::to_string(index) : "vec4(" + uniform + ")"};
+        ShaderValue value{kind == ShaderInputKind::Image ? ShaderValueType::Vec4
+                                                        : ShaderValueType::Scalar,
+                          kind == ShaderInputKind::Image
+                              ? "sample_" + std::to_string(index) : uniform};
         const int binding = kind == ShaderInputKind::Image
             ? static_cast<int>(std::ranges::count_if(region_->inputs, [](const auto& input) {
                   return input.kind == ShaderInputKind::Image;
@@ -128,9 +196,11 @@ private:
     std::unordered_set<NodeId> regionNodes_;
     ShaderRegion* region_ = nullptr;
     const NodeRecord* currentNode_ = nullptr;
+    const NodeDescriptor* currentDescriptor_ = nullptr;
     std::string currentLabel_;
     std::unordered_map<std::string, std::size_t> requirements_;
-    std::unordered_map<NodeId, ShaderValue> values_;
+    std::unordered_map<std::string, ShaderValue> values_;
+    std::unordered_set<std::string> helperNames_;
 };
 
 ShaderRegion lowerRegion(const Graph& graph, const NodeRegistry& registry,
@@ -157,54 +227,68 @@ std::string mathGlslExpression(MathOperation operation,
                                const std::vector<ShaderValue>& operands,
                                const std::vector<ShaderValue>& remap,
                                ShaderValueType type) {
-    const auto& a = operands.at(0).name;
+    const auto convert = [&](const ShaderValue& value) {
+        if (value.type == type) return value.name;
+        return glslType(type) + "(" + value.name + ")";
+    };
+    const auto a = convert(operands.at(0));
     const auto scalar = [&](std::string_view value) {
-        return type == ShaderValueType::Vec4 ? "vec4(" + std::string(value) + ")"
-                                             : std::string(value);
+        return glslType(type) + "(" + std::string(value) + ")";
     };
     switch (operation) {
-    case MathOperation::Add: return "(" + a + "+" + operands.at(1).name + ")";
-    case MathOperation::Subtract: return "(" + a + "-" + operands.at(1).name + ")";
-    case MathOperation::Multiply: return "(" + a + "*" + operands.at(1).name + ")";
+    case MathOperation::Add: return "(" + a + "+" + convert(operands.at(1)) + ")";
+    case MathOperation::Subtract: return "(" + a + "-" + convert(operands.at(1)) + ")";
+    case MathOperation::Multiply: return "(" + a + "*" + convert(operands.at(1)) + ")";
     case MathOperation::Divide: {
-        const auto& b = operands.at(1).name;
+        const auto b = convert(operands.at(1));
         return "(" + a + "/((step(0.0," + b + ")*2.0-1.0)*max(abs(" + b + ")," +
                scalar("1e-6") + ")))";
     }
     case MathOperation::Power:
         return "((step(0.0," + a + ")*2.0-1.0)*pow(max(abs(" + a + ")," +
-               scalar("1e-6") + ")," + operands.at(1).name + "))";
-    case MathOperation::Minimum: return "min(" + a + "," + operands.at(1).name + ")";
-    case MathOperation::Maximum: return "max(" + a + "," + operands.at(1).name + ")";
+               scalar("1e-6") + ")," + convert(operands.at(1)) + "))";
+    case MathOperation::Minimum: return "min(" + a + "," + convert(operands.at(1)) + ")";
+    case MathOperation::Maximum: return "max(" + a + "," + convert(operands.at(1)) + ")";
     case MathOperation::Absolute: return "abs(" + a + ")";
     case MathOperation::Sine: return "sin(" + a + ")";
     case MathOperation::Cosine: return "cos(" + a + ")";
     case MathOperation::Clamp:
-        return "clamp(" + a + "," + operands.at(1).name + "," + operands.at(2).name + ")";
+        return "clamp(" + a + "," + convert(operands.at(1)) + "," +
+               convert(operands.at(2)) + ")";
     case MathOperation::Remap:
-        return "mix(" + remap.at(2).name + "," + remap.at(3).name + ",clamp((" + a + "-" +
-               remap.at(0).name + ")/max(" + remap.at(1).name + "-" + remap.at(0).name +
-               ",1e-6),0.0,1.0))";
+        return "mix(" + convert(remap.at(2)) + "," + convert(remap.at(3)) +
+               ",clamp((" + a + "-" + convert(remap.at(0)) + ")/max(" +
+               convert(remap.at(1)) + "-" + convert(remap.at(0)) + "," +
+               scalar("1e-6") + ")," + scalar("0.0") + "," + scalar("1.0") + "))";
     }
     return a;
 }
 
-std::vector<ShaderRegion> planMathShaderRegions(
+std::vector<ShaderRegion> planShaderRegions(
     const Graph& graph, const NodeRegistry& registry, const CompileResult& compiled,
     int maximumImageInputs, int maximumScalarInputs) {
     std::unordered_set<NodeId> eligible;
     for (const auto id : compiled.order) {
         const auto* node = graph.findNode(id);
-        if (node && node->type == "math" && compiled.inferredOutputs.contains(id) &&
+        NodeDescriptor storage;
+        const auto* descriptor = node ? resolveDescriptor(graph, *node, registry, storage) : nullptr;
+        if (descriptor && descriptor->lowerable && compiled.inferredOutputs.contains(id) &&
             compiled.inferredOutputs.at(id) == ValueType::Image2D) eligible.insert(id);
     }
 
     std::unordered_map<NodeId, std::vector<NodeId>> eligiblePredecessors;
     std::unordered_map<NodeId, std::vector<NodeId>> consumers;
     for (const auto& link : graph.links()) {
-        consumers[link.fromNode].push_back(link.toNode);
-        if (eligible.contains(link.fromNode) && eligible.contains(link.toNode))
-            eligiblePredecessors[link.toNode].push_back(link.fromNode);
+        const auto* target = graph.findNode(link.toNode);
+        const bool neighborhoodBoundary = target && target->type == "laplacian" &&
+                                          link.toSocket == "value";
+        auto& targets = consumers[link.fromNode];
+        if (std::ranges::find(targets, link.toNode) == targets.end()) targets.push_back(link.toNode);
+        if (!neighborhoodBoundary && eligible.contains(link.fromNode) && eligible.contains(link.toNode)) {
+            auto& predecessors = eligiblePredecessors[link.toNode];
+            if (std::ranges::find(predecessors, link.fromNode) == predecessors.end())
+                predecessors.push_back(link.fromNode);
+        }
     }
     const auto continuation = [&](NodeId id) -> NodeId {
         const auto found = consumers.find(id);
@@ -261,13 +345,13 @@ GeneratedShader generateComputeShader(const ShaderRegion& region,
     generated.inputs = region.inputs;
     generated.specializationKey = region.specializationKey;
     for (const auto id : materializedNodes) {
-        const auto found = std::ranges::find(region.candidateOutputs, id,
-                                             &ShaderOutputRequirement::node);
-        if (found == region.candidateOutputs.end()) continue;
-        auto output = *found;
-        output.binding = static_cast<int>(generated.outputs.size());
-        output.imageName = "outputImage_" + std::to_string(generated.outputs.size());
-        generated.outputs.push_back(std::move(output));
+        for (const auto& candidate : region.candidateOutputs) {
+            if (candidate.node != id) continue;
+            auto output = candidate;
+            output.binding = static_cast<int>(generated.outputs.size());
+            output.imageName = "outputImage_" + std::to_string(generated.outputs.size());
+            generated.outputs.push_back(std::move(output));
+        }
     }
     if (generated.outputs.empty()) throw std::runtime_error("Generated shader has no outputs");
 
@@ -284,11 +368,17 @@ GeneratedShader generateComputeShader(const ShaderRegion& region,
                    input.uniformName + ";");
         else append("uniform float " + input.uniformName + ";");
     }
+    append("vec2 pixelSize;");
+    for (const auto& helper : region.helpers) {
+        std::istringstream helperSource(helper.source);
+        for (std::string line; std::getline(helperSource, line);) append(std::move(line));
+    }
     append("void main() {");
     append("    ivec2 p=ivec2(gl_GlobalInvocationID.xy), s=imageSize(" +
            generated.outputs.front().imageName + ");");
     append("    if(any(greaterThanEqual(p,s))) return;");
     append("    vec2 uv=(vec2(p)+0.5)/vec2(s);");
+    append("    pixelSize=1.0/vec2(s);");
     for (std::size_t index = 0; index < generated.inputs.size(); ++index) {
         const auto& input = generated.inputs[index];
         if (input.kind == ShaderInputKind::Image)
@@ -298,7 +388,8 @@ GeneratedShader generateComputeShader(const ShaderRegion& region,
         const auto first = lines.size() + 1;
         append("    // node " + std::to_string(instruction.contributor) + ": " +
                commentLabel(instruction.contributorLabel));
-        append("    vec4 " + instruction.result.name + "=" + instruction.expression + ";");
+        append("    " + glslType(instruction.result.type) + " " + instruction.result.name +
+               "=" + instruction.expression + ";");
         generated.annotations.push_back({instruction.contributor,
             instruction.contributorLabel, first, lines.size()});
     }
@@ -314,7 +405,7 @@ GeneratedShader generateComputeShader(const ShaderRegion& region,
     generated.source = source.str();
     generated.specializationKey += "outputs:";
     for (const auto& output : generated.outputs)
-        generated.specializationKey += std::to_string(output.node) + ",";
+        generated.specializationKey += std::to_string(output.node) + ":" + output.socket + ",";
     return generated;
 }
 

@@ -23,29 +23,31 @@ std::string identifier(std::string value) {
     return value;
 }
 
-class SimulationGraphCompiler {
+class SimulationGraphCompiler final : public ShaderLoweringContext {
 public:
-    explicit SimulationGraphCompiler(const SubgraphDefinition& definition) : definition_(definition) {
+    SimulationGraphCompiler(const SubgraphDefinition& definition, const NodeRegistry& registry)
+        : definition_(definition), registry_(registry) {
         for (const auto& item : definition.body.nodes()) nodes_.emplace(item.id, &item);
     }
 
     std::string shader(bool initialization) {
         const auto* endpoint = endpointFor(initialization ? "initial" : "next");
         if (!endpoint) throw std::runtime_error("Simulation subgraph is missing a state endpoint");
-        helpers_.str({}); helpers_.clear(); generatedHelpers_.clear();
-        statements_.str({}); statements_.clear(); mainValues_.clear(); mainStateValues_.clear();
-        usedInterfaces_.clear(); stateLaplacians_.clear(); mainStateLaplacianValues_.clear();
-        const auto expression = "vec2(" + emitInput(*endpoint, "a", "uv") + "," +
-                                emitInput(*endpoint, "b", "uv") + ")";
+        helpers_.clear(); helperNames_.clear(); statements_.str({}); statements_.clear();
+        mainValues_.clear(); usedInterfaces_.clear(); frames_.clear();
+        const auto a = lowerInput(*endpoint, "a", "uv", 0.0F);
+        const auto b = lowerInput(*endpoint, "b", "uv", 0.0F);
+        const auto expression = "vec2(" + a.name + "," + b.name + ")";
         std::ostringstream source;
         source << "#version 430\nlayout(local_size_x=16,local_size_y=16)in;\n"
                << "layout(rg16f,binding=0)writeonly uniform image2D stateOut;\n"
                << "layout(binding=0)uniform sampler2D stateIn;\n";
         declareInterface(source, 1);
         source << "vec2 sampleState(vec2 q){return texture(stateIn,fract(q)).rg;}\n";
-        source << helpers_.str();
+        source << "vec2 pixelSize;\n";
+        for (const auto& helper : helpers_) source << helper.source;
         source << "void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(stateOut);"
-               << "if(any(greaterThanEqual(p,s)))return;vec2 uv=(vec2(p)+0.5)/vec2(s);\n"
+               << "if(any(greaterThanEqual(p,s)))return;vec2 uv=(vec2(p)+0.5)/vec2(s);pixelSize=1.0/vec2(s);\n"
                << statements_.str()
                << "imageStore(stateOut,p,vec4(" << expression << ",0.0,1.0));}";
         return source.str();
@@ -55,7 +57,84 @@ public:
         return usedInterfaces_;
     }
 
+    ShaderValue input(std::string_view socket, std::string_view parameterKey,
+                      float fallback) override {
+        return inputAt(socket, frames_.back().uv, parameterKey, fallback);
+    }
+
+    ShaderValue inputAt(std::string_view socket, std::string_view uvExpression,
+                        std::string_view parameterKey, float fallback) override {
+        const auto& frame = frames_.back();
+        const auto* link = inputLink(frame.node->id, socket);
+        if (link) return lower(link->fromNode, link->fromSocket, std::string(uvExpression));
+        return parameter(parameterKey, fallback);
+    }
+
+    ShaderValue parameter(std::string_view key, float fallback) override {
+        const auto& node = *frames_.back().node;
+        const float value = node.parameters.contains(key) && node.parameters[key].is_number()
+            ? node.parameters[key].get<float>() : fallback;
+        return {ShaderValueType::Scalar, std::to_string(value)};
+    }
+
+    std::string helper(std::string_view name, std::string source) override {
+        const auto actual = identifier(std::string(name) + "_" +
+                                       std::to_string(frames_.back().node->id));
+        if (helperNames_.insert(actual).second) {
+            for (std::size_t at = 0; (at = source.find(name, at)) != std::string::npos;
+                 at += actual.size()) source.replace(at, name.size(), actual);
+            helpers_.push_back({actual, std::move(source)});
+        }
+        return actual;
+    }
+
+    ShaderValue emit(std::string expression, std::string_view socket = {}) override {
+        auto& frame = frames_.back();
+        const auto output = socket.empty() ? defaultOutputSocket(*frame.node) : std::string(socket);
+        const auto type = inferredType(frame.node->id, output);
+        if (frame.uv != "uv") {
+            for (std::size_t at = 0; (at = expression.find("uv", at)) != std::string::npos;) {
+                const bool left = at == 0 || (!std::isalnum(static_cast<unsigned char>(expression[at - 1])) &&
+                                               expression[at - 1] != '_');
+                const auto after = at + 2;
+                const bool right = after == expression.size() ||
+                    (!std::isalnum(static_cast<unsigned char>(expression[after])) &&
+                     expression[after] != '_');
+                if (left && right) {
+                    const auto replacement = "(" + frame.uv + ")";
+                    expression.replace(at, 2, replacement);
+                    at += replacement.size();
+                } else at += 2;
+            }
+        }
+        const auto value = materialize(*frame.node, output, frame.uv, type, std::move(expression));
+        frame.emitted[output] = value;
+        return value;
+    }
+
+    ShaderValueType valueType() const override { return frames_.back().valueType; }
+
 private:
+    struct Frame {
+        const NodeRecord* node = nullptr;
+        std::string uv;
+        ShaderValueType valueType = ShaderValueType::Scalar;
+        std::unordered_map<std::string, ShaderValue> emitted;
+    };
+
+    static std::string typeName(ShaderValueType type) {
+        switch (type) {
+        case ShaderValueType::Scalar: return "float";
+        case ShaderValueType::Vec2: return "vec2";
+        case ShaderValueType::Vec4: return "vec4";
+        }
+        return "float";
+    }
+
+    static std::string valueKey(NodeId id, std::string_view socket) {
+        return std::to_string(id) + ":" + std::string(socket);
+    }
+
     const NodeRecord* endpointFor(std::string_view role) const {
         const std::string type = role == "initial" ? "simulation_initial_state"
                                                     : "simulation_next_state";
@@ -88,156 +167,105 @@ private:
         return found == links.end() ? nullptr : &*found;
     }
 
-    std::string emitInput(const NodeRecord& node, std::string_view socket,
-                          const std::string& uv, float fallback = 0.0F) {
+    ShaderValue lowerInput(const NodeRecord& node, std::string_view socket,
+                           const std::string& uv, float fallback = 0.0F) {
         const auto* link = inputLink(node.id, socket);
-        return link ? emit(link->fromNode, link->fromSocket, uv) : std::to_string(fallback);
+        return link ? lower(link->fromNode, link->fromSocket, uv)
+                    : ShaderValue{ShaderValueType::Scalar, std::to_string(fallback)};
     }
 
-    std::string emit(NodeId id, std::string_view socket, const std::string& uv) {
-        if (uv != "uv") return emitInline(id, socket, uv);
-        const auto cacheKey = std::to_string(id) + "_" + std::string(socket);
-        if (const auto found = mainValues_.find(cacheKey); found != mainValues_.end())
+    ShaderValue lower(NodeId id, std::string_view socket, const std::string& uv) {
+        const auto cacheKey = valueKey(id, socket);
+        if (uv == "uv") if (const auto found = mainValues_.find(cacheKey);
+            found != mainValues_.end())
             return found->second;
-        const auto value = "v_" + cacheKey;
-        const auto expression = emitInline(id, socket, uv);
-        statements_ << "float " << value << "=" << expression << ";\n";
-        mainValues_.emplace(cacheKey, value);
-        return value;
-    }
-
-    std::string emitInline(NodeId id, std::string_view socket, const std::string& uv) {
         const auto found = nodes_.find(id);
         if (found == nodes_.end())
             throw std::runtime_error("Unknown simulation node: " + std::to_string(id));
         const auto& node = *found->second;
-        const auto parameterValue = [&](const char* key, float fallback) {
-            return node.parameters.value(key, fallback);
-        };
-        if (node.type == "float") return std::to_string(parameterValue("value", 0.5F));
-        if (node.type == "coordinates") return socket == "y" ? "(" + uv + ").y" : "(" + uv + ").x";
         if (node.type == "simulation_previous_state") {
-            std::string value = "sampleState(" + uv + ")";
-            if (uv == "uv") {
-                auto foundState = mainStateValues_.find(node.id);
-                if (foundState == mainStateValues_.end()) {
-                    const auto variable = "v_state_" + std::to_string(node.id);
-                    statements_ << "vec2 " << variable << "=" << value << ";\n";
-                    foundState = mainStateValues_.emplace(node.id, variable).first;
-                }
-                value = foundState->second;
-            }
-            return value + "." + (socket == "b" ? "y" : "x");
+            if (socket != "state") throw std::runtime_error("Unknown previous-state socket");
+            return materialize(node, socket, uv, ShaderValueType::Vec2,
+                               "sampleState(" + uv + ")");
+        }
+        if (node.type == "simulation_channel") {
+            const auto state = lowerInput(node, "state", uv);
+            return materialize(node, socket, uv, ShaderValueType::Scalar,
+                               state.name + (socket == "b" ? ".y" : ".x"));
         }
         if (node.type == "subgraph_input") {
             const auto interfaceKey = node.parameters.at("key").get<std::string>();
             usedInterfaces_.insert(interfaceKey);
             const auto* item = interfaceItem(interfaceKey);
             const auto name = identifier(interfaceKey);
-            if (socket == "connected") return "(mode_" + name + "!=0?1.0:0.0)";
-            if (item && item->kind == SubgraphInterfaceKind::Slider) return "param_" + name;
-            const auto fallback = std::to_string(parameterValue(
-                "default", item ? item->defaultValue : 0.0F));
-            return "(mode_" + name + "==2?texture(in_" + name + "," + uv + ").r:(mode_" + name + "==1?value_" + name + ":" + fallback + "))";
-        }
-        if (node.type == "math") {
-            const auto a = emitInput(node, "a", uv, parameterValue("a", 0.0F));
-            const auto b = emitInput(node, "b", uv, parameterValue("b", 0.0F));
-            const auto c = emitInput(node, "c", uv, parameterValue("c", 1.0F));
-            const auto operation = mathOperation(parameterValue("operation", 0.0F));
-            std::vector<ShaderValue> operands{{ShaderValueType::Scalar, a}};
-            if (mathOperationOperandCount(operation) >= 2)
-                operands.push_back({ShaderValueType::Scalar, b});
-            if (mathOperationOperandCount(operation) >= 3)
-                operands.push_back({ShaderValueType::Scalar, c});
-            std::vector<ShaderValue> remap;
-            if (operation == MathOperation::Remap) {
-                for (const auto* key : {"inMin", "inMax", "outMin", "outMax"})
-                    remap.push_back({ShaderValueType::Scalar,
-                        std::to_string(parameterValue(key,
-                            std::string_view(key) == "inMax" || std::string_view(key) == "outMax"
-                                ? 1.0F : 0.0F))});
+            std::string expression;
+            if (socket == "connected") expression = "(mode_" + name + "!=0?1.0:0.0)";
+            else if (item && item->kind == SubgraphInterfaceKind::Slider)
+                expression = "param_" + name;
+            else {
+                const auto fallback = std::to_string(node.parameters.value(
+                    "default", item ? item->defaultValue : 0.0F));
+                expression = "(mode_" + name + "==2?texture(in_" + name + "," + uv +
+                    ").r:(mode_" + name + "==1?value_" + name + ":" + fallback + "))";
             }
-            return mathGlslExpression(operation, operands, remap, ShaderValueType::Scalar);
+            return materialize(node, socket, uv, ShaderValueType::Scalar,
+                               std::move(expression));
         }
-        if (node.type == "threshold") {
-            const auto value = emitInput(node, "value", uv, parameterValue("value", 0.5F));
-            return "step(" + std::to_string(parameterValue("threshold", 0.5F)) + "," + value + ")";
+        if (node.type == "simulation_initial_state" ||
+            node.type == "simulation_next_state")
+            return lowerInput(node, socket == "b" ? "b" : "a", uv);
+        if (node.type == "subgraph_output") return lowerInput(node, "value", uv);
+
+        auto instance = registry_.create(node.type);
+        if (!instance) throw std::runtime_error("Unsupported simulation node: " + node.type);
+        instance->setParameters(node.parameters);
+        frames_.push_back({&node, uv, inferredType(id, socket), {}});
+        if (!instance->lowerShader(*this)) {
+            frames_.pop_back();
+            throw std::runtime_error("Simulation node does not support shader lowering: " + node.type);
         }
-        if (node.type == "select") {
-            const auto condition = emitInput(node, "condition", uv,
-                                             parameterValue("condition", 0.0F));
-            const auto ifTrue = emitInput(node, "ifTrue", uv,
-                                          parameterValue("ifTrue", 1.0F));
-            const auto ifFalse = emitInput(node, "ifFalse", uv,
-                                           parameterValue("ifFalse", 0.0F));
-            return "((" + condition + ")!=0.0?" + ifTrue + ":" + ifFalse + ")";
-        }
-        if (node.type == "laplacian") return emitLaplacian(node, uv);
-        if (node.type == "simulation_next_state")
-            return emitInput(node, socket == "b" ? "b" : "a", uv);
-        if (node.type == "subgraph_output") return emitInput(node, "value", uv);
-        throw std::runtime_error("Unsupported simulation node: " + node.type);
+        auto completed = std::move(frames_.back());
+        frames_.pop_back();
+        const auto emitted = completed.emitted.find(std::string(socket));
+        if (emitted != completed.emitted.end()) return emitted->second;
+        if (completed.emitted.size() == 1) return completed.emitted.begin()->second;
+        throw std::runtime_error("Simulation lowerer did not emit socket '" +
+                                 std::string(socket) + "'");
     }
 
-    std::string emitLaplacian(const NodeRecord& node, const std::string& uv) {
-        const auto* valueLink = inputLink(node.id, "value");
-        const auto valueNode = valueLink ? nodes_.find(valueLink->fromNode) : nodes_.end();
-        if (valueLink && valueNode != nodes_.end() &&
-            valueNode->second->type == "simulation_previous_state" &&
-            (valueLink->fromSocket == "a" || valueLink->fromSocket == "b")) {
-            // A state texture fetch already returns both simulation channels. Reuse
-            // one vec2 neighborhood for every direct A/B Laplacian with the same
-            // scale instead of issuing an independent neighborhood per channel.
-            const auto scale = emitInput(node, "scale", "q", 1.0F);
-            auto found = stateLaplacians_.find(scale);
-            if (found == stateLaplacians_.end()) {
-                const auto functionName = "state_lap_" + std::to_string(node.id);
-                helpers_ << "vec2 " << functionName
-                         << "At(vec2 q,float r){vec2 pixel=1.0/vec2(textureSize(stateIn,0));return -sampleState(q)+0.2*("
-                         << "sampleState(q+pixel*vec2(-r,0.0))+sampleState(q+pixel*vec2(r,0.0))+"
-                         << "sampleState(q+pixel*vec2(0.0,-r))+sampleState(q+pixel*vec2(0.0,r)))+0.05*("
-                         << "sampleState(q+pixel*vec2(-r,-r))+sampleState(q+pixel*vec2(r,-r))+"
-                         << "sampleState(q+pixel*vec2(-r,r))+sampleState(q+pixel*vec2(r,r)));}\n"
-                         << "vec2 " << functionName << "(vec2 q){float scale=" << scale
-                         << ";if(abs(scale-1.0)<0.001)return " << functionName
-                         << "At(q,1.0);vec2 v=vec2(0.0);for(int i=0;i<3;i++)v+="
-                         << functionName << "At(q,mix(1.0,scale,float(i)/2.0))/3.0;return v;}\n";
-                found = stateLaplacians_.emplace(scale, functionName).first;
-            }
-            std::string value = found->second + "(" + uv + ")";
-            if (uv == "uv") {
-                auto mainValue = mainStateLaplacianValues_.find(found->second);
-                if (mainValue == mainStateLaplacianValues_.end()) {
-                    const auto variable = "v_" + found->second;
-                    statements_ << "vec2 " << variable << "=" << value << ";\n";
-                    mainValue = mainStateLaplacianValues_.emplace(found->second, variable).first;
-                }
-                value = mainValue->second;
-            }
-            return value + "." + (valueLink->fromSocket == "b" ? "y" : "x");
-        }
+    ShaderValue materialize(const NodeRecord& node, std::string_view socket,
+                            const std::string& uv, ShaderValueType type,
+                            std::string expression) {
+        if (uv != "uv") return {type, std::move(expression)};
+        const auto key = valueKey(node.id, socket);
+        if (const auto found = mainValues_.find(key); found != mainValues_.end())
+            return found->second;
+        ShaderValue result{type, "v_" + std::to_string(node.id) + "_" + identifier(std::string(socket))};
+        statements_ << typeName(type) << " " << result.name << "=" << expression << ";\n";
+        mainValues_[key] = result;
+        return result;
+    }
 
-        const auto functionName = "lap_" + std::to_string(node.id);
-        if (generatedHelpers_.insert(functionName).second) {
-            const auto sample = [&](const std::string& delta) {
-                const auto* link = inputLink(node.id, "value");
-                if (!link) return std::string("0.0");
-                return emit(link->fromNode, link->fromSocket, "fract(q+pixel*" + delta + ")");
-            };
-            const auto center = valueLink ? emit(valueLink->fromNode, valueLink->fromSocket, "q")
-                                          : std::string("0.0");
-            const auto scale = emitInput(node, "scale", "q", 1.0F);
-            helpers_ << "float " << functionName << "At(vec2 q,float r){vec2 pixel=1.0/vec2(textureSize(stateIn,0));return -"
-                     << center << "+0.2*(" << sample("vec2(-r,0.0)") << "+" << sample("vec2(r,0.0)")
-                     << "+" << sample("vec2(0.0,-r)") << "+" << sample("vec2(0.0,r)") << ")+0.05*("
-                     << sample("vec2(-r,-r)") << "+" << sample("vec2(r,-r)") << "+" << sample("vec2(-r,r)")
-                     << "+" << sample("vec2(r,r)") << ");}\n"
-                     << "float " << functionName << "(vec2 q){float scale=" << scale
-                     << ";if(abs(scale-1.0)<0.001)return " << functionName << "At(q,1.0);float v=0.0;"
-                     << "for(int i=0;i<3;i++)v+=" << functionName << "At(q,mix(1.0,scale,float(i)/2.0))/3.0;return v;}\n";
+    std::string defaultOutputSocket(const NodeRecord& node) const {
+        NodeDescriptor storage;
+        const auto* descriptor = resolveSubgraphBodyDescriptor(definition_, node, registry_, storage);
+        if (descriptor) for (const auto& socket : descriptor->sockets)
+            if (socket.direction == SocketDirection::Output) return socket.key;
+        return "result";
+    }
+
+    ShaderValueType inferredType(NodeId id, std::string_view socket) const {
+        const auto found = nodes_.find(id);
+        if (found == nodes_.end()) return ShaderValueType::Scalar;
+        const auto& node = *found->second;
+        if (node.type == "simulation_previous_state" && socket == "state")
+            return ShaderValueType::Vec2;
+        if (node.type == "laplacian") {
+            const auto* link = inputLink(id, "value");
+            return link ? inferredType(link->fromNode, link->fromSocket)
+                        : ShaderValueType::Scalar;
         }
-        return functionName + "(" + uv + ")";
+        return ShaderValueType::Scalar;
     }
 
     const SubgraphInterfaceItem* interfaceItem(std::string_view key) const {
@@ -246,15 +274,14 @@ private:
     }
 
     const SubgraphDefinition& definition_;
+    const NodeRegistry& registry_;
     std::unordered_map<NodeId, const NodeRecord*> nodes_;
-    std::ostringstream helpers_;
+    std::vector<ShaderHelper> helpers_;
     std::ostringstream statements_;
-    std::unordered_set<std::string> generatedHelpers_;
-    std::unordered_map<std::string, std::string> mainValues_;
-    std::unordered_map<NodeId, std::string> mainStateValues_;
+    std::unordered_set<std::string> helperNames_;
+    std::unordered_map<std::string, ShaderValue> mainValues_;
     std::unordered_set<std::string> usedInterfaces_;
-    std::unordered_map<std::string, std::string> stateLaplacians_;
-    std::unordered_map<std::string, std::string> mainStateLaplacianValues_;
+    std::vector<Frame> frames_;
 };
 
 constexpr std::string_view kCollapseShader = R"GLSL(#version 430
@@ -264,8 +291,9 @@ void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=textureSize(stateIn,0);if(
 
 class SimulationSubgraphNode final : public node_support::ParameterNode {
 public:
-    explicit SimulationSubgraphNode(SubgraphDefinition definition)
-        : definition_(std::move(definition)), descriptor_(describeSubgraph(definition_)) {
+    SimulationSubgraphNode(SubgraphDefinition definition, const NodeRegistry& registry)
+        : definition_(std::move(definition)), descriptor_(describeSubgraph(definition_)),
+          registry_(registry) {
         const auto& bodyNodes = definition_.body.nodes();
         const auto& bodyLinks = definition_.body.links();
         const auto next = std::ranges::find(bodyNodes, std::string("simulation_next_state"),
@@ -308,7 +336,7 @@ public:
         auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
         ensureResources(gpu, context.width, context.height);
         if (!initProgram_ || !stepProgram_) {
-            SimulationGraphCompiler compiler(definition_);
+            SimulationGraphCompiler compiler(definition_, registry_);
             const auto initializationSource = compiler.shader(true);
             initializationInterfaces_ = compiler.usedInterfaces();
             const auto updateSource = compiler.shader(false);
@@ -439,6 +467,7 @@ private:
 
     SubgraphDefinition definition_;
     NodeDescriptor descriptor_;
+    const NodeRegistry& registry_;
     std::vector<int> outputChannels_;
     std::array<GLuint, 2> state_{};
     std::vector<GLuint> output_;
@@ -454,7 +483,9 @@ private:
 } // namespace
 
 std::string generateSimulationShader(const SubgraphDefinition& definition, bool initialization) {
-    return SimulationGraphCompiler(definition).shader(initialization);
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    return SimulationGraphCompiler(definition, registry).shader(initialization);
 }
 
 std::unique_ptr<NodeInstance> createSubgraphInstance(const SubgraphDefinition& definition,
@@ -463,7 +494,7 @@ std::unique_ptr<NodeInstance> createSubgraphInstance(const SubgraphDefinition& d
         throw std::runtime_error("Pipeline subgraphs are not executable in this milestone");
     const auto errors = validateSubgraph(definition, registry);
     if (!errors.empty()) throw std::runtime_error(errors.front());
-    return std::make_unique<SimulationSubgraphNode>(definition);
+    return std::make_unique<SimulationSubgraphNode>(definition, registry);
 }
 
 } // namespace reaction

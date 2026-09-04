@@ -54,8 +54,10 @@ struct PinTarget {
 ImColor socketColor(ValueType type) {
     switch (type) {
     case ValueType::Float: return ImColor(116, 185, 255);
+    case ValueType::Vec2: return ImColor(82, 210, 190);
     case ValueType::Image2D: return ImColor(241, 196, 80);
     case ValueType::AnyNumeric: return ImColor(180, 125, 230);
+    case ValueType::AnyVector: return ImColor(112, 200, 145);
     }
     return ImColor(180, 180, 180);
 }
@@ -1022,6 +1024,11 @@ void Application::renderSubgraphEditor() {
     ed::Begin("Node graph");
     std::unordered_map<std::uintptr_t, PinTarget> pins;
     for (auto& node : body.nodes()) {
+        if (node.needsAttention && node.type == "simulation_previous_state" &&
+            std::ranges::none_of(body.links(), [&](const LinkRecord& link) {
+                return link.fromNode == node.id &&
+                       (link.fromSocket == "a" || link.fromSocket == "b");
+            })) node.needsAttention = false;
         NodeDescriptor descriptorStorage;
         const auto* descriptor = resolveSubgraphBodyDescriptor(*definition, node, registry_,
                                                                descriptorStorage);
@@ -1034,6 +1041,9 @@ void Application::renderSubgraphEditor() {
                                                        : node.label.c_str());
             if (!node.label.empty() && node.label != descriptor->displayName)
                 ImGui::TextDisabled("%s", descriptor->displayName.c_str());
+            if (node.needsAttention)
+                ImGui::TextColored(ImVec4(1, .35F, .35F, 1),
+                    "Needs update: reconnect via Channel Split");
             ImGui::Separator();
             std::size_t pinIndex = 0;
             for (const auto& socket : descriptor->sockets) {
@@ -1178,6 +1188,7 @@ void Application::renderSubgraphEditor() {
                 addNode(type, descriptor->category + " / " + descriptor->displayName);
         }
         addNode("simulation_previous_state", "Simulation / Previous Simulation State");
+        addNode("simulation_channel", "Simulation / Channel Split");
         addNode("simulation_initial_state", "Simulation / Initial Simulation State");
         addNode("simulation_next_state", "Simulation / Next Simulation State");
         for (const auto& item : definition->interface) {
@@ -1285,11 +1296,11 @@ void Application::renderEditor() {
         const std::string key = std::to_string(failed->id) + failed->diagnostic;
         if (reportedShaderError_ != key) {
             reportedShaderError_ = key;
-            setStatus("Generated Math shader failed; using legacy fallback", true);
+            setStatus("Generated shader region failed; using legacy fallback", true);
         }
     } else if (!reportedShaderError_.empty()) {
         reportedShaderError_.clear();
-        setStatus("Generated Math shaders active");
+        setStatus("Generated shader regions active");
     }
     renderShaderInspector();
 

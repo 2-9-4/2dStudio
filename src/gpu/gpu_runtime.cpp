@@ -351,13 +351,18 @@ std::string GraphRuntime::fusionSignature() const {
     std::string result;
     for (const auto id : compiled_.order) {
         const auto* node = graph_.findNode(id);
-        if (!node || node->type != "math" || !compiled_.inferredOutputs.contains(id) ||
+        NodeDescriptor storage;
+        const auto* descriptor = node ? resolveDescriptor(graph_, *node, registry_, storage) : nullptr;
+        if (!descriptor || !descriptor->lowerable || !compiled_.inferredOutputs.contains(id) ||
             compiled_.inferredOutputs.at(id) != ValueType::Image2D) continue;
-        const float operation = node->parameters.contains("operation") &&
-                                node->parameters["operation"].is_number()
-            ? node->parameters["operation"].get<float>() : 0.0F;
-        result += std::to_string(id) + ":" +
-            std::to_string(static_cast<int>(operation)) + ";";
+        result += std::to_string(id) + ":" + node->type;
+        if (node->type == "math")
+            result += ":operation=" + std::to_string(static_cast<int>(
+                node->parameters.value("operation", 0.0F)));
+        else if (node->type == "mix")
+            result += ":mode=" + std::to_string(static_cast<int>(
+                node->parameters.value("mode", 0.0F)));
+        result += ";";
     }
     result += "preview:";
     if (fusion_ && fusion_->previewNode) result += std::to_string(*fusion_->previewNode);
@@ -373,7 +378,7 @@ void GraphRuntime::rebuildFusion() {
     next->enabled = enabled;
     next->previewNode = preview;
     try {
-        auto planned = planMathShaderRegions(graph_, registry_, compiled_,
+        auto planned = planShaderRegions(graph_, registry_, compiled_,
             gpu_.maximumComputeTextureInputs(), gpu_.maximumComputeUniformComponents());
         for (auto& region : planned) {
             std::vector<NodeId> outputs{region.nodes.back()};
@@ -381,7 +386,7 @@ void GraphRuntime::rebuildFusion() {
                 *preview != region.nodes.back()) outputs.push_back(*preview);
             auto generated = generateComputeShader(region, outputs);
             const auto compiled = gpu_.tryCompileCompute(generated.source,
-                "Generated Math region " + std::to_string(region.id));
+                "Generated shader region " + std::to_string(region.id));
             FusionState::RegionRuntime runtime;
             runtime.region = std::move(region);
             runtime.generated = std::move(generated);
@@ -430,6 +435,21 @@ float shaderParameter(const Graph& graph, const ShaderInputRequirement& input) {
         ? node->parameters[input.parameterKey].get<float>() : input.fallback;
 }
 
+std::optional<std::size_t> descriptorOutputIndex(const Graph& graph, const NodeRegistry& registry,
+                                                 NodeId id, std::string_view socketKey) {
+    const auto* node = graph.findNode(id);
+    NodeDescriptor storage;
+    const auto* descriptor = node ? resolveDescriptor(graph, *node, registry, storage) : nullptr;
+    if (!descriptor) return std::nullopt;
+    std::size_t index = 0;
+    for (const auto& socket : descriptor->sockets) {
+        if (socket.direction != SocketDirection::Output) continue;
+        if (socket.key == socketKey) return index;
+        ++index;
+    }
+    return std::nullopt;
+}
+
 } // namespace
 
 bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
@@ -460,11 +480,15 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
             if (generated && id != region.region.nodes.back()) continue;
             if (generated) {
                 bool parametersChanged = false;
+                bool timeDependent = false;
                 for (const auto member : region.region.nodes) {
                     const auto* memberRecord = graph_.findNode(member);
                     if (!memberRecord) continue;
                     parametersChanged |= !previousParameters_.contains(member) ||
                                          previousParameters_[member] != memberRecord->parameters;
+                    const auto memberInstance = instances_.find(member);
+                    timeDependent |= memberInstance != instances_.end() &&
+                                     memberInstance->second->descriptor().timeDependent;
                 }
                 bool upstreamDirty = false;
                 for (const auto& input : region.generated.inputs) {
@@ -474,10 +498,15 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                     }
                 }
                 bool missingOutput = false;
-                for (const auto& output : region.generated.outputs)
-                    missingOutput |= !values_.contains(output.node);
+                for (const auto& output : region.generated.outputs) {
+                    const auto slot = descriptorOutputIndex(graph_, registry_, output.node, output.socket);
+                    const auto found = values_.find(output.node);
+                    missingOutput |= !slot || found == values_.end() ||
+                                     *slot >= found->second.size() ||
+                                     std::holds_alternative<std::monostate>(found->second[*slot]);
+                }
                 const bool shouldEvaluate = forceDirty_ || parametersChanged || upstreamDirty ||
-                                            missingOutput;
+                                            missingOutput || (timeDependent && playing);
                 for (const auto member : region.region.nodes) {
                     if (const auto* memberRecord = graph_.findNode(member))
                         previousParameters_[member] = memberRecord->parameters;
@@ -495,18 +524,23 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                 if (missingImageInput) {
                     // Static type inference can identify an image path whose source is
                     // temporarily empty (for example, an Image node without a file).
-                    // Evaluate the region's retained Math instances in order so their
-                    // established scalar fallbacks remain exact.
+                    // Evaluate retained instances in dependency order so their
+                    // established missing-input behavior remains exact.
                     region.runtimeFallback = true;
                     region.milliseconds = 0.0;
                     for (const auto member : region.region.nodes) {
                         const auto* memberRecord = graph_.findNode(member);
                         const auto memberInstance = instances_.find(member);
                         if (!memberRecord || memberInstance == instances_.end()) continue;
-                        auto& math = *memberInstance->second;
-                        math.setParameters(memberRecord->parameters);
-                        static constexpr std::array<std::string_view, 3> keys{"a", "b", "c"};
-                        std::array<Value, 3> inputs;
+                        auto& fallbackInstance = *memberInstance->second;
+                        fallbackInstance.setParameters(memberRecord->parameters);
+                        std::vector<std::string> keys;
+                        std::size_t outputCount = 0;
+                        for (const auto& socket : fallbackInstance.descriptor().sockets) {
+                            if (socket.direction == SocketDirection::Input) keys.push_back(socket.key);
+                            else ++outputCount;
+                        }
+                        std::vector<Value> inputs(keys.size());
                         for (std::size_t inputIndex = 0; inputIndex < keys.size(); ++inputIndex) {
                             const auto link = std::ranges::find_if(graph_.links(), [&](const auto& item) {
                                 return item.toNode == member && item.toSocket == keys[inputIndex];
@@ -516,10 +550,10 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                                                                  link->fromNode, link->fromSocket);
                         }
                         auto& outputs = values_[member];
-                        outputs.resize(1);
+                        outputs.resize(outputCount);
                         const GLuint query = timerQueries_.at(member);
                         glBeginQuery(GL_TIME_ELAPSED, query);
-                        math.evaluate(context, inputs, outputs);
+                        fallbackInstance.evaluate(context, inputs, outputs);
                         glEndQuery(GL_TIME_ELAPSED);
                         GLuint64 nanoseconds = 0;
                         glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
@@ -557,6 +591,8 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                             const auto source = outputValue(graph_, registry_, values_,
                                                             input.sourceNode, input.sourceSocket);
                             if (const auto* number = std::get_if<float>(&source)) value = *number;
+                        } else if (input.parameterKey == "__time") {
+                            value = static_cast<float>(context.frame) / 60.0F;
                         } else value = shaderParameter(graph_, input);
                         glUniform1f(glGetUniformLocation(region.program, input.uniformName.c_str()), value);
                     }
@@ -582,8 +618,14 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                 timings_[region.region.nodes.back()] = region.milliseconds;
                 for (std::size_t outputIndex = 0; outputIndex < region.generated.outputs.size();
                      ++outputIndex) {
-                    values_[region.generated.outputs[outputIndex].node] = {ImageHandle{
-                        region.textures[outputIndex], context.width, context.height}};
+                    const auto& generatedOutput = region.generated.outputs[outputIndex];
+                    const auto slot = descriptorOutputIndex(graph_, registry_, generatedOutput.node,
+                                                            generatedOutput.socket);
+                    if (!slot) continue;
+                    auto& nodeValues = values_[generatedOutput.node];
+                    if (nodeValues.size() <= *slot) nodeValues.resize(*slot + 1);
+                    nodeValues[*slot] = ImageHandle{region.textures[outputIndex],
+                                                    context.width, context.height};
                 }
                 continue;
             }

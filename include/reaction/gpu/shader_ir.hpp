@@ -10,7 +10,7 @@
 
 namespace reaction {
 
-enum class ShaderValueType { Scalar, Vec4 };
+enum class ShaderValueType { Scalar, Vec2, Vec4 };
 enum class ShaderInputKind { Image, Scalar };
 
 struct ShaderValue {
@@ -38,6 +38,11 @@ struct ShaderInstruction {
     std::string contributorLabel;
 };
 
+struct ShaderHelper {
+    std::string name;
+    std::string source;
+};
+
 struct ShaderOutputRequirement {
     NodeId node = 0;
     std::string socket;
@@ -57,6 +62,7 @@ struct ShaderRegion {
     std::uint64_t id = 0;
     std::vector<NodeId> nodes;
     std::vector<ShaderInputRequirement> inputs;
+    std::vector<ShaderHelper> helpers;
     std::vector<ShaderInstruction> instructions;
     std::vector<ShaderOutputRequirement> candidateOutputs;
     std::string specializationKey;
@@ -78,9 +84,18 @@ public:
     [[nodiscard]] virtual ShaderValue input(std::string_view socket,
                                             std::string_view parameterKey,
                                             float fallback) = 0;
+    [[nodiscard]] virtual ShaderValue inputAt(std::string_view socket,
+                                              std::string_view uvExpression,
+                                              std::string_view parameterKey,
+                                              float fallback) = 0;
     [[nodiscard]] virtual ShaderValue parameter(std::string_view key,
                                                 float fallback) = 0;
-    [[nodiscard]] virtual ShaderValue emit(std::string expression) = 0;
+    // Registers a helper local to the current node and returns its collision-free
+    // name. Occurrences of `name` in source are rewritten to that returned name.
+    [[nodiscard]] virtual std::string helper(std::string_view name,
+                                             std::string source) = 0;
+    [[nodiscard]] virtual ShaderValue emit(std::string expression,
+                                           std::string_view socket = {}) = 0;
     [[nodiscard]] virtual ShaderValueType valueType() const = 0;
 };
 
@@ -88,7 +103,7 @@ public:
     MathOperation operation, const std::vector<ShaderValue>& operands,
     const std::vector<ShaderValue>& remapParameters, ShaderValueType type);
 
-[[nodiscard]] std::vector<ShaderRegion> planMathShaderRegions(
+[[nodiscard]] std::vector<ShaderRegion> planShaderRegions(
     const Graph& graph, const NodeRegistry& registry, const CompileResult& compiled,
     int maximumImageInputs, int maximumScalarInputs);
 

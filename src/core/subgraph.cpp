@@ -1,6 +1,7 @@
 #include "reaction/core/graph.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
@@ -19,7 +20,21 @@ const SocketDescriptor* socket(const NodeDescriptor& descriptor, std::string_vie
 }
 
 bool compatible(ValueType from, ValueType to) {
-    return from == to || from == ValueType::AnyNumeric || to == ValueType::AnyNumeric;
+    if (from == to) return true;
+    if ((from == ValueType::AnyNumeric && to == ValueType::AnyVector) ||
+        (from == ValueType::AnyVector && to == ValueType::AnyNumeric)) return true;
+    const auto numeric = [](ValueType type) {
+        return type == ValueType::Float || type == ValueType::Image2D ||
+               type == ValueType::AnyNumeric;
+    };
+    const auto vector = [](ValueType type) {
+        return type == ValueType::Float || type == ValueType::Vec2 ||
+               type == ValueType::Image2D || type == ValueType::AnyVector;
+    };
+    return ((from == ValueType::AnyNumeric || to == ValueType::AnyNumeric) &&
+            numeric(from) && numeric(to)) ||
+           ((from == ValueType::AnyVector || to == ValueType::AnyVector) &&
+            vector(from) && vector(to));
 }
 
 const SubgraphInterfaceItem* interfaceItem(const SubgraphDefinition& definition,
@@ -53,8 +68,14 @@ const NodeDescriptor* intrinsicDescriptor(const SubgraphDefinition& definition,
     }
     if (node.type == "simulation_previous_state") {
         storage = {"simulation_previous_state", 1, "Previous Simulation State", "Simulation",
-                   {{"a", "Chemical A", ValueType::Image2D, SocketDirection::Output},
-                    {"b", "Chemical B", ValueType::Image2D, SocketDirection::Output}}, {}};
+                   {{"state", "State", ValueType::Vec2, SocketDirection::Output}}, {}};
+        return &storage;
+    }
+    if (node.type == "simulation_channel") {
+        storage = {"simulation_channel", 1, "Simulation Channel Split", "Simulation",
+                   {{"state", "State", ValueType::Vec2, SocketDirection::Input},
+                    {"a", "Chemical A", ValueType::Float, SocketDirection::Output},
+                    {"b", "Chemical B", ValueType::Float, SocketDirection::Output}}, {}};
         return &storage;
     }
     if (node.type == "simulation_initial_state") {
@@ -180,19 +201,22 @@ SubgraphDefinition discreteReaction() {
 
     const auto previous = addNode(body, "simulation_previous_state", "Previous Simulation State",
                                   {0, 460});
+    const auto channels = addNode(body, "simulation_channel", "Previous State Channels",
+                                  {220, 660});
+    link(body, previous, "state", channels, "state");
     const auto scale = input(body, "structureScale", "Structure Scale", {0, 720});
-    const auto laplacianA = addNode(body, "laplacian", "Chemical A Laplacian", {220, 400});
-    const auto laplacianB = addNode(body, "laplacian", "Chemical B Laplacian", {220, 560});
-    link(body, previous, "a", laplacianA, "value");
-    link(body, previous, "b", laplacianB, "value");
-    link(body, scale, "value", laplacianA, "scale");
-    link(body, scale, "value", laplacianB, "scale");
+    const auto laplacian = addNode(body, "laplacian", "State Laplacian", {220, 400});
+    const auto laplacianChannels = addNode(body, "simulation_channel", "Laplacian Channels",
+                                           {440, 460});
+    link(body, previous, "state", laplacian, "value");
+    link(body, scale, "value", laplacian, "scale");
+    link(body, laplacian, "result", laplacianChannels, "state");
 
     const auto bSquared = math(body, "Chemical B Squared", 2, {220, 760});
-    link(body, previous, "b", bSquared, "a");
-    link(body, previous, "b", bSquared, "b");
+    link(body, channels, "b", bSquared, "a");
+    link(body, channels, "b", bSquared, "b");
     const auto reaction = math(body, "Reaction Rate", 2, {440, 720});
-    link(body, previous, "a", reaction, "a");
+    link(body, channels, "a", reaction, "a");
     link(body, bSquared, "result", reaction, "b");
 
     const auto feedMultiplier = input(body, "feedMultiplier", "Feed Multiplier", {220, 940});
@@ -211,12 +235,12 @@ SubgraphDefinition discreteReaction() {
     const auto diffusionA = math(body, "Chemical A Diffusion", 2, {660, 400});
     const auto diffusionB = math(body, "Chemical B Diffusion", 2, {660, 560});
     link(body, diffusionAValue, "value", diffusionA, "a");
-    link(body, laplacianA, "result", diffusionA, "b");
+    link(body, laplacianChannels, "a", diffusionA, "b");
     link(body, diffusionBValue, "value", diffusionB, "a");
-    link(body, laplacianB, "result", diffusionB, "b");
+    link(body, laplacianChannels, "b", diffusionB, "b");
 
     const auto availableA = math(body, "Available Chemical A", 1, {660, 700}, {{"a", 1.0F}});
-    link(body, previous, "a", availableA, "b");
+    link(body, channels, "a", availableA, "b");
     const auto feedTerm = math(body, "Chemical A Feed Term", 2, {880, 700});
     link(body, feed, "result", feedTerm, "a");
     link(body, availableA, "result", feedTerm, "b");
@@ -233,7 +257,7 @@ SubgraphDefinition discreteReaction() {
     link(body, kill, "result", feedPlusKill, "b");
     const auto decay = math(body, "Chemical B Decay", 2, {1100, 940});
     link(body, feedPlusKill, "result", decay, "a");
-    link(body, previous, "b", decay, "b");
+    link(body, channels, "b", decay, "b");
     const auto bDiffusionPlusReaction = math(body, "Chemical B Diffusion Plus Reaction", 0,
                                              {880, 580});
     link(body, diffusionB, "result", bDiffusionPlusReaction, "a");
@@ -251,9 +275,9 @@ SubgraphDefinition discreteReaction() {
     link(body, timestep, "value", bStep, "b");
     const auto aNextUnclamped = math(body, "Unclamped Next Chemical A", 0, {1540, 480});
     const auto bNextUnclamped = math(body, "Unclamped Next Chemical B", 0, {1540, 700});
-    link(body, previous, "a", aNextUnclamped, "a");
+    link(body, channels, "a", aNextUnclamped, "a");
     link(body, aStep, "result", aNextUnclamped, "b");
-    link(body, previous, "b", bNextUnclamped, "a");
+    link(body, channels, "b", bNextUnclamped, "a");
     link(body, bStep, "result", bNextUnclamped, "b");
     const auto aNext = math(body, "Next Chemical A", 10, {1760, 480}, {{"b", 0.0F}, {"c", 1.0F}});
     const auto bNext = math(body, "Next Chemical B", 10, {1760, 700}, {{"b", 0.0F}, {"c", 1.0F}});
@@ -357,6 +381,28 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
     std::unordered_set<std::string> occupiedInputs;
     std::unordered_map<NodeId, int> indegree;
     std::unordered_map<NodeId, std::vector<NodeId>> outgoing;
+    const auto bodyValueType = [&](NodeId id, std::string_view outputSocket) {
+        std::unordered_set<NodeId> visiting;
+        std::function<ValueType(NodeId, std::string_view)> infer =
+            [&](NodeId sourceId, std::string_view sourceSocket) -> ValueType {
+                const auto found = nodes.find(sourceId);
+                if (found == nodes.end() || !visiting.insert(sourceId).second)
+                    return ValueType::Float;
+                const auto& source = *found->second;
+                if (source.type == "simulation_previous_state" && sourceSocket == "state")
+                    return ValueType::Vec2;
+                if (source.type == "laplacian" && sourceSocket == "result") {
+                    const auto input = std::ranges::find_if(definition.body.links(),
+                        [&](const LinkRecord& link) {
+                            return link.toNode == sourceId && link.toSocket == "value";
+                        });
+                    if (input != definition.body.links().end())
+                        return infer(input->fromNode, input->fromSocket);
+                }
+                return ValueType::Float;
+            };
+        return infer(id, outputSocket);
+    };
     for (const auto id : nodeIds) indegree[id] = 0;
     for (const auto& linkRecord : definition.body.links()) {
         if (linkRecord.id == 0 || !linkIds.insert(linkRecord.id).second)
@@ -378,6 +424,13 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
         }
         if (!compatible(output->type, inputSocket->type))
             errors.push_back("Subgraph link " + std::to_string(linkRecord.id) + " has incompatible socket types");
+        const auto actualType = bodyValueType(linkRecord.fromNode, linkRecord.fromSocket);
+        if ((inputSocket->type == ValueType::Vec2 && actualType != ValueType::Vec2) ||
+            (inputSocket->type == ValueType::AnyNumeric && actualType == ValueType::Vec2) ||
+            (inputSocket->type == ValueType::Float && actualType == ValueType::Vec2)) {
+            errors.push_back("Subgraph link " + std::to_string(linkRecord.id) +
+                             " has incompatible resolved value types");
+        }
         const auto inputKey = std::to_string(linkRecord.toNode) + ":" + linkRecord.toSocket;
         if (!occupiedInputs.insert(inputKey).second)
             errors.push_back("Subgraph input has more than one link: " + inputKey);
@@ -468,6 +521,7 @@ bool isSubgraphBodyNodeType(std::string_view type) {
            type == "coordinates" || type == "laplacian" ||
            type == "subgraph_input" || type == "subgraph_output" ||
            type == "simulation_previous_state" ||
+           type == "simulation_channel" ||
            type == "simulation_initial_state" ||
            type == "simulation_next_state";
 }
@@ -479,6 +533,7 @@ const NodeDescriptor* resolveSubgraphBodyDescriptor(const SubgraphDefinition& de
     if (!isSubgraphBodyNodeType(node.type)) return nullptr;
     if (node.type == "subgraph_input" || node.type == "subgraph_output" ||
         node.type == "simulation_previous_state" ||
+        node.type == "simulation_channel" ||
         node.type == "simulation_initial_state" ||
         node.type == "simulation_next_state") {
         return intrinsicDescriptor(definition, node, storage);

@@ -21,6 +21,19 @@ using node_support::imageAt;
 using node_support::parameter;
 using node_support::uniform;
 
+std::string shaderTypeName(ShaderValueType type) {
+    switch (type) {
+    case ShaderValueType::Scalar: return "float";
+    case ShaderValueType::Vec2: return "vec2";
+    case ShaderValueType::Vec4: return "vec4";
+    }
+    return "float";
+}
+
+std::string converted(const ShaderValue& value, ShaderValueType type) {
+    return value.type == type ? value.name : shaderTypeName(type) + "(" + value.name + ")";
+}
+
 constexpr std::string_view kPerlinShader = R"GLSL(#version 430
 layout(local_size_x=16, local_size_y=16) in;
 layout(rgba16f, binding=0) writeonly uniform image2D outputImage;
@@ -70,9 +83,33 @@ public:
              {"lacunarity", "Lacunarity", 2, 1, 4}, {"speed", "Speed", 0.08F, -2, 2},
              {"offsetX", "Offset X", 0, -100, 100}, {"offsetY", "Offset Y", 0, -100, 100}}};
         result.timeDependent = true;
+        result.lowerable = true;
         return result;
     }
     const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto seed = context.parameter("seed", 1.0F);
+        const auto scale = context.parameter("scale", 6.0F);
+        const auto octaves = context.parameter("octaves", 4.0F);
+        const auto persistence = context.parameter("persistence", 0.5F);
+        const auto lacunarity = context.parameter("lacunarity", 2.0F);
+        const auto speed = context.parameter("speed", 0.08F);
+        const auto offsetX = context.parameter("offsetX", 0.0F);
+        const auto offsetY = context.parameter("offsetY", 0.0F);
+        const auto time = context.parameter("__time", 0.0F);
+        std::string source =
+            "uint perlinNoise_hash(uvec3 p,int seed){uint h=p.x*374761393u+p.y*668265263u+p.z*1442695041u+uint(seed)*2246822519u;h=(h^(h>>13u))*1274126177u;return h^(h>>16u);}\n"
+            "vec3 perlinNoise_gradient(ivec3 p,int seed){uint h=perlinNoise_hash(uvec3(p),seed);float z=float(h&65535u)/32767.5-1.0;float a=float(h>>16u)*(6.28318530718/65535.0),r=sqrt(max(1.0-z*z,0.0));return vec3(r*cos(a),r*sin(a),z);}\n"
+            "float perlinNoise_value(vec3 p,int seed){ivec3 c=ivec3(floor(p));vec3 f=fract(p),u=f*f*f*(f*(f*6.0-15.0)+10.0);float n000=dot(perlinNoise_gradient(c+ivec3(0,0,0),seed),f-vec3(0,0,0)),n100=dot(perlinNoise_gradient(c+ivec3(1,0,0),seed),f-vec3(1,0,0)),n010=dot(perlinNoise_gradient(c+ivec3(0,1,0),seed),f-vec3(0,1,0)),n110=dot(perlinNoise_gradient(c+ivec3(1,1,0),seed),f-vec3(1,1,0)),n001=dot(perlinNoise_gradient(c+ivec3(0,0,1),seed),f-vec3(0,0,1)),n101=dot(perlinNoise_gradient(c+ivec3(1,0,1),seed),f-vec3(1,0,1)),n011=dot(perlinNoise_gradient(c+ivec3(0,1,1),seed),f-vec3(0,1,1)),n111=dot(perlinNoise_gradient(c+ivec3(1,1,1),seed),f-vec3(1,1,1));return mix(mix(mix(n000,n100,u.x),mix(n010,n110,u.x),u.y),mix(mix(n001,n101,u.x),mix(n011,n111,u.x),u.y),u.z);}\n"
+            "float perlinNoise_fbm(vec3 p,int seed,float octaves,float persistence,float lacunarity){float sum=0.0,amplitude=1.0,norm=0.0;for(int i=0;i<8;i++){if(float(i)>=octaves)break;sum+=perlinNoise_value(p,seed)*amplitude;norm+=amplitude;amplitude*=persistence;p*=lacunarity;}return clamp(0.5+0.85*sum/max(norm,0.0001),0.0,1.0);}\n";
+        const auto helper = context.helper("perlinNoise", std::move(source));
+        const auto expression = helper + "_fbm(vec3(uv*" + scale.name + "+vec2(" +
+            offsetX.name + "," + offsetY.name + ")," + time.name + "*" + speed.name +
+            "),int(" + seed.name + ")," + octaves.name + "," + persistence.name + "," +
+            lacunarity.name + ")";
+        (void)context.emit("vec4(vec3(" + expression + "),1.0)", "image");
+        return true;
+    }
     void evaluate(EvaluationContext& context, std::span<const Value>, std::span<Value> outputs) override {
         ensure(context);
         auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
@@ -116,7 +153,7 @@ void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(outputImage);if(
 class MathNode final : public TextureNode {
 public:
     static NodeDescriptor describe() {
-        return {"math", 1, "Math", "Math",
+        auto result = NodeDescriptor{"math", 1, "Math", "Math",
             {{"a", "A", ValueType::AnyNumeric, SocketDirection::Input, true},
              {"b", "B", ValueType::AnyNumeric, SocketDirection::Input, true},
              {"c", "C", ValueType::AnyNumeric, SocketDirection::Input, true},
@@ -124,6 +161,8 @@ public:
             {{"operation", "Operation", 0, 0, 11}, {"a", "A", 0, -10, 10}, {"b", "B", 0, -10, 10},
              {"c", "C", 1, -10, 10}, {"inMin", "Input Min", 0, -10, 10}, {"inMax", "Input Max", 1, -10, 10},
              {"outMin", "Output Min", 0, -10, 10}, {"outMax", "Output Max", 1, -10, 10}}};
+        result.lowerable = true;
+        return result;
     }
     const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
     bool lowerShader(ShaderLoweringContext& context) const override {
@@ -214,11 +253,41 @@ float applyMix(int mode, float a, float b) {
 
 class MixNode final : public TextureNode {
 public:
-    static NodeDescriptor describe() { return {"mix",1,"Mix","Color",
+    static NodeDescriptor describe() { auto result = NodeDescriptor{"mix",1,"Mix","Color",
         {{"a","A",ValueType::AnyNumeric,SocketDirection::Input,true},{"b","B",ValueType::AnyNumeric,SocketDirection::Input,true},
          {"factor","Factor",ValueType::AnyNumeric,SocketDirection::Input,true},{"result","Result",ValueType::AnyNumeric,SocketDirection::Output}},
-        {{"mode","Mode",0,0,9,ParameterDescriptor::Control::Integer},{"a","A",0,0,1},{"b","B",1,0,1},{"factor","Factor",0.5F,0,1}}}; }
+        {{"mode","Mode",0,0,9,ParameterDescriptor::Control::Integer},{"a","A",0,0,1},{"b","B",1,0,1},{"factor","Factor",0.5F,0,1}}}; result.lowerable=true; return result; }
     const NodeDescriptor& descriptor() const override { static const auto value=describe();return value; }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto type = context.valueType();
+        const auto a = context.input("a", "a", 0.0F);
+        const auto b = context.input("b", "b", 1.0F);
+        const auto factorValue = context.input("factor", "factor", 0.5F);
+        const auto av = converted(a, type), bv = converted(b, type);
+        const auto factor = factorValue.type == ShaderValueType::Scalar
+            ? factorValue.name : "(" + factorValue.name + ").r";
+        const int mode = std::clamp(static_cast<int>(parameter(parameters_, "mode", 0)), 0, 9);
+        std::string blend = bv;
+        switch (mode) {
+        case 1: blend = "(" + av + "+" + bv + ")"; break;
+        case 2: blend = "(" + av + "*" + bv + ")"; break;
+        case 3: blend = "(" + av + "+" + bv + "-" + av + "*" + bv + ")"; break;
+        case 4: blend = "mix(2.0*" + av + "*" + bv + ",1.0-2.0*(1.0-" + av + ")*(1.0-" + bv + "),step(" + shaderTypeName(type) + "(0.5)," + av + "))"; break;
+        case 5: blend = "abs(" + av + "-" + bv + ")"; break;
+        case 6: blend = "min(" + av + "," + bv + ")"; break;
+        case 7: blend = "max(" + av + "," + bv + ")"; break;
+        case 8: blend = "(" + av + "/max(" + shaderTypeName(type) + "(1e-6),1.0-" + bv + "))"; break;
+        case 9: blend = "(1.0-(1.0-" + av + ")/max(" + shaderTypeName(type) + "(1e-6)," + bv + "))"; break;
+        default: break;
+        }
+        const auto f = "clamp(" + factor + ",0.0,1.0)";
+        if (type == ShaderValueType::Vec4)
+            (void)context.emit("vec4(mix((" + av + ").rgb,(" + blend + ").rgb," + f +
+                               "),mix((" + av + ").a,(" + bv + ").a," + f + "))");
+        else
+            (void)context.emit("mix(" + av + "," + blend + "," + f + ")");
+        return true;
+    }
     void evaluate(EvaluationContext& context,std::span<const Value> inputs,std::span<Value> outputs) override {
         const auto ia=imageAt(inputs,0),ib=imageAt(inputs,1),iff=imageAt(inputs,2);
         const float a=floatAt(inputs,0,parameter(parameters_,"a",0)),b=floatAt(inputs,1,parameter(parameters_,"b",1)),f=floatAt(inputs,2,parameter(parameters_,"factor",.5F));
@@ -241,11 +310,24 @@ vec2 uv=(vec2(p)+.5)/vec2(s);float value=texture(source,uv).r;float result=value
 
 class ThresholdNode final : public TextureNode {
 public:
-    static NodeDescriptor describe() { return {"threshold", 1, "Threshold", "Math",
+    static NodeDescriptor describe() { auto result = NodeDescriptor{"threshold", 1, "Threshold", "Math",
         {{"value", "Value", ValueType::AnyNumeric, SocketDirection::Input, true},
          {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
-        {{"value", "Value", 0.5F, 0, 1}, {"threshold", "Threshold", 0.5F, 0, 1}}}; }
+        {{"value", "Value", 0.5F, 0, 1}, {"threshold", "Threshold", 0.5F, 0, 1}}}; result.lowerable=true; return result; }
     const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto value = context.input("value", "value", 0.5F);
+        const auto cutoff = context.parameter("threshold", 0.5F);
+        const auto type = context.valueType();
+        if (type == ShaderValueType::Vec4) {
+            const auto scalarValue = value.type == ShaderValueType::Scalar
+                ? value.name : "(" + value.name + ").r";
+            (void)context.emit("vec4(vec3(step(" + cutoff.name + "," + scalarValue + ")),1.0)");
+        } else {
+            (void)context.emit("step(" + cutoff.name + "," + value.name + ")");
+        }
+        return true;
+    }
     void evaluate(EvaluationContext& context, std::span<const Value> inputs, std::span<Value> outputs) override {
         const auto source = imageAt(inputs, 0);
         const float value = floatAt(inputs, 0, parameter(parameters_, "value", 0.5F));
@@ -285,7 +367,7 @@ void main(){
 class SelectNode final : public TextureNode {
 public:
     static NodeDescriptor describe() {
-        return {"select", 1, "Select", "Logic",
+        auto result = NodeDescriptor{"select", 1, "Select", "Logic",
                 {{"condition", "Condition", ValueType::AnyNumeric, SocketDirection::Input, true},
                  {"ifTrue", "If True", ValueType::AnyNumeric, SocketDirection::Input, true},
                  {"ifFalse", "If False", ValueType::AnyNumeric, SocketDirection::Input, true},
@@ -293,10 +375,24 @@ public:
                 {{"condition", "Condition", 0.0F, -10.0F, 10.0F},
                  {"ifTrue", "If True", 1.0F, -10.0F, 10.0F},
                  {"ifFalse", "If False", 0.0F, -10.0F, 10.0F}}};
+        result.lowerable = true;
+        return result;
     }
     const NodeDescriptor& descriptor() const override {
         static const auto value = describe();
         return value;
+    }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto condition = context.input("condition", "condition", 0.0F);
+        const auto yes = context.input("ifTrue", "ifTrue", 1.0F);
+        const auto no = context.input("ifFalse", "ifFalse", 0.0F);
+        const auto type = context.valueType();
+        const auto scalarCondition = condition.type == ShaderValueType::Scalar
+            ? condition.name : "(" + condition.name + ").r";
+        const auto expression = "((" + scalarCondition + ")!=0.0?" +
+            converted(yes, type) + ":" + converted(no, type) + ")";
+        (void)context.emit(std::move(expression));
+        return true;
     }
     void evaluate(EvaluationContext& context, std::span<const Value> inputs,
                   std::span<Value> outputs) override {
@@ -349,13 +445,25 @@ public:
         if (program_) glDeleteProgram(program_);
     }
     static NodeDescriptor describe() {
-        return {"coordinates", 1, "Canvas Coordinates", "Input",
+        auto result = NodeDescriptor{"coordinates", 1, "Canvas Coordinates", "Input",
                 {{"x", "X", ValueType::Image2D, SocketDirection::Output},
                  {"y", "Y", ValueType::Image2D, SocketDirection::Output}}, {}};
+        result.lowerable = true;
+        return result;
     }
     const NodeDescriptor& descriptor() const override {
         static const auto value = describe();
         return value;
+    }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        if (context.valueType() == ShaderValueType::Scalar) {
+            (void)context.emit("uv.x", "x");
+            (void)context.emit("uv.y", "y");
+        } else {
+            (void)context.emit("vec4(uv.x,uv.x,uv.x,1.0)", "x");
+            (void)context.emit("vec4(uv.y,uv.y,uv.y,1.0)", "y");
+        }
+        return true;
     }
     void evaluate(EvaluationContext& context, std::span<const Value>,
                   std::span<Value> outputs) override {
@@ -409,20 +517,50 @@ void main(){
 class LaplacianNode final : public TextureNode {
 public:
     static NodeDescriptor describe() {
-        return {"laplacian", 1, "Laplacian", "Filter",
-                {{"value", "Value", ValueType::Image2D, SocketDirection::Input},
+        auto result = NodeDescriptor{"laplacian", 1, "Laplacian", "Filter",
+                {{"value", "Value", ValueType::AnyVector, SocketDirection::Input},
                  {"scale", "Scale", ValueType::Float, SocketDirection::Input, true},
-                 {"result", "Result", ValueType::Image2D, SocketDirection::Output}},
+                 {"result", "Result", ValueType::AnyVector, SocketDirection::Output}},
                 {{"scale", "Scale", 1.0F, .25F, 8.0F}}};
+        result.lowerable = true;
+        return result;
     }
     const NodeDescriptor& descriptor() const override {
         static const auto value = describe();
         return value;
     }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto center = context.inputAt("value", "q", "value", 0.0F);
+        const auto type = center.type;
+        const auto zero = shaderTypeName(type) + "(0.0)";
+        const auto sample = [&](std::string delta) {
+            return context.inputAt("value", "q+pixel*" + std::move(delta), "value", 0.0F).name;
+        };
+        const auto scale = context.inputAt("scale", "q", "scale", 1.0F);
+        std::string source = shaderTypeName(type) +
+            " laplacianKernelAt(vec2 q,float r){vec2 pixel=pixelSize;return -" + center.name +
+            "+0.2*(" + sample("vec2(-r,0.0)") + "+" + sample("vec2(r,0.0)") + "+" +
+            sample("vec2(0.0,-r)") + "+" + sample("vec2(0.0,r)") + ")+0.05*(" +
+            sample("vec2(-r,-r)") + "+" + sample("vec2(r,-r)") + "+" +
+            sample("vec2(-r,r)") + "+" + sample("vec2(r,r)") + ");}\n" +
+            shaderTypeName(type) + " laplacianKernel(vec2 q){float scale=" + scale.name +
+            ";if(abs(scale-1.0)<0.001)return laplacianKernelAt(q,1.0);" + shaderTypeName(type) +
+            " v=" + zero + ";for(int i=0;i<3;i++)v+=laplacianKernelAt(q,mix(1.0,scale,float(i)/2.0))/3.0;return v;}\n";
+        const auto helper = context.helper("laplacianKernel", std::move(source));
+        (void)context.emit(helper + "(uv)");
+        return true;
+    }
     void evaluate(EvaluationContext& context, std::span<const Value> inputs,
                   std::span<Value> outputs) override {
         const auto source = imageAt(inputs, 0);
-        if (!source) { outputs[0] = {}; return; }
+        if (!source) {
+            if (!inputs.empty() && std::holds_alternative<float>(inputs[0]))
+                outputs[0] = 0.0F;
+            else if (!inputs.empty() && std::holds_alternative<Vec2>(inputs[0]))
+                outputs[0] = Vec2{};
+            else outputs[0] = {};
+            return;
+        }
         ensure(context);
         auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
         if (!program_) program_ = gpu.compileCompute(kLaplacianShader, "Laplacian / compute");
@@ -442,10 +580,15 @@ void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(outImage);if(any
 
 class InvertNode final : public TextureNode {
 public:
-    static NodeDescriptor describe() { return {"invert", 1, "Image Invert", "Utility",
+    static NodeDescriptor describe() { auto result = NodeDescriptor{"invert", 1, "Image Invert", "Utility",
         {{"image", "Image", ValueType::Image2D, SocketDirection::Input},
-         {"image", "Image", ValueType::Image2D, SocketDirection::Output}}, {}}; }
+         {"image", "Image", ValueType::Image2D, SocketDirection::Output}}, {}}; result.lowerable=true; return result; }
     const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto value = context.input("image", "image", 0.0F);
+        (void)context.emit("vec4(vec3(1.0)-(" + value.name + ").rgb,(" + value.name + ").a)", "image");
+        return true;
+    }
     void evaluate(EvaluationContext& context, std::span<const Value> inputs, std::span<Value> outputs) override {
         const auto source = imageAt(inputs, 0);
         if (!source) { outputs[0] = {}; return; }
@@ -467,12 +610,23 @@ void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(outImage);if(any
 
 class ColorRampNode final : public TextureNode {
 public:
-    static NodeDescriptor describe(){return {"color_ramp",1,"Color Ramp","Color",
+    static NodeDescriptor describe(){auto result=NodeDescriptor{"color_ramp",1,"Color Ramp","Color",
         {{"value","Value",ValueType::AnyNumeric,SocketDirection::Input,true},{"image","Image",ValueType::Image2D,SocketDirection::Output}},
         {{"value","Value",0.5F,0,1},{"low","Low",.02F,0,1},{"high","High",.4F,0,1},
          {"r0","Start R",.015F,0,1},{"g0","Start G",.01F,0,1},{"b0","Start B",.04F,0,1},
-         {"r1","End R",1,0,1},{"g1","End G",.35F,0,1},{"b1","End B",.08F,0,1}}};}
+         {"r1","End R",1,0,1},{"g1","End G",.35F,0,1},{"b1","End B",.08F,0,1}}};result.lowerable=true;return result;}
     const NodeDescriptor& descriptor()const override{static const auto value=describe();return value;}
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto value = context.input("value", "value", 0.5F);
+        const auto low = context.parameter("low", 0.02F), high = context.parameter("high", 0.4F);
+        const auto r0 = context.parameter("r0", .015F), g0 = context.parameter("g0", .01F), b0 = context.parameter("b0", .04F);
+        const auto r1 = context.parameter("r1", 1.0F), g1 = context.parameter("g1", .35F), b1 = context.parameter("b1", .08F);
+        const auto scalar = value.type == ShaderValueType::Scalar ? value.name : "(" + value.name + ").r";
+        const auto t = "clamp((" + scalar + "-" + low.name + ")/max(" + high.name + "-" + low.name + ",1e-6),0.0,1.0)";
+        (void)context.emit("mix(vec4(" + r0.name + "," + g0.name + "," + b0.name + ",1.0),vec4(" +
+                           r1.name + "," + g1.name + "," + b1.name + ",1.0)," + t + ")", "image");
+        return true;
+    }
     void evaluate(EvaluationContext& context,std::span<const Value> inputs,std::span<Value> outputs)override{
         ensure(context);auto& gpu=*static_cast<GpuRuntime*>(context.gpu);if(!program_)program_=gpu.compileCompute(kRampShader,"Color Ramp / compute");const auto source=imageAt(inputs,0);
         glUseProgram(program_);glBindImageTexture(0,texture_,0,GL_FALSE,0,GL_WRITE_ONLY,GL_RGBA16F);if(source)bindTexture(0,source.texture);

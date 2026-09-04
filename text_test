@@ -191,17 +191,6 @@
     },
     {
       "from": {
-        "node": 21,
-        "socket": "result"
-      },
-      "id": 106,
-      "to": {
-        "node": 34,
-        "socket": "feedMultiplier"
-      }
-    },
-    {
-      "from": {
         "node": 35,
         "socket": "time"
       },
@@ -246,28 +235,6 @@
     },
     {
       "from": {
-        "node": 40,
-        "socket": "result"
-      },
-      "id": 116,
-      "to": {
-        "node": 34,
-        "socket": "seed"
-      }
-    },
-    {
-      "from": {
-        "node": 34,
-        "socket": "b"
-      },
-      "id": 118,
-      "to": {
-        "node": 3,
-        "socket": "value"
-      }
-    },
-    {
-      "from": {
         "node": 33,
         "socket": "result"
       },
@@ -279,10 +246,54 @@
     },
     {
       "from": {
+        "node": 40,
+        "socket": "result"
+      },
+      "id": 130,
+      "to": {
+        "node": 45,
+        "socket": "seed"
+      }
+    },
+    {
+      "from": {
+        "node": 21,
+        "socket": "result"
+      },
+      "id": 131,
+      "to": {
+        "node": 45,
+        "socket": "feedMultiplier"
+      }
+    },
+    {
+      "from": {
+        "node": 45,
+        "socket": "image"
+      },
+      "id": 132,
+      "to": {
+        "node": 3,
+        "socket": "value"
+      }
+    },
+    {
+      "from": {
         "node": 44,
         "socket": "image"
       },
-      "id": 129,
+      "id": 133,
+      "to": {
+        "node": 47,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 47,
+        "socket": "result"
+      },
+      "id": 134,
       "to": {
         "node": 4,
         "socket": "image"
@@ -308,8 +319,8 @@
       "id": 4,
       "parameters": {},
       "position": [
-        4942.0,
-        1192.0
+        5359.0,
+        828.0
       ],
       "type": "output",
       "typeVersion": 1
@@ -858,26 +869,6 @@
       "typeVersion": 1
     },
     {
-      "id": 34,
-      "parameters": {
-        "autoReset": 1.0,
-        "diffA": 1.9759999513626099,
-        "diffB": 0.23199999332427979,
-        "dt": 0.8259000182151794,
-        "feed": 0.08020000159740448,
-        "iterations": 26.0,
-        "kill": 0.06199999898672104,
-        "structureScale": 0.25
-      },
-      "position": [
-        2966.0,
-        709.0
-      ],
-      "subgraphId": "project.reaction_diffusion.35.2",
-      "type": "subgraph",
-      "typeVersion": 1
-    },
-    {
       "id": 35,
       "parameters": {},
       "position": [
@@ -1192,6 +1183,28 @@
         616.0
       ],
       "type": "convolution",
+      "typeVersion": 1
+    },
+    {
+      "id": 45,
+      "parameters": {},
+      "position": [
+        2988.0,
+        716.0
+      ],
+      "type": "reaction_diffusion",
+      "typeVersion": 1
+    },
+    {
+      "id": 47,
+      "parameters": {
+        "b": 10.0
+      },
+      "position": [
+        4931.0,
+        870.0
+      ],
+      "type": "math",
       "typeVersion": 1
     }
   ],

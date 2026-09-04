@@ -17,7 +17,21 @@ const SocketDescriptor* socket(const NodeDescriptor& node, std::string_view key,
 }
 
 bool compatible(ValueType from, ValueType to) {
-    return from == to || from == ValueType::AnyNumeric || to == ValueType::AnyNumeric;
+    if (from == to) return true;
+    if ((from == ValueType::AnyNumeric && to == ValueType::AnyVector) ||
+        (from == ValueType::AnyVector && to == ValueType::AnyNumeric)) return true;
+    const auto numeric = [](ValueType type) {
+        return type == ValueType::Float || type == ValueType::Image2D ||
+               type == ValueType::AnyNumeric;
+    };
+    const auto vector = [](ValueType type) {
+        return type == ValueType::Float || type == ValueType::Vec2 ||
+               type == ValueType::Image2D || type == ValueType::AnyVector;
+    };
+    return ((from == ValueType::AnyNumeric || to == ValueType::AnyNumeric) &&
+            numeric(from) && numeric(to)) ||
+           ((from == ValueType::AnyVector || to == ValueType::AnyVector) &&
+            vector(from) && vector(to));
 }
 
 } // namespace
@@ -166,11 +180,16 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
         for (const auto& port : descriptor->sockets) {
             if (port.direction == SocketDirection::Output && port.type == ValueType::Image2D) {
                 inferred = ValueType::Image2D;
+            } else if (port.direction == SocketDirection::Output &&
+                       port.type == ValueType::Vec2 && inferred != ValueType::Image2D) {
+                inferred = ValueType::Vec2;
             }
         }
         for (const auto& link : links_) {
             if (link.toNode != id) continue;
             if (result.inferredOutputs[link.fromNode] == ValueType::Image2D) inferred = ValueType::Image2D;
+            else if (result.inferredOutputs[link.fromNode] == ValueType::Vec2 &&
+                     inferred != ValueType::Image2D) inferred = ValueType::Vec2;
         }
         result.inferredOutputs[id] = inferred;
     }

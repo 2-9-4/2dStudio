@@ -56,9 +56,9 @@ NodeRegistry registry() {
         {{"x", "X", ValueType::Image2D, SocketDirection::Output},
          {"y", "Y", ValueType::Image2D, SocketDirection::Output}}, {}});
     add(result, {"laplacian", 1, "Laplacian", "Filter",
-        {{"value", "Value", ValueType::Image2D, SocketDirection::Input},
+        {{"value", "Value", ValueType::AnyVector, SocketDirection::Input},
          {"scale", "Scale", ValueType::Float, SocketDirection::Input, true},
-         {"result", "Result", ValueType::Image2D, SocketDirection::Output}},
+         {"result", "Result", ValueType::AnyVector, SocketDirection::Output}},
         {{"scale", "Scale", 1.0F, .25F, 8.0F}}});
     add(result, {"output", 1, "Output", "Test",
         {{"in", "In", ValueType::Image2D, SocketDirection::Input},
@@ -109,6 +109,28 @@ TEST_CASE("socket errors and duplicate inputs are reported") {
     const auto result = graph.compile(nodes);
     REQUIRE_FALSE(result.valid);
     REQUIRE(result.errors.size() >= 2);
+}
+
+TEST_CASE("Vec2 is confined to AnyVector paths and excluded from numeric math") {
+    auto nodes = registry();
+    add(nodes, {"vec2_source", 1, "Vec2", "Test",
+        {{"state", "State", ValueType::Vec2, SocketDirection::Output}}, {}});
+    REQUIRE(toString(ValueType::Vec2) == "vec2");
+    REQUIRE(toString(ValueType::AnyVector) == "vector");
+
+    Graph vectorGraph;
+    const auto state = vectorGraph.addNode("vec2_source");
+    const auto laplacian = vectorGraph.addNode("laplacian");
+    vectorGraph.addLink(state, "state", laplacian, "value");
+    const auto vectorResult = vectorGraph.compile(nodes);
+    REQUIRE(vectorResult.valid);
+    REQUIRE(vectorResult.inferredOutputs.at(laplacian) == ValueType::Vec2);
+
+    Graph numericGraph;
+    const auto numericState = numericGraph.addNode("vec2_source");
+    const auto math = numericGraph.addNode("math");
+    numericGraph.addLink(numericState, "state", math, "a");
+    REQUIRE_FALSE(numericGraph.compile(nodes).valid);
 }
 
 TEST_CASE("project JSON round trips graph state") {
@@ -284,6 +306,16 @@ TEST_CASE("simulation bodies reuse registered normal node descriptors") {
                                                              nodes, storage);
         REQUIRE(resolved == nodes.descriptor(type));
     }
+    const auto channel = std::ranges::find(definition.body.nodes(),
+                                           std::string("simulation_channel"),
+                                           &NodeRecord::type);
+    REQUIRE(channel != definition.body.nodes().end());
+    NodeDescriptor channelStorage;
+    const auto* channelDescriptor = resolveSubgraphBodyDescriptor(
+        definition, *channel, nodes, channelStorage);
+    REQUIRE(channelDescriptor != nullptr);
+    REQUIRE(channelDescriptor->sockets.front().type == ValueType::Vec2);
+    REQUIRE(channelDescriptor->sockets[1].type == ValueType::Float);
 }
 
 TEST_CASE("simulation topology accepts sources created after their targets") {
@@ -296,6 +328,22 @@ TEST_CASE("simulation topology accepts sources created after their targets") {
     definition.body.addLink(source, "value", target, "a");
     REQUIRE(source > target);
     REQUIRE(validateSubgraph(definition, nodes).empty());
+}
+
+TEST_CASE("Vec2 Laplacian results require a simulation channel split before math") {
+    auto nodes = registry();
+    auto definition = builtInSubgraphs().front();
+    const auto laplacian = std::ranges::find(definition.body.nodes(),
+                                             std::string("laplacian"),
+                                             &NodeRecord::type);
+    REQUIRE(laplacian != definition.body.nodes().end());
+    const auto laplacianId = laplacian->id;
+    const auto math = definition.body.addNode("math");
+    definition.body.addLink(laplacianId, "result", math, "a");
+    const auto errors = validateSubgraph(definition, nodes);
+    REQUIRE(std::ranges::any_of(errors, [](const std::string& error) {
+        return error.find("resolved value types") != std::string::npos;
+    }));
 }
 
 TEST_CASE("format 2 kernel subgraphs migrate to normal node and link bodies") {
@@ -355,6 +403,8 @@ TEST_CASE("format 2 kernel subgraphs migrate to normal node and link bodies") {
     REQUIRE_FALSE(migrated.body.links().empty());
     REQUIRE(std::ranges::count(migrated.body.nodes(), std::string("select"),
                                &NodeRecord::type) == 1);
+    REQUIRE(std::ranges::count(migrated.body.nodes(), std::string("simulation_channel"),
+                               &NodeRecord::type) >= 1);
     REQUIRE(std::ranges::count(migrated.body.nodes(), std::string("threshold"),
                                &NodeRecord::type) == 1);
     REQUIRE(std::ranges::count(migrated.body.nodes(), std::string("math"),
@@ -381,6 +431,32 @@ TEST_CASE("format 2 kernel subgraphs migrate to normal node and link bodies") {
     REQUIRE(serialized["formatVersion"] == 3);
     REQUIRE(serialized["subgraphs"][0].contains("nodes"));
     REQUIRE_FALSE(serialized["subgraphs"][0].contains("kernel"));
+}
+
+TEST_CASE("legacy previous-state channel wiring is flagged and remains invalid") {
+    auto nodes = registry();
+    Graph graph;
+    auto definition = builtInSubgraphs().front();
+    definition.id = "project.legacy_previous_state";
+    definition.immutable = false;
+    const auto previous = std::ranges::find(definition.body.nodes(),
+                                            std::string("simulation_previous_state"),
+                                            &NodeRecord::type);
+    REQUIRE(previous != definition.body.nodes().end());
+    auto outgoing = std::ranges::find_if(definition.body.links(), [&](const LinkRecord& link) {
+        return link.fromNode == previous->id && link.fromSocket == "state";
+    });
+    REQUIRE(outgoing != definition.body.links().end());
+    outgoing->fromSocket = "a";
+    graph.subgraphs().push_back(std::move(definition));
+
+    const auto restored = deserializeProject(serializeProject(graph), nodes);
+    const auto& loaded = restored.subgraphs().front();
+    const auto loadedPrevious = std::ranges::find(loaded.body.nodes(),
+        std::string("simulation_previous_state"), &NodeRecord::type);
+    REQUIRE(loadedPrevious != loaded.body.nodes().end());
+    REQUIRE(loadedPrevious->needsAttention);
+    REQUIRE_FALSE(validateSubgraph(loaded, nodes).empty());
 }
 
 TEST_CASE("missing subgraph definitions fail graph compilation") {
