@@ -55,10 +55,11 @@ void layoutGraph(GraphBody& body, const std::unordered_map<NodeId, Vec2>* nodeSi
         indegree[id] = static_cast<int>(list.size());
     }
 
-    // Longest-path layering over a topological order. Nodes in a cycle keep
-    // layer zero so the layout still terminates on a broken graph.
-    std::unordered_map<NodeId, int> layer;
-    for (const auto& node : body.nodes()) layer[node.id] = 0;
+    // Layer nodes as late as possible: every node hugs its consumers so short
+    // side branches terminate next to the merge they feed instead of spanning
+    // the whole width. Nodes on a longest source-to-sink path keep their
+    // earliest layer, so chains stay straight. Nodes in a cycle are left at the
+    // rightmost column so the layout still terminates on a broken graph.
     auto remaining = indegree;
     std::priority_queue<NodeId, std::vector<NodeId>, std::greater<>> ready;
     for (const auto& [id, degree] : indegree)
@@ -71,11 +72,30 @@ void layoutGraph(GraphBody& body, const std::unordered_map<NodeId, Vec2>* nodeSi
         for (const auto next : successors[id])
             if (--remaining[next] == 0) ready.push(next);
     }
-    for (const auto id : topo) {
-        int depth = 0;
-        for (const auto pred : predecessors[id]) depth = std::max(depth, layer[pred] + 1);
-        layer[id] = depth;
+
+    std::unordered_map<NodeId, int> sinkDepth;
+    for (const auto& node : body.nodes()) sinkDepth[node.id] = 0;
+    for (auto it = topo.rbegin(); it != topo.rend(); ++it) {
+        const auto id = *it;
+        for (const auto succ : successors[id])
+            sinkDepth[id] = std::max(sinkDepth[id], sinkDepth[succ] + 1);
     }
+    int globalDepth = 0;
+    for (const auto& [id, depth] : sinkDepth) globalDepth = std::max(globalDepth, depth);
+
+    std::unordered_map<NodeId, int> layer;
+    for (const auto& node : body.nodes()) layer[node.id] = globalDepth - sinkDepth[node.id];
+    for (const auto& node : body.nodes())
+        if (predecessors[node.id].empty() && successors[node.id].empty())
+            layer[node.id] = 0;
+
+    // Depth from the nearest source: used below to keep a node on its longest
+    // upstream line instead of being dragged around by short side inputs.
+    std::unordered_map<NodeId, int> sourceDepth;
+    for (const auto& node : body.nodes()) sourceDepth[node.id] = 0;
+    for (const auto id : topo)
+        for (const auto pred : predecessors[id])
+            sourceDepth[id] = std::max(sourceDepth[id], sourceDepth[pred] + 1);
 
     std::map<int, std::vector<NodeId>> byLayer;
     for (const auto& node : body.nodes()) byLayer[layer[node.id]].push_back(node.id);
@@ -157,22 +177,30 @@ void layoutGraph(GraphBody& body, const std::unordered_map<NodeId, Vec2>* nodeSi
         xCursor += widest + kColumnGap;
     }
 
-    // Vertical position: a node's center is the average of the centers feeding
-    // it (so merges land between their source lines and chains stay straight).
-    // Nodes in the same layer are then compacted to guarantee a minimum gap.
+    // Vertical position: follow the dominant input line. Each node sits at the
+    // average of its longest-running feeders, so a chain of single-consumer
+    // nodes stays straight while a real merge between two equally deep lines
+    // lands halfway between them. Short side inputs are ignored. Nodes in the
+    // same layer are then compacted to guarantee a minimum gap.
     std::unordered_map<NodeId, float> centerY;
     for (int l = minLayer; l <= maxLayer; ++l) {
         const auto& ids = byLayer[l];
         std::vector<std::pair<float, NodeId>> desired;
         desired.reserve(ids.size());
         for (const auto id : ids) {
+            int deepest = -1;
             float sum = 0.0F;
             int count = 0;
-            for (const auto pred : predecessors[id])
-                if (layer[pred] == l - 1) {
+            for (const auto pred : predecessors[id]) {
+                if (sourceDepth[pred] > deepest) {
+                    deepest = sourceDepth[pred];
+                    sum = centerY[pred];
+                    count = 1;
+                } else if (sourceDepth[pred] == deepest) {
                     sum += centerY[pred];
                     ++count;
                 }
+            }
             const float target = count > 0
                 ? sum / static_cast<float>(count)
                 : (static_cast<float>(orderInLayer[id]) -
