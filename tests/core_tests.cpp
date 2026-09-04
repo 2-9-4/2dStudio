@@ -477,6 +477,72 @@ TEST_CASE("missing subgraph definitions fail graph compilation") {
     REQUIRE(result.errors.front().find("Missing subgraph") != std::string::npos);
 }
 
+TEST_CASE("removing the last consumer prunes the orphaned subgraph") {
+    auto nodes = registry();
+    Graph graph;
+    auto definition = builtInSubgraphs().front();
+    definition.id = "project.gray_scott.orphaned";
+    definition.immutable = false;
+    graph.subgraphs().push_back(definition);
+    const auto instance = graph.addNode("subgraph");
+    graph.findNode(instance)->subgraphId = definition.id;
+
+    REQUIRE(graph.subgraphs().size() == 1);
+    REQUIRE(graph.removeNode(instance));
+    REQUIRE(graph.subgraphs().empty());
+}
+
+TEST_CASE("removing one consumer keeps a shared subgraph alive") {
+    auto nodes = registry();
+    Graph graph;
+    auto definition = builtInSubgraphs().front();
+    definition.id = "project.gray_scott.shared";
+    definition.immutable = false;
+    graph.subgraphs().push_back(definition);
+    const auto first = graph.addNode("subgraph");
+    const auto second = graph.addNode("subgraph");
+    graph.findNode(first)->subgraphId = definition.id;
+    graph.findNode(second)->subgraphId = definition.id;
+
+    REQUIRE(graph.removeNode(first));
+    REQUIRE(graph.subgraphs().size() == 1);
+    REQUIRE(resolveSubgraph(graph, definition.id) != nullptr);
+}
+
+TEST_CASE("copy then delete then paste restores the pruned subgraph") {
+    auto nodes = registry();
+    Graph graph;
+    auto definition = builtInSubgraphs().front();
+    definition.id = "project.gray_scott.copied";
+    definition.immutable = false;
+    graph.subgraphs().push_back(definition);
+    const auto instance = graph.addNode("subgraph");
+    graph.findNode(instance)->subgraphId = definition.id;
+
+    // Copy captures the full subgraph definition before the node is deleted.
+    const auto copied = serializeProject(graph)["subgraphs"];
+
+    // Delete the node, which orphans and prunes the definition.
+    REQUIRE(graph.removeNode(instance));
+    REQUIRE(graph.subgraphs().empty());
+
+    // Paste re-creates the definition exactly like the clipboard path does.
+    for (const auto& definitionJson : copied) {
+        const nlohmann::json document{{"formatVersion", 2},
+            {"project", {{"width", 1024}, {"height", 1024}, {"targetFps", 60}}},
+            {"subgraphs", nlohmann::json::array({definitionJson})},
+            {"nodes", nlohmann::json::array()}, {"links", nlohmann::json::array()},
+            {"activeOutput", 0}};
+        graph.subgraphs().push_back(
+            deserializeProject(document, nodes).subgraphs().front());
+    }
+    const auto pasted = graph.addNode("subgraph");
+    graph.findNode(pasted)->subgraphId = definition.id;
+
+    REQUIRE(resolveSubgraph(graph, definition.id) != nullptr);
+    REQUIRE(graph.compile(nodes).valid);
+}
+
 TEST_CASE("auto-layout keeps sequential nodes in a line") {
     GraphBody body;
     const auto a = body.addNode("float", {0, 0});

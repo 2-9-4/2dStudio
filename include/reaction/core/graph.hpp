@@ -109,6 +109,7 @@ class Graph : public GraphBody {
 public:
     bool removeNode(NodeId id);
     void clear();
+    void pruneOrphanedSubgraphs();
 
     [[nodiscard]] CompileResult compile(const NodeRegistry& registry) const;
     [[nodiscard]] const SubgraphDefinition* findSubgraph(std::string_view id) const;

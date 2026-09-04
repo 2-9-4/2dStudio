@@ -92,7 +92,18 @@ NodeRecord* GraphBody::findNode(NodeId id) {
 bool Graph::removeNode(NodeId id) {
     const bool removed = GraphBody::removeNode(id);
     if (removed && activeOutput == id) activeOutput = 0;
+    if (removed) pruneOrphanedSubgraphs();
     return removed;
+}
+
+void Graph::pruneOrphanedSubgraphs() {
+    std::unordered_set<std::string> referenced;
+    for (const auto& node : nodes_)
+        if (node.type == "subgraph" && !node.subgraphId.empty())
+            referenced.insert(node.subgraphId);
+    std::erase_if(subgraphs_, [&](const SubgraphDefinition& definition) {
+        return !referenced.contains(definition.id);
+    });
 }
 
 void Graph::clear() {

@@ -62,6 +62,24 @@ ImColor socketColor(ValueType type) {
     return ImColor(180, 180, 180);
 }
 
+void renderSocketPin(NodeId nodeId, const NodeDescriptor& descriptor, std::size_t socketIndex,
+                     std::unordered_map<std::uintptr_t, PinTarget>& pins) {
+    const auto& socket = descriptor.sockets[socketIndex];
+    const auto id = pinUiId(nodeId, socketIndex, socket.direction);
+    pins.emplace(id, PinTarget{nodeId, socket.key, socket.direction});
+    const bool input = socket.direction == SocketDirection::Input;
+    ed::BeginPin(ed::PinId(id), input ? ed::PinKind::Input : ed::PinKind::Output);
+    ed::PinPivotAlignment(input ? ImVec2(0.0F, 0.5F) : ImVec2(1.0F, 0.5F));
+    if (input) {
+        ImGui::TextColored(socketColor(socket.type), "○ %s", socket.label.c_str());
+    } else {
+        ImGui::TextColored(socketColor(socket.type), "%s", socket.label.c_str());
+        ImGui::SameLine(0.0F, 4.0F);
+        ImGui::TextColored(socketColor(socket.type), "●");
+    }
+    ed::EndPin();
+}
+
 ImVec4 contributorColor(NodeId id) {
     const float hue = std::fmod(static_cast<float>(id) * 0.61803398875F, 1.0F);
     return ImColor::HSV(hue, 0.55F, 0.95F);
@@ -570,14 +588,14 @@ void Application::renderGraph() {
         } else {
             ImGui::TextUnformatted(descriptor->displayName.c_str());
             ImGui::Separator();
-            std::size_t pinIndex = 0;
-            for (const auto& socket : descriptor->sockets) {
-                const auto id = pinUiId(node.id, pinIndex++, socket.direction);
-                pins.emplace(id, PinTarget{node.id, socket.key, socket.direction});
-                ed::BeginPin(ed::PinId(id), socket.direction == SocketDirection::Input ? ed::PinKind::Input : ed::PinKind::Output);
-                ImGui::TextColored(socketColor(socket.type), "%s%s", socket.direction == SocketDirection::Output ? "● " : "○ ", socket.label.c_str());
-                ed::EndPin();
+            ImGui::BeginGroup();
+            for (std::size_t socketIndex = 0; socketIndex < descriptor->sockets.size(); ++socketIndex) {
+                if (descriptor->sockets[socketIndex].direction == SocketDirection::Input)
+                    renderSocketPin(node.id, *descriptor, socketIndex, pins);
             }
+            ImGui::EndGroup();
+            ImGui::SameLine();
+            ImGui::BeginGroup();
             for (const auto& property : descriptor->parameters) {
                 float value = node.parameters.value(property.key, property.defaultValue);
                 ImGui::SetNextItemWidth(150);
@@ -678,6 +696,14 @@ void Application::renderGraph() {
                 ImGui::TextDisabled(fusion && fusion->mode == GeneratedExecutionMode::Generated
                     ? "Group GPU %.3f ms" : "GPU %.3f ms", timing->second);
             }
+            ImGui::EndGroup();
+            ImGui::SameLine();
+            ImGui::BeginGroup();
+            for (std::size_t socketIndex = 0; socketIndex < descriptor->sockets.size(); ++socketIndex) {
+                if (descriptor->sockets[socketIndex].direction == SocketDirection::Output)
+                    renderSocketPin(node.id, *descriptor, socketIndex, pins);
+            }
+            ImGui::EndGroup();
         }
         ImGui::PopID();
         ed::EndNode();
@@ -1045,17 +1071,14 @@ void Application::renderSubgraphEditor() {
                 ImGui::TextColored(ImVec4(1, .35F, .35F, 1),
                     "Needs update: reconnect via Channel Split");
             ImGui::Separator();
-            std::size_t pinIndex = 0;
-            for (const auto& socket : descriptor->sockets) {
-                const auto id = pinUiId(node.id, pinIndex++, socket.direction);
-                pins.emplace(id, PinTarget{node.id, socket.key, socket.direction});
-                ed::BeginPin(ed::PinId(id), socket.direction == SocketDirection::Input
-                                               ? ed::PinKind::Input : ed::PinKind::Output);
-                ImGui::TextColored(socketColor(socket.type), "%s%s",
-                    socket.direction == SocketDirection::Output ? "● " : "○ ",
-                    socket.label.c_str());
-                ed::EndPin();
+            ImGui::BeginGroup();
+            for (std::size_t socketIndex = 0; socketIndex < descriptor->sockets.size(); ++socketIndex) {
+                if (descriptor->sockets[socketIndex].direction == SocketDirection::Input)
+                    renderSocketPin(node.id, *descriptor, socketIndex, pins);
             }
+            ImGui::EndGroup();
+            ImGui::SameLine();
+            ImGui::BeginGroup();
             for (const auto& property : descriptor->parameters) {
                 float value = node.parameters.value(property.key, property.defaultValue);
                 ImGui::SetNextItemWidth(150);
@@ -1083,6 +1106,14 @@ void Application::renderSubgraphEditor() {
                     changed = true; executionChanged = true;
                 }
             }
+            ImGui::EndGroup();
+            ImGui::SameLine();
+            ImGui::BeginGroup();
+            for (std::size_t socketIndex = 0; socketIndex < descriptor->sockets.size(); ++socketIndex) {
+                if (descriptor->sockets[socketIndex].direction == SocketDirection::Output)
+                    renderSocketPin(node.id, *descriptor, socketIndex, pins);
+            }
+            ImGui::EndGroup();
         }
         ImGui::PopID();
         ed::EndNode();
