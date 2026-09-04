@@ -2,6 +2,11 @@
 
 Reaction Studio is a Linux-first, real-time 2D generative-art node editor. It combines GPU Perlin noise, Gray–Scott reaction diffusion, editable fused simulation subgraphs, polymorphic scalar/image math, color mapping, custom image convolution, and a separate live preview in a forward-only workflow.
 
+Image-valued Math nodes are compiled into operation-specific compute shaders. Consecutive
+linear Math nodes are fused into one dispatch, while scalar-only Math continues to run on
+the CPU. Branches and joins remain materialization boundaries. The normal node canvas marks
+generated regions and reports their shared GPU time.
+
 ## Build
 
 Requirements are CMake 3.24+, a C++20 compiler, GLFW 3.3, OpenGL 4.3, Python (used by GLAD generation), and FFmpeg with libx264 for video recording. Remaining dependencies are pinned and downloaded by CMake.
@@ -30,6 +35,13 @@ A subgraph is stored exactly like the root topology: a `GraphBody` containing no
 Use **File → Export Current Frame as PNG…** to write the graph output at its configured resolution. The export is an 8-bit RGB PNG and does not include the editor UI.
 
 Use **Record** in the toolbar or **File → Start Video Recording…** to capture the graph output as an H.264 MP4 at the project resolution and target FPS. Recording uses a fixed frame timestep, and Perlin animation advances by evaluated frame rather than wall time, so slower encoding does not introduce animation jumps. Pausing also pauses capture; use **Stop Recording** to finalize the file. Video dimensions must be even. The preview window remains constrained to the project's aspect ratio while it is resized.
+
+Use **Window → Shader Inspector** to inspect generated Math shaders. Each Math contribution
+is commented and color-coded, compiler diagnostics remain attached to the failed source,
+and **Execute fused shaders** can force the legacy path for comparison. Interior Math values
+do not normally allocate textures; use **Preview Intermediate** to temporarily materialize one.
+Inspector and execution-debug settings are session-only. If generated GLSL cannot compile,
+the affected region automatically uses the legacy per-node implementation.
 
 ## Current boundaries
 

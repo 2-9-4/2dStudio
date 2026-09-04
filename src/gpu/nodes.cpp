@@ -1,4 +1,6 @@
 #include "reaction/gpu/gpu_runtime.hpp"
+#include "reaction/core/math.hpp"
+#include "reaction/gpu/shader_ir.hpp"
 #include "nodes_internal.hpp"
 #include "node_support.hpp"
 
@@ -98,10 +100,10 @@ layout(local_size_x=16, local_size_y=16) in;
 layout(rgba16f,binding=0) writeonly uniform image2D outputImage;
 layout(binding=0) uniform sampler2D imageA; layout(binding=1) uniform sampler2D imageB; layout(binding=2) uniform sampler2D imageC;
 uniform int hasA,hasB,hasC,operation; uniform vec4 scalarA,scalarB,scalarC; uniform vec4 remapRange;
-vec4 safePow(vec4 a,vec4 b){return sign(a)*pow(max(abs(a),vec4(1e-6)),b);}
+vec4 safePow(vec4 a,vec4 b){return (step(0.0,a)*2.0-1.0)*pow(max(abs(a),vec4(1e-6)),b);}
 vec4 applyOp(vec4 a,vec4 b,vec4 c){
  if(operation==0)return a+b;if(operation==1)return a-b;if(operation==2)return a*b;
- if(operation==3)return a/(max(abs(b),vec4(1e-6))*sign(b+vec4(1e-12)));
+ if(operation==3)return a/((step(0.0,b)*2.0-1.0)*max(abs(b),vec4(1e-6)));
  if(operation==4)return safePow(a,b);if(operation==5)return min(a,b);if(operation==6)return max(a,b);
  if(operation==7)return abs(a);if(operation==8)return sin(a);if(operation==9)return cos(a);
  if(operation==10)return clamp(a,b,c);
@@ -110,20 +112,6 @@ vec4 applyOp(vec4 a,vec4 b,vec4 c){
 void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(outputImage);if(any(greaterThanEqual(p,s)))return;vec2 uv=(vec2(p)+.5)/vec2(s);
  vec4 a=hasA!=0?texture(imageA,uv):scalarA,b=hasB!=0?texture(imageB,uv):scalarB,c=hasC!=0?texture(imageC,uv):scalarC;
  imageStore(outputImage,p,applyOp(a,b,c));})GLSL";
-
-float applyMath(int op, float a, float b, float c, const nlohmann::json& values) {
-    switch (op) {
-    case 0: return a + b; case 1: return a - b; case 2: return a * b;
-    case 3: return a / (std::abs(b) < 1.0e-6F ? std::copysign(1.0e-6F, b == 0 ? 1.0F : b) : b);
-    case 4: return std::copysign(std::pow(std::max(std::abs(a), 1.0e-6F), b), a);
-    case 5: return std::min(a, b); case 6: return std::max(a, b); case 7: return std::abs(a);
-    case 8: return std::sin(a); case 9: return std::cos(a); case 10: return std::clamp(a, b, c);
-    default: {
-        const auto inMin = parameter(values, "inMin", 0), inMax = parameter(values, "inMax", 1);
-        const auto t = std::clamp((a - inMin) / std::max(inMax - inMin, 1.0e-6F), 0.0F, 1.0F);
-        return std::lerp(parameter(values, "outMin", 0), parameter(values, "outMax", 1), t);
-    }}
-}
 
 class MathNode final : public TextureNode {
 public:
@@ -138,13 +126,36 @@ public:
              {"outMin", "Output Min", 0, -10, 10}, {"outMax", "Output Max", 1, -10, 10}}};
     }
     const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto operation = mathOperation(parameter(parameters_, "operation", 0));
+        static constexpr std::array<const char*, 3> sockets{"a", "b", "c"};
+        static constexpr std::array<float, 3> defaults{0.0F, 0.0F, 1.0F};
+        std::vector<ShaderValue> operands;
+        for (int index = 0; index < mathOperationOperandCount(operation); ++index)
+            operands.push_back(context.input(sockets[static_cast<std::size_t>(index)],
+                sockets[static_cast<std::size_t>(index)], defaults[static_cast<std::size_t>(index)]));
+        std::vector<ShaderValue> remap;
+        if (operation == MathOperation::Remap) {
+            remap.push_back(context.parameter("inMin", 0.0F));
+            remap.push_back(context.parameter("inMax", 1.0F));
+            remap.push_back(context.parameter("outMin", 0.0F));
+            remap.push_back(context.parameter("outMax", 1.0F));
+        }
+        (void)context.emit(mathGlslExpression(operation, operands, remap, context.valueType()));
+        return true;
+    }
     void evaluate(EvaluationContext& context, std::span<const Value> inputs, std::span<Value> outputs) override {
         const auto imageA = imageAt(inputs, 0), imageB = imageAt(inputs, 1), imageC = imageAt(inputs, 2);
         const float a = floatAt(inputs, 0, parameter(parameters_, "a", 0));
         const float b = floatAt(inputs, 1, parameter(parameters_, "b", 0));
         const float c = floatAt(inputs, 2, parameter(parameters_, "c", 1));
-        const int operation = static_cast<int>(parameter(parameters_, "operation", 0));
-        if (!imageA && !imageB && !imageC) { outputs[0] = applyMath(operation, a, b, c, parameters_); return; }
+        const auto operation = mathOperation(parameter(parameters_, "operation", 0));
+        if (!imageA && !imageB && !imageC) {
+            outputs[0] = applyMathOperation(operation, a, b, c,
+                parameter(parameters_, "inMin", 0), parameter(parameters_, "inMax", 1),
+                parameter(parameters_, "outMin", 0), parameter(parameters_, "outMax", 1));
+            return;
+        }
         ensure(context);
         auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
         if (!program_) program_ = gpu.compileCompute(kMathShader, "Math / compute");
@@ -159,7 +170,7 @@ public:
             uniform(program_, has.c_str(), images[static_cast<std::size_t>(i)] ? 1 : 0);
             glUniform4f(glGetUniformLocation(program_, scalar.c_str()), scalars[static_cast<std::size_t>(i)], scalars[static_cast<std::size_t>(i)], scalars[static_cast<std::size_t>(i)], scalars[static_cast<std::size_t>(i)]);
         }
-        uniform(program_, "operation", operation);
+        uniform(program_, "operation", static_cast<int>(operation));
         glUniform4f(glGetUniformLocation(program_, "remapRange"), parameter(parameters_, "inMin", 0), parameter(parameters_, "inMax", 1), parameter(parameters_, "outMin", 0), parameter(parameters_, "outMax", 1));
         gpu.dispatch(program_, context.width, context.height);
         outputs[0] = ImageHandle{texture_, context.width, context.height};

@@ -1,0 +1,98 @@
+#pragma once
+
+#include "reaction/core/graph.hpp"
+#include "reaction/core/math.hpp"
+
+#include <cstddef>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace reaction {
+
+enum class ShaderValueType { Scalar, Vec4 };
+enum class ShaderInputKind { Image, Scalar };
+
+struct ShaderValue {
+    ShaderValueType type = ShaderValueType::Vec4;
+    std::string name;
+};
+
+struct ShaderInputRequirement {
+    ShaderInputKind kind = ShaderInputKind::Scalar;
+    std::string key;
+    std::string uniformName;
+    int binding = -1;
+    NodeId sourceNode = 0;
+    std::string sourceSocket;
+    NodeId parameterNode = 0;
+    std::string parameterKey;
+    float fallback = 0.0F;
+    ShaderValue value;
+};
+
+struct ShaderInstruction {
+    ShaderValue result;
+    std::string expression;
+    NodeId contributor = 0;
+    std::string contributorLabel;
+};
+
+struct ShaderOutputRequirement {
+    NodeId node = 0;
+    std::string socket;
+    ShaderValue value;
+    int binding = -1;
+    std::string imageName;
+};
+
+struct ShaderSourceAnnotation {
+    NodeId contributor = 0;
+    std::string label;
+    std::size_t firstLine = 0;
+    std::size_t lastLine = 0;
+};
+
+struct ShaderRegion {
+    std::uint64_t id = 0;
+    std::vector<NodeId> nodes;
+    std::vector<ShaderInputRequirement> inputs;
+    std::vector<ShaderInstruction> instructions;
+    std::vector<ShaderOutputRequirement> candidateOutputs;
+    std::string specializationKey;
+};
+
+struct GeneratedShader {
+    std::string source;
+    std::vector<ShaderInputRequirement> inputs;
+    std::vector<ShaderOutputRequirement> outputs;
+    std::vector<ShaderSourceAnnotation> annotations;
+    std::string specializationKey;
+};
+
+// A node lowerer asks only for values it actually uses. The region builder turns
+// those requests into deduplicated samplers, uniforms, and SSA instructions.
+class ShaderLoweringContext {
+public:
+    virtual ~ShaderLoweringContext() = default;
+    [[nodiscard]] virtual ShaderValue input(std::string_view socket,
+                                            std::string_view parameterKey,
+                                            float fallback) = 0;
+    [[nodiscard]] virtual ShaderValue parameter(std::string_view key,
+                                                float fallback) = 0;
+    [[nodiscard]] virtual ShaderValue emit(std::string expression) = 0;
+    [[nodiscard]] virtual ShaderValueType valueType() const = 0;
+};
+
+[[nodiscard]] std::string mathGlslExpression(
+    MathOperation operation, const std::vector<ShaderValue>& operands,
+    const std::vector<ShaderValue>& remapParameters, ShaderValueType type);
+
+[[nodiscard]] std::vector<ShaderRegion> planMathShaderRegions(
+    const Graph& graph, const NodeRegistry& registry, const CompileResult& compiled,
+    int maximumImageInputs, int maximumScalarInputs);
+
+[[nodiscard]] GeneratedShader generateComputeShader(
+    const ShaderRegion& region, const std::vector<NodeId>& materializedNodes);
+
+} // namespace reaction

@@ -35,6 +35,7 @@ private:
     void renderEditor();
     void renderGraph();
     void renderSubgraphEditor();
+    void renderShaderInspector();
     void autoLayoutBody(GraphBody& body, std::unordered_map<NodeId, bool>& positioned);
     void duplicateSubgraph(NodeRecord& node);
     void renderPreview();
@@ -79,6 +80,10 @@ private:
     std::unordered_map<NodeId, bool> positionedSubgraph_;
     bool fitSubgraphRequested_ = false;
     NodeId editingSubgraphInstance_ = 0;
+    bool shaderInspectorOpen_ = false;
+    bool executeFusedShaders_ = true;
+    std::uint64_t selectedShaderRegion_ = 0;
+    std::string reportedShaderError_;
 };
 
 } // namespace reaction

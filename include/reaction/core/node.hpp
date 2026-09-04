@@ -13,6 +13,8 @@
 
 namespace reaction {
 
+class ShaderLoweringContext;
+
 struct SocketDescriptor {
     std::string key;
     std::string label;
@@ -62,6 +64,9 @@ public:
     virtual void reset(EvaluationContext&) {}
     [[nodiscard]] virtual nlohmann::json parameters() const = 0;
     virtual void setParameters(const nlohmann::json& values) = 0;
+    // GPU-capable nodes may lower themselves into a generated shader region.
+    // The default keeps existing and third-party node implementations unfused.
+    virtual bool lowerShader(ShaderLoweringContext&) const { return false; }
 };
 
 class NodeRegistry {

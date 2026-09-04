@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <sstream>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -57,6 +58,11 @@ ImColor socketColor(ValueType type) {
     case ValueType::AnyNumeric: return ImColor(180, 125, 230);
     }
     return ImColor(180, 180, 180);
+}
+
+ImVec4 contributorColor(NodeId id) {
+    const float hue = std::fmod(static_cast<float>(id) * 0.61803398875F, 1.0F);
+    return ImColor::HSV(hue, 0.55F, 0.95F);
 }
 
 } // namespace
@@ -182,6 +188,7 @@ void Application::rebuildRuntime() {
     glfwMakeContextCurrent(editorWindow_);
     if (!runtime_) runtime_ = std::make_unique<GraphRuntime>(graph_, registry_, *gpu_);
     else runtime_->rebuild();
+    runtime_->setFusionEnabled(executeFusedShaders_);
     const auto& result = runtime_->compileResult();
     if (!result.valid && !result.errors.empty()) setStatus(result.errors.front(), true);
 }
@@ -622,6 +629,35 @@ void Application::renderGraph() {
                     dirty_ = true;
                 }
             }
+            const auto fusion = runtime_->fusionInfo(node.id);
+            if (fusion) {
+                if (fusion->compileFailed)
+                    ImGui::TextColored(ImVec4(1.0F, .45F, .25F, 1.0F),
+                                       "Generated shader failed — legacy fallback");
+                else if (fusion->mode == GeneratedExecutionMode::LegacyFallback)
+                    ImGui::TextColored(ImVec4(1.0F, .65F, .25F, 1.0F),
+                                       "Image unavailable — legacy fallback");
+                else if (fusion->mode == GeneratedExecutionMode::ForcedLegacy)
+                    ImGui::TextDisabled("Generated region #%llu — forced legacy",
+                        static_cast<unsigned long long>(fusion->region));
+                else if (fusion->nodeCount == 1)
+                    ImGui::TextColored(ImVec4(.45F, .8F, 1.0F, 1.0F), "Generated shader");
+                else if (fusion->interior)
+                    ImGui::TextColored(ImVec4(.45F, .8F, 1.0F, 1.0F), "Fused → node #%llu",
+                        static_cast<unsigned long long>(fusion->tail));
+                else
+                    ImGui::TextColored(ImVec4(.45F, .8F, 1.0F, 1.0F),
+                                       "Fused region · %zu Math nodes", fusion->nodeCount);
+                if (fusion->mode == GeneratedExecutionMode::Generated && fusion->interior &&
+                    !fusion->materialized) {
+                    ImGui::TextDisabled("Intermediate texture elided");
+                    if (shaderInspectorOpen_ && ImGui::Button("Preview Intermediate"))
+                        runtime_->setIntermediatePreview(node.id);
+                } else if (runtime_->intermediatePreview() == node.id &&
+                           ImGui::Button("Stop Intermediate Preview")) {
+                    runtime_->setIntermediatePreview(std::nullopt);
+                }
+            }
             const auto values = runtime_->values().find(node.id);
             if (values != runtime_->values().end() && !values->second.empty()) {
                 if (node.type == "float_preview") {
@@ -633,8 +669,12 @@ void Application::renderGraph() {
                                  ImVec2(150, 100), ImVec2(0, 1), ImVec2(1, 0));
                 }
             }
-            if (const auto timing = runtime_->gpuMilliseconds().find(node.id); timing != runtime_->gpuMilliseconds().end()) {
-                ImGui::TextDisabled("GPU %.3f ms", timing->second);
+            const NodeId timingNode = fusion && fusion->mode == GeneratedExecutionMode::Generated
+                ? fusion->tail : node.id;
+            if (const auto timing = runtime_->gpuMilliseconds().find(timingNode);
+                timing != runtime_->gpuMilliseconds().end()) {
+                ImGui::TextDisabled(fusion && fusion->mode == GeneratedExecutionMode::Generated
+                    ? "Group GPU %.3f ms" : "GPU %.3f ms", timing->second);
             }
         }
         ImGui::PopID();
@@ -766,6 +806,110 @@ void Application::renderGraph() {
     }
     ed::End();
     ed::SetCurrentEditor(nullptr);
+}
+
+void Application::renderShaderInspector() {
+    if (!shaderInspectorOpen_) {
+        runtime_->setIntermediatePreview(std::nullopt);
+        return;
+    }
+    auto shaders = runtime_->generatedShaders();
+    ImGui::SetNextWindowSize(ImVec2(980, 680), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Shader Inspector", &shaderInspectorOpen_)) {
+        ImGui::End();
+        return;
+    }
+    if (ImGui::Checkbox("Execute fused shaders", &executeFusedShaders_))
+        runtime_->setFusionEnabled(executeFusedShaders_);
+    ImGui::SameLine();
+    ImGui::TextDisabled("Session only");
+    if (shaders.empty()) {
+        ImGui::TextDisabled("No image-valued Math nodes are available to generate.");
+        ImGui::End();
+        return;
+    }
+    if (selectedShaderRegion_ == 0 ||
+        std::ranges::find(shaders, selectedShaderRegion_, &GeneratedShaderInfo::id) == shaders.end())
+        selectedShaderRegion_ = shaders.front().id;
+
+    ImGui::BeginChild("regions", ImVec2(210, 0), true);
+    for (const auto& shader : shaders) {
+        std::string label = "Region #" + std::to_string(shader.id) + " · " +
+                            std::to_string(shader.nodes.size()) + " node" +
+                            (shader.nodes.size() == 1 ? "" : "s");
+        if (shader.mode == GeneratedExecutionMode::LegacyFallback) label += " ⚠";
+        if (ImGui::Selectable(label.c_str(), selectedShaderRegion_ == shader.id))
+            selectedShaderRegion_ = shader.id;
+    }
+    ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    const auto selected = std::ranges::find(shaders, selectedShaderRegion_,
+                                            &GeneratedShaderInfo::id);
+    if (selected == shaders.end()) {
+        ImGui::EndGroup();
+        ImGui::End();
+        return;
+    }
+    ImGui::Text("Region #%llu · tail node #%llu · %.3f ms",
+        static_cast<unsigned long long>(selected->id),
+        static_cast<unsigned long long>(selected->tail), selected->gpuMilliseconds);
+    if (!selected->diagnostic.empty())
+        ImGui::TextColored(ImVec4(1, .35F, .25F, 1), "Compile failed — legacy fallback active");
+    else if (selected->mode == GeneratedExecutionMode::Generated)
+        ImGui::TextColored(ImVec4(.4F, .9F, .5F, 1), "Generated execution active");
+    else if (selected->mode == GeneratedExecutionMode::ForcedLegacy)
+        ImGui::TextColored(ImVec4(.9F, .75F, .35F, 1), "Generated execution disabled");
+    else
+        ImGui::TextColored(ImVec4(.9F, .75F, .35F, 1), "Input unavailable — legacy fallback active");
+
+    ImGui::SeparatorText("Contributors");
+    for (const auto id : selected->nodes) {
+        const auto* node = graph_.findNode(id);
+        const std::string label = node && !node->label.empty() ? node->label : "Math";
+        ImGui::PushID(static_cast<int>(id));
+        ImGui::TextColored(contributorColor(id), "● node #%llu · %s",
+            static_cast<unsigned long long>(id), label.c_str());
+        if (id != selected->tail) {
+            ImGui::SameLine();
+            if (runtime_->intermediatePreview() == id) {
+                if (ImGui::SmallButton("Stop Preview"))
+                    runtime_->setIntermediatePreview(std::nullopt);
+            } else if (ImGui::SmallButton("Preview Intermediate")) {
+                runtime_->setIntermediatePreview(id);
+            }
+        }
+        ImGui::PopID();
+    }
+    if (!selected->diagnostic.empty()) {
+        ImGui::SeparatorText("Compiler diagnostic");
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, .45F, .35F, 1));
+        ImGui::TextWrapped("%s", selected->diagnostic.c_str());
+        ImGui::PopStyleColor();
+    }
+    if (ImGui::Button("Copy Source")) ImGui::SetClipboardText(selected->shader.source.c_str());
+    ImGui::SeparatorText("Generated GLSL");
+    ImGui::BeginChild("source", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+    std::istringstream source(selected->shader.source);
+    std::string line;
+    std::size_t lineNumber = 1;
+    while (std::getline(source, line)) {
+        NodeId contributor = 0;
+        for (const auto& annotation : selected->shader.annotations) {
+            if (lineNumber >= annotation.firstLine && lineNumber <= annotation.lastLine) {
+                contributor = annotation.contributor;
+                break;
+            }
+        }
+        ImVec4 color = contributor ? contributorColor(contributor)
+                                   : ImVec4(.78F, .8F, .84F, 1.0F);
+        if (selected->errorLine == lineNumber) color = ImVec4(1, .2F, .2F, 1);
+        ImGui::TextColored(color, "%4zu  %s", lineNumber, line.c_str());
+        ++lineNumber;
+    }
+    ImGui::EndChild();
+    ImGui::EndGroup();
+    ImGui::End();
 }
 
 void Application::duplicateSubgraph(NodeRecord& node) {
@@ -1083,6 +1227,7 @@ void Application::renderEditor() {
         }
         if (ImGui::BeginMenu("Window")) {
             if (ImGui::MenuItem("Open Preview", nullptr, false, previewWindow_ == nullptr)) createPreviewWindow();
+            ImGui::MenuItem("Shader Inspector", nullptr, &shaderInspectorOpen_);
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
@@ -1117,6 +1262,22 @@ void Application::renderEditor() {
     if (editingSubgraphId_.empty()) renderGraph();
     else renderSubgraphEditor();
     ImGui::End();
+
+    const auto generated = runtime_->generatedShaders();
+    const auto failed = std::ranges::find_if(generated, [](const auto& shader) {
+        return !shader.diagnostic.empty();
+    });
+    if (failed != generated.end()) {
+        const std::string key = std::to_string(failed->id) + failed->diagnostic;
+        if (reportedShaderError_ != key) {
+            reportedShaderError_ = key;
+            setStatus("Generated Math shader failed; using legacy fallback", true);
+        }
+    } else if (!reportedShaderError_.empty()) {
+        reportedShaderError_.clear();
+        setStatus("Generated Math shaders active");
+    }
+    renderShaderInspector();
 
     ImGui::Render();
     int widthPixels = 0, heightPixels = 0; glfwGetFramebufferSize(editorWindow_, &widthPixels, &heightPixels);

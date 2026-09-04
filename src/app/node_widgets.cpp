@@ -1,4 +1,5 @@
 #include "node_widgets.hpp"
+#include "reaction/core/math.hpp"
 #include "convolution_presets.hpp"
 
 #include <imgui.h>
@@ -10,10 +11,6 @@
 
 namespace reaction::node_widgets {
 namespace {
-
-constexpr std::array<const char*, 12> kMathOperationNames = {
-    "Add", "Subtract", "Multiply", "Divide", "Power", "Minimum",
-    "Maximum", "Absolute", "Sine", "Cosine", "Clamp", "Remap"};
 
 constexpr std::array<const char*, 10> kMixModeNames = {
     "Mix", "Add", "Multiply", "Screen", "Overlay", "Difference", "Darken",
@@ -36,7 +33,8 @@ void renderMathOperationSelector(NodeRecord& node, PopupState& popup) {
         static_cast<int>(node.parameters.value("operation", 0.0F)), 0, 11);
     ImGui::TextUnformatted("Operation");
     ImGui::SameLine();
-    if (ImGui::Button(kMathOperationNames[static_cast<std::size_t>(operation)], ImVec2(150, 0))) {
+    const auto name = mathOperationName(mathOperation(static_cast<float>(operation)));
+    if (ImGui::Button(std::string(name).c_str(), ImVec2(150, 0))) {
         popup.request(PopupKind::MathOperation, node.id);
     }
 }
@@ -134,7 +132,8 @@ bool renderPopup(PopupState& popup, GraphBody& graph) {
             const int current = std::clamp(
                 static_cast<int>(node->parameters.value("operation", 0.0F)), 0, 11);
             for (int operation = 0; operation < static_cast<int>(kMathOperationNames.size()); ++operation) {
-                if (ImGui::Selectable(kMathOperationNames[static_cast<std::size_t>(operation)],
+                const auto name = mathOperationName(static_cast<MathOperation>(operation));
+                if (ImGui::Selectable(std::string(name).c_str(),
                                       operation == current)) {
                     node->parameters["operation"] = static_cast<float>(operation);
                     changed = true;

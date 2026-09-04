@@ -1,4 +1,6 @@
 #include "reaction/gpu/gpu_runtime.hpp"
+#include "reaction/core/math.hpp"
+#include "reaction/gpu/shader_ir.hpp"
 #include "node_support.hpp"
 
 #include <algorithm>
@@ -122,26 +124,21 @@ private:
             const auto a = emitInput(node, "a", uv, parameterValue("a", 0.0F));
             const auto b = emitInput(node, "b", uv, parameterValue("b", 0.0F));
             const auto c = emitInput(node, "c", uv, parameterValue("c", 1.0F));
-            switch (std::clamp(static_cast<int>(parameterValue("operation", 0.0F)), 0, 11)) {
-            case 0: return "(" + a + "+" + b + ")";
-            case 1: return "(" + a + "-" + b + ")";
-            case 2: return "(" + a + "*" + b + ")";
-            case 3: return "(" + a + "/(max(abs(" + b + "),1e-6)*sign(" + b + "+1e-12)))";
-            case 4: return "(sign(" + a + ")*pow(max(abs(" + a + "),1e-6)," + b + "))";
-            case 5: return "min(" + a + "," + b + ")";
-            case 6: return "max(" + a + "," + b + ")";
-            case 7: return "abs(" + a + ")";
-            case 8: return "sin(" + a + ")";
-            case 9: return "cos(" + a + ")";
-            case 10: return "clamp(" + a + "," + b + "," + c + ")";
-            default: {
-                const auto inMin = std::to_string(parameterValue("inMin", 0.0F));
-                const auto inMax = std::to_string(parameterValue("inMax", 1.0F));
-                const auto outMin = std::to_string(parameterValue("outMin", 0.0F));
-                const auto outMax = std::to_string(parameterValue("outMax", 1.0F));
-                return "mix(" + outMin + "," + outMax + ",clamp((" + a + "-" +
-                       inMin + ")/max(" + inMax + "-" + inMin + ",1e-6),0.0,1.0))";
-            }}
+            const auto operation = mathOperation(parameterValue("operation", 0.0F));
+            std::vector<ShaderValue> operands{{ShaderValueType::Scalar, a}};
+            if (mathOperationOperandCount(operation) >= 2)
+                operands.push_back({ShaderValueType::Scalar, b});
+            if (mathOperationOperandCount(operation) >= 3)
+                operands.push_back({ShaderValueType::Scalar, c});
+            std::vector<ShaderValue> remap;
+            if (operation == MathOperation::Remap) {
+                for (const auto* key : {"inMin", "inMax", "outMin", "outMax"})
+                    remap.push_back({ShaderValueType::Scalar,
+                        std::to_string(parameterValue(key,
+                            std::string_view(key) == "inMax" || std::string_view(key) == "outMax"
+                                ? 1.0F : 0.0F))});
+            }
+            return mathGlslExpression(operation, operands, remap, ShaderValueType::Scalar);
         }
         if (node.type == "threshold") {
             const auto value = emitInput(node, "value", uv, parameterValue("value", 0.5F));

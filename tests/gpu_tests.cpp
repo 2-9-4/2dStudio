@@ -1,4 +1,5 @@
 #include "reaction/gpu/gpu_runtime.hpp"
+#include "reaction/gpu/shader_ir.hpp"
 
 #include <GLFW/glfw3.h>
 #include <catch2/catch_approx.hpp>
@@ -59,6 +60,112 @@ double median(std::vector<double> values) {
 }
 
 } // namespace
+
+TEST_CASE("Math shader planner specializes and fuses a linear image chain") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph;
+    const auto source = graph.addNode("perlin");
+    const auto add = graph.addNode("math");
+    const auto absolute = graph.addNode("math");
+    graph.findNode(add)->parameters = {{"operation", 0.0F}, {"b", .25F}};
+    graph.findNode(absolute)->parameters = {{"operation", 7.0F}};
+    graph.addLink(source, "image", add, "a");
+    graph.addLink(add, "result", absolute, "a");
+    const auto compiled = graph.compile(registry);
+    REQUIRE(compiled.valid);
+
+    const auto regions = planMathShaderRegions(graph, registry, compiled, 16, 1024);
+    REQUIRE(regions.size() == 1);
+    REQUIRE(regions.front().nodes == std::vector<NodeId>{add, absolute});
+    const auto generated = generateComputeShader(regions.front(), {absolute});
+    REQUIRE(generated.outputs.size() == 1);
+    REQUIRE(generated.inputs.size() == 2);
+    REQUIRE(generated.source.find("operation") == std::string::npos);
+    REQUIRE(generated.source.find("hasA") == std::string::npos);
+    REQUIRE(generated.source.find("// node " + std::to_string(add)) != std::string::npos);
+    REQUIRE(generated.source.find("// node " + std::to_string(absolute)) != std::string::npos);
+    REQUIRE(generated.annotations.size() == 3);
+
+    const auto originalSource = generated.source;
+    graph.findNode(add)->parameters["b"] = .75F;
+    const auto numericEdit = generateComputeShader(
+        planMathShaderRegions(graph, registry, graph.compile(registry), 16, 1024).front(),
+        {absolute});
+    REQUIRE(numericEdit.source == originalSource);
+    graph.findNode(add)->parameters["operation"] = 2.0F;
+    const auto operationEdit = generateComputeShader(
+        planMathShaderRegions(graph, registry, graph.compile(registry), 16, 1024).front(),
+        {absolute});
+    REQUIRE(operationEdit.source != originalSource);
+}
+
+TEST_CASE("Math shader planner keeps branch and join boundaries materialized") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph;
+    const auto source = graph.addNode("perlin");
+    const auto branch = graph.addNode("math");
+    const auto left = graph.addNode("math");
+    const auto right = graph.addNode("math");
+    const auto join = graph.addNode("math");
+    graph.addLink(source, "image", branch, "a");
+    graph.addLink(branch, "result", left, "a");
+    graph.addLink(branch, "result", right, "a");
+    graph.addLink(left, "result", join, "a");
+    graph.addLink(right, "result", join, "b");
+    const auto compiled = graph.compile(registry);
+    REQUIRE(compiled.valid);
+    const auto regions = planMathShaderRegions(graph, registry, compiled, 16, 1024);
+    REQUIRE(regions.size() == 4);
+    REQUIRE(std::ranges::all_of(regions, [](const auto& region) {
+        return region.nodes.size() == 1;
+    }));
+}
+
+TEST_CASE("Math shader requirements deduplicate bindings and split at resource limits") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph deduplicated;
+    const auto source = deduplicated.addNode("perlin");
+    const auto math = deduplicated.addNode("math");
+    deduplicated.addLink(source, "image", math, "a");
+    deduplicated.addLink(source, "image", math, "b");
+    auto compiled = deduplicated.compile(registry);
+    const auto one = planMathShaderRegions(deduplicated, registry, compiled, 16, 1024);
+    REQUIRE(one.size() == 1);
+    REQUIRE(std::ranges::count_if(one.front().inputs, [](const auto& input) {
+        return input.kind == ShaderInputKind::Image;
+    }) == 1);
+
+    Graph limited;
+    const auto a = limited.addNode("perlin");
+    const auto b = limited.addNode("perlin");
+    const auto c = limited.addNode("perlin");
+    const auto first = limited.addNode("math");
+    const auto second = limited.addNode("math");
+    const auto third = limited.addNode("math");
+    limited.addLink(a, "image", first, "a");
+    limited.addLink(first, "result", second, "a");
+    limited.addLink(b, "image", second, "b");
+    limited.addLink(second, "result", third, "a");
+    limited.addLink(c, "image", third, "b");
+    compiled = limited.compile(registry);
+    const auto split = planMathShaderRegions(limited, registry, compiled, 2, 1024);
+    REQUIRE(split.size() == 2);
+    REQUIRE(split[0].nodes == std::vector<NodeId>{first, second});
+    REQUIRE(split[1].nodes == std::vector<NodeId>{third});
+
+    Graph uniformLimited;
+    const auto image = uniformLimited.addNode("perlin");
+    const auto addOne = uniformLimited.addNode("math");
+    const auto addTwo = uniformLimited.addNode("math");
+    uniformLimited.addLink(image, "image", addOne, "a");
+    uniformLimited.addLink(addOne, "result", addTwo, "a");
+    compiled = uniformLimited.compile(registry);
+    const auto uniformSplit = planMathShaderRegions(
+        uniformLimited, registry, compiled, 16, 1);
+    REQUIRE(uniformSplit.size() == 2);
+    REQUIRE(uniformSplit[0].nodes == std::vector<NodeId>{addOne});
+    REQUIRE(uniformSplit[1].nodes == std::vector<NodeId>{addTwo});
+}
 
 TEST_CASE("image input exposes a PNG-backed image output") {
     NodeRegistry registry; registerBuiltInNodes(registry);
@@ -286,19 +393,106 @@ TEST_CASE("Perlin advances by evaluated frame rather than wall time") {
 }
 
 TEST_CASE("scalar Math protects division and remains on CPU") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    auto math = registry.create("math");
+    EvaluationContext context;
+    std::array<Value, 1> outputs;
+    math->setParameters({{"operation", 3}, {"a", 1.0}, {"b", 0.0}});
+    math->evaluate(context, {}, outputs);
+    REQUIRE(std::holds_alternative<float>(outputs.front()));
+    REQUIRE(std::isfinite(std::get<float>(outputs.front())));
+    REQUIRE(std::get<float>(outputs.front()) == 1'000'000.0F);
+    math->setParameters({{"operation", 3}, {"a", 1.0}, {"b", -1.0e-12F}});
+    math->evaluate(context, {}, outputs);
+    REQUIRE(std::get<float>(outputs.front()) == -1'000'000.0F);
+}
+
+TEST_CASE("generated Math chain matches legacy execution and materializes previews on demand") {
     HiddenContext context;
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph; graph.settings = {16, 16, 60};
-    const auto math = graph.addNode("math");
-    auto* record = graph.findNode(math);
-    record->parameters = {{"operation", 3}, {"a", 1.0}, {"b", 0.0}};
+    const auto coordinates = graph.addNode("coordinates");
+    const auto add = graph.addNode("math");
+    const auto multiply = graph.addNode("math");
+    graph.findNode(add)->parameters = {{"operation", 0.0F}, {"b", .125F}};
+    graph.findNode(multiply)->parameters = {{"operation", 2.0F}, {"b", .75F}};
+    graph.addLink(coordinates, "x", add, "a");
+    graph.addLink(add, "result", multiply, "a");
     GpuRuntime gpu;
     GraphRuntime runtime(graph, registry, gpu);
     REQUIRE(runtime.evaluate(0, 0, false));
-    const auto& value = runtime.values().at(math).front();
-    REQUIRE(std::holds_alternative<float>(value));
-    REQUIRE(std::isfinite(std::get<float>(value)));
-    REQUIRE(std::get<float>(value) == 1'000'000.0F);
+    REQUIRE(runtime.fusionInfo(add).has_value());
+    REQUIRE(runtime.fusionInfo(add)->interior);
+    REQUIRE(runtime.fusionInfo(multiply)->nodeCount == 2);
+    REQUIRE_FALSE(runtime.values().contains(add));
+    const auto generated = readImage(std::get<ImageHandle>(runtime.values().at(multiply).front()));
+
+    runtime.setFusionEnabled(false);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    REQUIRE(runtime.values().contains(add));
+    const auto legacy = readImage(std::get<ImageHandle>(runtime.values().at(multiply).front()));
+    REQUIRE(generated == legacy);
+
+    runtime.setFusionEnabled(true);
+    runtime.setIntermediatePreview(add);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    REQUIRE(runtime.values().contains(add));
+    REQUIRE(runtime.fusionInfo(add)->materialized);
+    runtime.setIntermediatePreview(std::nullopt);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    REQUIRE_FALSE(runtime.values().contains(add));
+}
+
+TEST_CASE("every generated Math operation compiles and agrees with legacy pixels") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    for (int operation = 0; operation < 12; ++operation) {
+        Graph graph; graph.settings = {8, 8, 60};
+        const auto coordinates = graph.addNode("coordinates");
+        const auto math = graph.addNode("math");
+        graph.findNode(math)->parameters = {{"operation", static_cast<float>(operation)},
+            {"b", .4F}, {"c", .8F}, {"inMin", .1F}, {"inMax", .9F},
+            {"outMin", -.25F}, {"outMax", 1.25F}};
+        graph.addLink(coordinates, "x", math, "a");
+        GpuRuntime gpu;
+        GraphRuntime runtime(graph, registry, gpu);
+        REQUIRE(runtime.evaluate(0, 0, false));
+        INFO("operation=" << operation);
+        REQUIRE(runtime.generatedShaders().size() == 1);
+        REQUIRE(runtime.generatedShaders().front().mode == GeneratedExecutionMode::Generated);
+        const auto generated = readImage(std::get<ImageHandle>(runtime.values().at(math).front()));
+        runtime.setFusionEnabled(false);
+        REQUIRE(runtime.evaluate(0, 0, false));
+        const auto legacy = readImage(std::get<ImageHandle>(runtime.values().at(math).front()));
+        REQUIRE(generated.size() == legacy.size());
+        for (std::size_t index = 0; index < generated.size(); ++index)
+            REQUIRE(generated[index] == Catch::Approx(legacy[index]).margin(.002F));
+    }
+}
+
+TEST_CASE("generated safe power preserves a negative scalar base") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {8, 8, 60};
+    const auto coordinates = graph.addNode("coordinates");
+    const auto math = graph.addNode("math");
+    graph.findNode(math)->parameters = {{"operation", 4.0F}, {"a", -.5F}};
+    graph.addLink(coordinates, "x", math, "b");
+    GpuRuntime gpu;
+    GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    const auto pixels = readImage(std::get<ImageHandle>(runtime.values().at(math).front()));
+    REQUIRE(std::ranges::all_of(pixels, [](float value) { return std::isfinite(value); }));
+    REQUIRE(pixels.front() < 0.0F);
+}
+
+TEST_CASE("non-throwing compute compilation returns structured diagnostics") {
+    HiddenContext context;
+    GpuRuntime gpu;
+    const auto result = gpu.tryCompileCompute("#version 430\nthis is not GLSL\n", "invalid test");
+    REQUIRE_FALSE(result);
+    REQUIRE_FALSE(result.log.empty());
+    REQUIRE(result.reportedLine > 0);
 }
 
 TEST_CASE("Mix exposes blend modes and applies the selected mode to scalar inputs") {

@@ -15,6 +15,7 @@ find_package(nlohmann_json 3.11 REQUIRED)
 add_library(reaction_core
     src/core/graph.cpp
     src/core/layout.cpp
+    src/core/math.cpp
     src/core/persistence.cpp
     src/core/registry.cpp
     src/core/subgraph.cpp)
@@ -66,6 +67,7 @@ if(REACTION_BUILD_APP)
 
     add_library(reaction_gpu
         src/gpu/gpu_runtime.cpp
+        src/gpu/shader_ir.cpp
         src/gpu/input_nodes.cpp
         src/gpu/convolution_node.cpp
         src/gpu/subgraph_node.cpp

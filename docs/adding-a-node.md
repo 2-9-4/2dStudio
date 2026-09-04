@@ -58,3 +58,24 @@ render them through `node_widgets::renderPopup`. That function is called only wh
 node editor is suspended, so popup layout and hit testing remain in ImGui screen space.
 
 Runtime-loaded shared libraries are intentionally outside the first milestone; this interface is the source-compatible SDK boundary from which a versioned plugin ABI can later be designed.
+
+## Generated shader lowering
+
+`NodeInstance::lowerShader` is an optional GPU extension point. Nodes that do not override it
+continue through `evaluate` unchanged. A lowerable node asks `ShaderLoweringContext` for only
+the linked inputs and numeric parameters required by its selected operation, then emits a
+typed expression. The region builder records those requests as deduplicated image samplers or
+scalar uniforms and records the emitted value as an SSA-style instruction with its contributor
+node ID.
+
+The root planner currently invokes this capability for image-valued Math nodes. It specializes
+single nodes and fuses safe linear chains, but stops at branches, joins, unsupported nodes, and
+GPU resource limits. The IR itself supports several candidate outputs so future planners can
+form DAG regions without changing node lowerers. Numeric controls should remain uniforms when
+interactive editing must not trigger recompilation; parameters that change shader structure,
+such as Math's operation, belong in the specialization key.
+
+Generated sources must preserve the node's legacy `evaluate` semantics because that evaluator
+is also the runtime fallback for compilation failures and temporarily unavailable image inputs.
+Use the shared Math operation helpers as the model: persisted operation IDs, CPU behavior, root
+GLSL, simulation-subgraph GLSL, and UI names all come from one definition.

@@ -42,18 +42,15 @@ void layoutGraph(GraphBody& body, const std::unordered_map<NodeId, Vec2>* nodeSi
     }
     for (const auto& link : body.links()) {
         if (body.findNode(link.fromNode) == nullptr || body.findNode(link.toNode) == nullptr) continue;
-        successors[link.fromNode].push_back(link.toNode);
-        predecessors[link.toNode].push_back(link.fromNode);
+        auto& out = successors[link.fromNode];
+        if (std::find(out.begin(), out.end(), link.toNode) == out.end())
+            out.push_back(link.toNode);
+        auto& in = predecessors[link.toNode];
+        if (std::find(in.begin(), in.end(), link.fromNode) == in.end())
+            in.push_back(link.fromNode);
     }
-    for (auto& [id, list] : successors) {
-        std::sort(list.begin(), list.end());
-        list.erase(std::unique(list.begin(), list.end()), list.end());
-    }
-    for (auto& [id, list] : predecessors) {
-        std::sort(list.begin(), list.end());
-        list.erase(std::unique(list.begin(), list.end()), list.end());
+    for (const auto& [id, list] : predecessors)
         indegree[id] = static_cast<int>(list.size());
-    }
 
     // Layer nodes as late as possible: every node hugs its consumers so short
     // side branches terminate next to the merge they feed instead of spanning
@@ -89,8 +86,8 @@ void layoutGraph(GraphBody& body, const std::unordered_map<NodeId, Vec2>* nodeSi
         if (predecessors[node.id].empty() && successors[node.id].empty())
             layer[node.id] = 0;
 
-    // Depth from the nearest source: used below to keep a node on its longest
-    // upstream line instead of being dragged around by short side inputs.
+    // Depth from the nearest source: identifies a node's longest-running input
+    // line so short side inputs don't drag a chain off its lane.
     std::unordered_map<NodeId, int> sourceDepth;
     for (const auto& node : body.nodes()) sourceDepth[node.id] = 0;
     for (const auto id : topo)
@@ -177,46 +174,99 @@ void layoutGraph(GraphBody& body, const std::unordered_map<NodeId, Vec2>* nodeSi
         xCursor += widest + kColumnGap;
     }
 
-    // Vertical position: follow the dominant input line. Each node sits at the
-    // average of its longest-running feeders, so a chain of single-consumer
-    // nodes stays straight while a real merge between two equally deep lines
-    // lands halfway between them. Short side inputs are ignored. Nodes in the
-    // same layer are then compacted to guarantee a minimum gap.
+    // Vertical position: lay out each connected component independently and
+    // stack the components vertically, so unrelated branches never interleave.
+    // Within a component, a node with a single consumer follows its longest
+    // input line (keeping sequential nodes horizontally aligned), while
+    // junctions average their inputs so a genuine merge lands halfway between
+    // its source lines. Sources get a fresh row, then each layer is compacted.
+    std::unordered_map<NodeId, int> componentOf;
+    std::vector<std::vector<NodeId>> components;
+    for (const auto& node : body.nodes()) {
+        if (componentOf.count(node.id)) continue;
+        const int id = static_cast<int>(components.size());
+        std::vector<NodeId> stack{node.id};
+        componentOf[node.id] = id;
+        std::vector<NodeId> comp;
+        while (!stack.empty()) {
+            const auto current = stack.back();
+            stack.pop_back();
+            comp.push_back(current);
+            for (const auto succ : successors[current])
+                if (!componentOf.count(succ)) { componentOf[succ] = id; stack.push_back(succ); }
+            for (const auto pred : predecessors[current])
+                if (!componentOf.count(pred)) { componentOf[pred] = id; stack.push_back(pred); }
+        }
+        components.push_back(std::move(comp));
+    }
+
+    std::sort(components.begin(), components.end(), [&](const auto& a, const auto& b) {
+        int leftA = std::numeric_limits<int>::max();
+        int leftB = std::numeric_limits<int>::max();
+        for (const auto id : a) leftA = std::min(leftA, layer[id]);
+        for (const auto id : b) leftB = std::min(leftB, layer[id]);
+        if (leftA != leftB) return leftA < leftB;
+        int topA = std::numeric_limits<int>::max();
+        int topB = std::numeric_limits<int>::max();
+        for (const auto id : a) if (layer[id] == leftA) topA = std::min(topA, orderInLayer[id]);
+        for (const auto id : b) if (layer[id] == leftB) topB = std::min(topB, orderInLayer[id]);
+        return topA < topB;
+    });
+
     std::unordered_map<NodeId, float> centerY;
-    for (int l = minLayer; l <= maxLayer; ++l) {
-        const auto& ids = byLayer[l];
-        std::vector<std::pair<float, NodeId>> desired;
-        desired.reserve(ids.size());
-        for (const auto id : ids) {
-            int deepest = -1;
-            float sum = 0.0F;
-            int count = 0;
-            for (const auto pred : predecessors[id]) {
-                if (sourceDepth[pred] > deepest) {
-                    deepest = sourceDepth[pred];
-                    sum = centerY[pred];
-                    count = 1;
-                } else if (sourceDepth[pred] == deepest) {
-                    sum += centerY[pred];
-                    ++count;
+    float stackOffset = 0.0F;
+    for (const auto& comp : components) {
+        const int compId = componentOf[comp.front()];
+        float compTop = std::numeric_limits<float>::max();
+        float compBottom = std::numeric_limits<float>::lowest();
+        for (int l = minLayer; l <= maxLayer; ++l) {
+            std::vector<NodeId> ids;
+            for (const auto id : byLayer[l])
+                if (componentOf[id] == compId) ids.push_back(id);
+            if (ids.empty()) continue;
+            std::vector<std::pair<float, NodeId>> desired;
+            desired.reserve(ids.size());
+            for (std::size_t i = 0; i < ids.size(); ++i) {
+                const auto id = ids[i];
+                float target = 0.0F;
+                if (predecessors[id].empty()) {
+                    target = (static_cast<float>(i) -
+                              (static_cast<float>(ids.size()) - 1.0F) * 0.5F) *
+                             (kDefaultHeight + kRowGap);
+                } else if (successors[id].size() == 1) {
+                    NodeId chosen = predecessors[id].front();
+                    for (const auto pred : predecessors[id]) {
+                        const bool predDedicated = successors[pred].size() == 1;
+                        const bool chosenDedicated = successors[chosen].size() == 1;
+                        if (sourceDepth[pred] > sourceDepth[chosen] ||
+                            (sourceDepth[pred] == sourceDepth[chosen] &&
+                             predDedicated && !chosenDedicated)) {
+                            chosen = pred;
+                        }
+                    }
+                    target = centerY[chosen];
+                } else {
+                    float sum = 0.0F;
+                    for (const auto pred : predecessors[id]) sum += centerY[pred];
+                    target = sum / static_cast<float>(predecessors[id].size());
                 }
+                desired.emplace_back(target, id);
             }
-            const float target = count > 0
-                ? sum / static_cast<float>(count)
-                : (static_cast<float>(orderInLayer[id]) -
-                   (static_cast<float>(ids.size()) - 1.0F) * 0.5F) * (kDefaultHeight + kRowGap);
-            desired.emplace_back(target, id);
+            std::stable_sort(desired.begin(), desired.end(),
+                             [](const auto& a, const auto& b) { return a.first < b.first; });
+            float cursor = std::numeric_limits<float>::lowest();
+            for (const auto& [target, id] : desired) {
+                const float height = size[id].y;
+                float top = target - height * 0.5F;
+                if (top < cursor + kRowGap) top = cursor + kRowGap;
+                centerY[id] = top + height * 0.5F;
+                cursor = top + height;
+                compTop = std::min(compTop, top);
+                compBottom = std::max(compBottom, top + height);
+            }
         }
-        std::stable_sort(desired.begin(), desired.end(),
-                         [](const auto& a, const auto& b) { return a.first < b.first; });
-        float cursor = std::numeric_limits<float>::lowest();
-        for (const auto& [target, id] : desired) {
-            const float height = size[id].y;
-            float top = target - height * 0.5F;
-            if (top < cursor + kRowGap) top = cursor + kRowGap;
-            centerY[id] = top + height * 0.5F;
-            cursor = top + height;
-        }
+        for (const auto id : comp) centerY[id] += stackOffset - compTop;
+        stackOffset += (compBottom - compTop) + kRowGap * 2.0F;
     }
 
     for (auto& node : body.nodes()) {

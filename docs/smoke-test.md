@@ -14,9 +14,14 @@
 12. Pause and confirm Time and simulation state stop while node editing remains responsive; resume and confirm forward evolution continues.
 13. Reset and confirm the simulation reinitializes without moving or deleting nodes.
 14. Add Math and Mix nodes to the root graph through the searchable background menu, connect them, then delete a link.
-15. Attempt to create a cycle and confirm the editor reports the graph error while preserving the last valid preview.
-16. Save, modify the root graph, load the saved file, and confirm topology, values, positions, resolution, and target FPS restore while the simulation restarts.
-17. Close the preview, keep editing, and reopen it from Window → Open Preview.
-18. Change the project to a non-square resolution, resize the preview, and confirm it remains constrained to the project aspect ratio without stretching.
-19. Start recording with animated Perlin noise, let the project run, pause and resume once, then stop. Confirm the MP4 has the project resolution, excludes the editor UI, advances smoothly by one animation frame at a time, and does not advance while paused.
-20. Set 1024×1024 at 60 FPS and observe per-node GPU timings and overall FPS. Outside an active recording, after warm-up there should be no recurring texture allocations or CPU image readback.
+15. Connect an image through at least three sequential Math nodes. Confirm each node is marked as generated, the tail reports a three-node fused region, interior thumbnails say their textures were elided, and every member shows the same group GPU timing.
+16. Open **Window → Shader Inspector**. Confirm the region lists all three Math contributors, their comments and statement lines use matching legend colors, and **Copy Source** copies GLSL without an operation selector or `hasA`/`hasB` branches.
+17. Change a numeric Math control and confirm the output updates without changing the displayed shader source. Change its operation and confirm the source regenerates with the new direct expression.
+18. Use **Preview Intermediate** for an interior node and confirm its thumbnail appears; stop the preview and confirm the intermediate texture is elided again.
+19. Disable **Execute fused shaders** and confirm the preview remains equivalent while nodes report forced legacy execution. Re-enable it and close/reopen the inspector to confirm these debug controls are not stored in the project.
+20. Attempt to create a cycle and confirm the editor reports the graph error while preserving the last valid preview.
+21. Save, modify the root graph, load the saved file, and confirm topology, values, positions, resolution, and target FPS restore while the simulation restarts.
+22. Close the preview, keep editing, and reopen it from Window → Open Preview.
+23. Change the project to a non-square resolution, resize the preview, and confirm it remains constrained to the project aspect ratio without stretching.
+24. Start recording with animated Perlin noise, let the project run, pause and resume once, then stop. Confirm the MP4 has the project resolution, excludes the editor UI, advances smoothly by one animation frame at a time, and does not advance while paused.
+25. Set 1024×1024 at 60 FPS and observe per-node GPU timings and overall FPS. Outside an active recording, after warm-up there should be no recurring texture allocations or CPU image readback.
