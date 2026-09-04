@@ -110,17 +110,17 @@ public:
         if (!convolutionFusable(parameters_)) return false;
         const auto spec = convolutionSpec(parameters_);
         const auto bias = context.parameter("bias", 0.0F);
-        const auto tap = context.inputAt(
-            "image", "q+pixelSize*vec2(float(-x),float(-y))", "image", 0.0F).name;
+        const auto tap = context.inputTexel(
+            "image", "p-ivec2(x,y)", "image", 0.0F).name;
         std::ostringstream source;
-        source << "vec4 convolutionKernel(vec2 q){\n" << kernelDeclaration(spec);
+        source << "vec4 convolutionKernel(ivec2 p){\n" << kernelDeclaration(spec);
         if (spec.operation == 0) {
             source << "vec4 sum=vec4(0.0);";
             if (spec.normalize) source << "float weightSum=0.0;";
             source << "\n" << loopOpen(spec) << "sum+=" << tap << "*w;";
             if (spec.normalize) source << "weightSum+=w;";
             source << "}\n";
-            if (spec.normalize) source << "sum/=max(weightSum,1e-6);\n";
+            if (spec.normalize) source << "if(abs(weightSum)>1e-6)sum/=weightSum;\n";
             source << "return sum+vec4(" << bias.name << ");\n";
         } else {
             const bool erode = spec.operation == 1;
@@ -130,7 +130,7 @@ public:
         }
         source << "}\n";
         const auto helper = context.helper("convolutionKernel", source.str());
-        (void)context.emit(helper + "(uv)", "image");
+        (void)context.emit(helper + "(p)", "image");
         return true;
     }
     void evaluate(EvaluationContext& context, std::span<const Value> inputs, std::span<Value> outputs) override {
@@ -182,7 +182,7 @@ private:
                    << "sum+=texelFetch(source,clamp(p-ivec2(x,y),ivec2(0),s-ivec2(1)),0)*w;";
             if (spec.normalize) source << "weightSum+=w;";
             source << "}\n";
-            if (spec.normalize) source << "sum/=max(weightSum,1e-6);\n";
+            if (spec.normalize) source << "if(abs(weightSum)>1e-6)sum/=weightSum;\n";
             source << "sum+=vec4(bias);imageStore(outImage,p,sum);\n";
         } else {
             const bool erode = spec.operation == 1;

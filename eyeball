@@ -103,17 +103,6 @@
     },
     {
       "from": {
-        "node": 40,
-        "socket": "result"
-      },
-      "id": 136,
-      "to": {
-        "node": 48,
-        "socket": "seed"
-      }
-    },
-    {
-      "from": {
         "node": 48,
         "socket": "image"
       },
@@ -121,17 +110,6 @@
       "to": {
         "node": 3,
         "socket": "value"
-      }
-    },
-    {
-      "from": {
-        "node": 27,
-        "socket": "image"
-      },
-      "id": 139,
-      "to": {
-        "node": 48,
-        "socket": "feedMultiplier"
       }
     },
     {
@@ -612,8 +590,8 @@
         "preset": "Sharpen"
       },
       "position": [
-        3480.0,
-        452.0
+        3464.0,
+        459.0
       ],
       "type": "convolution",
       "typeVersion": 1

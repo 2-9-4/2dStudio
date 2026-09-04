@@ -88,6 +88,16 @@ public:
                                               std::string_view uvExpression,
                                               std::string_view parameterKey,
                                               float fallback) = 0;
+    // Samples an image input at an integer-pixel offset clamped to the texture
+    // bounds, reproducing texelFetch semantics inside generated regions. Region
+    // builders override this with an exact texelFetch; contexts that only see
+    // subgraph expressions keep the default inputAt routing.
+    [[nodiscard]] virtual ShaderValue inputTexel(std::string_view socket,
+                                                 std::string_view pixelExpression,
+                                                 std::string_view parameterKey,
+                                                 float fallback) {
+        return inputAt(socket, pixelExpression, parameterKey, fallback);
+    }
     [[nodiscard]] virtual ShaderValue parameter(std::string_view key,
                                                 float fallback) = 0;
     // Registers a helper local to the current node and returns its collision-free

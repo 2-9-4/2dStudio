@@ -121,6 +121,25 @@ public:
                             std::string(parameterKey), fallback);
     }
 
+    ShaderValue inputTexel(std::string_view socket, std::string_view pixelExpression,
+                           std::string_view parameterKey, float fallback) override {
+        const auto* link = inputLink(graph_, currentNode_->id, socket);
+        if (link && regionNodes_.contains(link->fromNode))
+            throw std::runtime_error("Neighborhood input crosses an in-region value");
+        if (!link) return parameter(parameterKey, fallback);
+        const bool image = compiled_.inferredOutputs.contains(link->fromNode) &&
+                           compiled_.inferredOutputs.at(link->fromNode) == ValueType::Image2D;
+        if (!image) return inputAt(socket, pixelExpression, parameterKey, fallback);
+        const std::string key = "image:" + std::to_string(link->fromNode) + ":" +
+                                link->fromSocket;
+        const auto required = requireInput(
+            key, ShaderInputKind::Image, link->fromNode, link->fromSocket, 0, {}, fallback);
+        const auto& uniformName = region_->inputs[requirements_.at(key)].uniformName;
+        return {ShaderValueType::Vec4, "texelFetch(" + uniformName + ",clamp(ivec2(" +
+            std::string(pixelExpression) + "),ivec2(0),textureSize(" + uniformName +
+            ",0)-ivec2(1)),0)"};
+    }
+
     ShaderValue parameter(std::string_view key, float fallback) override {
         // A connected slider-style input socket overrides the parameter uniform.
         if (inputLink(graph_, currentNode_->id, key))

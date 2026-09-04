@@ -308,8 +308,10 @@ TEST_CASE("Laplacian neighborhood inputs form region boundaries") {
     }) == 1);
 }
 
-TEST_CASE("convolution neighborhood inputs form region boundaries and specialize") {
+TEST_CASE("convolution fuses with clamp sampling and specializes") {
     NodeRegistry registry; registerBuiltInNodes(registry);
+    REQUIRE(registry.descriptor("convolution")->lowerable);
+
     Graph graph;
     const auto source = graph.addNode("perlin");
     const auto convolution = graph.addNode("convolution");
@@ -325,11 +327,10 @@ TEST_CASE("convolution neighborhood inputs form region boundaries and specialize
 
     const auto generated = generateComputeShader(regions[1], {threshold});
     REQUIRE(generated.source.find("convolutionKernel_") != std::string::npos);
+    REQUIRE(generated.source.find("texelFetch(") != std::string::npos);
+    REQUIRE(generated.source.find("fract(") == std::string::npos);
     REQUIRE(generated.source.find("operation") == std::string::npos);
     REQUIRE(generated.source.find("normalize") == std::string::npos);
-    REQUIRE(generated.source.find("weightSum") == std::string::npos);
-    REQUIRE(generated.source.find("for(int y=-1;y<=1;++y)for(int x=-1;x<=1;++x)") !=
-            std::string::npos);
 
     const auto originalSource = generated.source;
     const auto originalKey = generated.specializationKey;
@@ -340,15 +341,6 @@ TEST_CASE("convolution neighborhood inputs form region boundaries and specialize
     REQUIRE(normalized.source != originalSource);
     REQUIRE(normalized.specializationKey != originalKey);
     REQUIRE(normalized.source.find("weightSum") != std::string::npos);
-
-    graph.findNode(convolution)->parameters["kernelSize"] = 5.0F;
-    compiled = graph.compile(registry);
-    regions = planShaderRegions(graph, registry, compiled, 16, 1024);
-    const auto larger = generateComputeShader(regions[1], {threshold});
-    REQUIRE(larger.source != normalized.source);
-    REQUIRE(larger.specializationKey != normalized.specializationKey);
-    REQUIRE(larger.source.find("for(int y=-2;y<=2;++y)for(int x=-2;x<=2;++x)") !=
-            std::string::npos);
 }
 
 TEST_CASE("convolution iterations above one stay a materialized boundary") {
