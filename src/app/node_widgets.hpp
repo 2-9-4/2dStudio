@@ -2,7 +2,15 @@
 
 #include "reaction/core/graph.hpp"
 
+#include <array>
+
 namespace reaction::node_widgets {
+
+inline constexpr std::array<const char*, 10> kMixModeNames = {
+    "Mix", "Add", "Multiply", "Screen", "Overlay", "Difference", "Darken",
+    "Lighten", "Color Dodge", "Color Burn"};
+
+[[nodiscard]] constexpr const auto& mixModeNames() { return kMixModeNames; }
 
 enum class PopupKind {
     None,

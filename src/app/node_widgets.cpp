@@ -12,10 +12,6 @@
 namespace reaction::node_widgets {
 namespace {
 
-constexpr std::array<const char*, 10> kMixModeNames = {
-    "Mix", "Add", "Multiply", "Screen", "Overlay", "Difference", "Darken",
-    "Lighten", "Color Dodge", "Color Burn"};
-
 constexpr const char* popupName(PopupKind kind) {
     switch (kind) {
     case PopupKind::MathOperation: return "Math operation";
@@ -41,9 +37,10 @@ void renderMathOperationSelector(NodeRecord& node, PopupState& popup) {
 
 void renderMixModeSelector(NodeRecord& node, PopupState& popup) {
     const int mode = std::clamp(static_cast<int>(node.parameters.value("mode", 0.0F)), 0, 9);
+    const auto& names = mixModeNames();
     ImGui::TextUnformatted("Mode");
     ImGui::SameLine();
-    if (ImGui::Button(kMixModeNames[static_cast<std::size_t>(mode)], ImVec2(150, 0))) {
+    if (ImGui::Button(names[static_cast<std::size_t>(mode)], ImVec2(150, 0))) {
         popup.request(PopupKind::MixMode, node.id);
     }
 }
@@ -140,10 +137,11 @@ bool renderPopup(PopupState& popup, GraphBody& graph) {
                 }
             }
         } else if (popup.kind == PopupKind::MixMode) {
+            const auto& names = mixModeNames();
             const int current = std::clamp(
                 static_cast<int>(node->parameters.value("mode", 0.0F)), 0, 9);
-            for (int mode = 0; mode < static_cast<int>(kMixModeNames.size()); ++mode) {
-                if (ImGui::Selectable(kMixModeNames[static_cast<std::size_t>(mode)], mode == current)) {
+            for (int mode = 0; mode < static_cast<int>(names.size()); ++mode) {
+                if (ImGui::Selectable(names[static_cast<std::size_t>(mode)], mode == current)) {
                     node->parameters["mode"] = static_cast<float>(mode);
                     changed = true;
                 }

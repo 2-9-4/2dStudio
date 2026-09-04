@@ -1,4 +1,5 @@
 #include "application.hpp"
+#include "node_search.hpp"
 #include "reaction/core/layout.hpp"
 #include "reaction/core/persistence.hpp"
 
@@ -816,37 +817,29 @@ void Application::renderGraph() {
     if (ImGui::BeginPopup("Add node")) {
         static char search[96]{};
         ImGui::InputTextWithHint("##search", "Search nodes", search, sizeof(search));
-        const std::string filter = search;
-        for (const auto* descriptor : registry_.descriptors()) {
-            std::string label = descriptor->category + " / " + descriptor->displayName;
-            if (!filter.empty() && label.find(filter) == std::string::npos) continue;
-            if (ImGui::MenuItem(label.c_str())) {
-                const auto id = graph_.addNode(descriptor->type,
-                                               {addNodeCanvasPosition.x, addNodeCanvasPosition.y});
-                if (descriptor->type == "output") graph_.activeOutput = id;
-                positioned_[id] = false;
-                dirty_ = true; rebuildRuntime();
-            }
-        }
-        const auto addSubgraph = [&](const SubgraphDefinition& definition) {
-            const std::string label = definition.category + " / " + definition.name;
-            if (!filter.empty() && label.find(filter) == std::string::npos) return;
-            if (ImGui::MenuItem(label.c_str())) {
-                const auto id = graph_.addNode("subgraph", {addNodeCanvasPosition.x, addNodeCanvasPosition.y});
-                auto* record = graph_.findNode(id);
-                record->subgraphId = definition.id;
-                record->typeVersion = definition.version;
+        const auto entries = node_search::buildRootEntries(registry_, graph_);
+        if (const auto* entry = node_search::renderMenu(entries, search)) {
+            const auto id = graph_.addNode(entry->type,
+                                           {addNodeCanvasPosition.x, addNodeCanvasPosition.y});
+            auto* record = graph_.findNode(id);
+            record->parameters = entry->parameters;
+            if (entry->type == "subgraph") {
+                const auto& definition = *entry->subgraph;
+                record->subgraphId = entry->subgraphId;
+                record->typeVersion = entry->subgraphVersion;
                 for (const auto& item : definition.interface)
                     if (item.kind == SubgraphInterfaceKind::Slider)
                         record->parameters[item.key] = item.defaultValue;
                 // A subgraph added from the menu is an editable project asset. The
                 // immutable built-in remains only as the pristine source template.
                 if (definition.immutable) duplicateSubgraph(*record);
-                positioned_[id] = false; dirty_ = true; rebuildRuntime();
+            } else if (entry->type == "output") {
+                graph_.activeOutput = id;
             }
-        };
-        for (const auto& definition : builtInSubgraphs()) addSubgraph(definition);
-        for (const auto& definition : graph_.subgraphs()) addSubgraph(definition);
+            positioned_[id] = false;
+            dirty_ = true;
+            rebuildRuntime();
+        }
         ImGui::EndPopup();
     }
     ed::Resume();
@@ -1227,36 +1220,15 @@ void Application::renderSubgraphEditor() {
     if (ImGui::BeginPopup("Add subgraph node")) {
         static char search[96]{};
         ImGui::InputTextWithHint("##search", "Search nodes", search, sizeof(search));
-        const std::string filter = search;
-        const auto addNode = [&](std::string type, std::string label,
-                                 nlohmann::json parameters = nlohmann::json::object()) {
-            if (!filter.empty() && label.find(filter) == std::string::npos) return;
-            if (ImGui::MenuItem(label.c_str())) {
-                const auto id = body.addNode(std::move(type),
-                    {addNodeCanvasPosition.x, addNodeCanvasPosition.y});
-                auto* node = body.findNode(id);
-                node->parameters = std::move(parameters);
-                positionedSubgraph_[id] = false;
-                changed = true; executionChanged = true;
-            }
-        };
-        for (const auto* type : {"float", "math", "threshold", "select", "coordinates", "laplacian"}) {
-            if (const auto* descriptor = registry_.descriptor(type))
-                addNode(type, descriptor->category + " / " + descriptor->displayName);
-        }
-        addNode("simulation_previous_state", "Simulation / Previous Simulation State");
-        addNode("simulation_channel", "Simulation / Channel Split");
-        addNode("simulation_initial_state", "Simulation / Initial Simulation State");
-        addNode("simulation_next_state", "Simulation / Next Simulation State");
-        for (const auto& item : definition->interface) {
-            if (item.kind == SubgraphInterfaceKind::Output) {
-                addNode("subgraph_output", "Subgraph / Output: " + item.label,
-                        {{"key", item.key}});
-            } else {
-                addNode("subgraph_input", "Subgraph / " +
-                    std::string(item.kind == SubgraphInterfaceKind::Slider ? "Control: " : "Input: ") +
-                    item.label, {{"key", item.key}});
-            }
+        const auto entries = node_search::buildSubgraphEditorEntries(registry_, *definition);
+        if (const auto* entry = node_search::renderMenu(entries, search)) {
+            const auto id = body.addNode(entry->type,
+                {addNodeCanvasPosition.x, addNodeCanvasPosition.y});
+            auto* node = body.findNode(id);
+            node->parameters = entry->parameters;
+            positionedSubgraph_[id] = false;
+            changed = true;
+            executionChanged = true;
         }
         ImGui::EndPopup();
     }
