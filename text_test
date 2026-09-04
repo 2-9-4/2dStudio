@@ -908,13 +908,13 @@
         "diffB": 0.23199999332427979,
         "dt": 0.8259000182151794,
         "feed": 0.08020000159740448,
-        "iterations": 28.0,
+        "iterations": 1.0,
         "kill": 0.06199999898672104,
         "structureScale": 0.25
       },
       "position": [
-        4168.0,
-        535.0
+        4126.0,
+        481.0
       ],
       "subgraphId": "project.reaction_diffusion.49.1",
       "type": "subgraph",
@@ -1859,7 +1859,7 @@
           "parameters": {},
           "position": [
             0.0,
-            20.0
+            143.0
           ],
           "type": "coordinates",
           "typeVersion": 1
@@ -1872,7 +1872,7 @@
             "operation": 1.0
           },
           "position": [
-            200.0,
+            242.0,
             0.0
           ],
           "type": "math",
@@ -1886,8 +1886,8 @@
             "operation": 1.0
           },
           "position": [
-            200.0,
-            100.0
+            242.0,
+            433.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -1899,7 +1899,7 @@
             "operation": 2.0
           },
           "position": [
-            400.0,
+            640.0,
             0.0
           ],
           "type": "math",
@@ -1912,8 +1912,8 @@
             "operation": 2.0
           },
           "position": [
-            400.0,
-            100.0
+            640.0,
+            433.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -1925,8 +1925,8 @@
             "operation": 0.0
           },
           "position": [
-            600.0,
-            50.0
+            1038.0,
+            0.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -1939,8 +1939,8 @@
             "operation": 4.0
           },
           "position": [
-            800.0,
-            50.0
+            1436.0,
+            0.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -1952,8 +1952,8 @@
             "threshold": 0.07500000298023224
           },
           "position": [
-            1000.0,
-            50.0
+            1834.0,
+            111.0
           ],
           "type": "threshold",
           "typeVersion": 1
@@ -1966,8 +1966,8 @@
             "operation": 1.0
           },
           "position": [
-            1200.0,
-            50.0
+            2232.0,
+            0.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -1979,8 +1979,8 @@
             "key": "seed"
           },
           "position": [
-            800.0,
-            190.0
+            1834.0,
+            321.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -1993,8 +1993,8 @@
             "operation": 1.0
           },
           "position": [
-            1000.0,
-            190.0
+            2232.0,
+            433.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2006,8 +2006,8 @@
             "operation": 2.0
           },
           "position": [
-            1400.0,
-            30.0
+            2630.0,
+            0.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2019,8 +2019,8 @@
             "operation": 2.0
           },
           "position": [
-            1200.0,
-            200.0
+            2630.0,
+            433.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2032,8 +2032,8 @@
             "operation": 0.0
           },
           "position": [
-            1600.0,
-            110.0
+            3028.0,
+            216.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2046,8 +2046,8 @@
             "operation": 2.0
           },
           "position": [
-            1800.0,
-            80.0
+            3426.0,
+            216.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2060,8 +2060,8 @@
             "operation": 1.0
           },
           "position": [
-            2000.0,
-            40.0
+            3824.0,
+            216.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2071,8 +2071,8 @@
           "label": "Initial Simulation State",
           "parameters": {},
           "position": [
-            2200.0,
-            100.0
+            4222.0,
+            359.0
           ],
           "type": "simulation_initial_state",
           "typeVersion": 1
@@ -2082,8 +2082,8 @@
           "label": "Previous Simulation State",
           "parameters": {},
           "position": [
-            0.0,
-            460.0
+            242.0,
+            1354.0
           ],
           "type": "simulation_previous_state",
           "typeVersion": 1
@@ -2093,8 +2093,8 @@
           "label": "Previous State Channels",
           "parameters": {},
           "position": [
-            220.0,
-            660.0
+            640.0,
+            1337.0
           ],
           "type": "simulation_channel",
           "typeVersion": 1
@@ -2106,8 +2106,8 @@
             "key": "structureScale"
           },
           "position": [
-            0.0,
-            720.0
+            210.0,
+            1676.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2117,8 +2117,8 @@
           "label": "State Laplacian",
           "parameters": {},
           "position": [
-            220.0,
-            400.0
+            640.0,
+            1648.0
           ],
           "type": "laplacian",
           "typeVersion": 1
@@ -2128,8 +2128,8 @@
           "label": "Laplacian Channels",
           "parameters": {},
           "position": [
-            440.0,
-            460.0
+            1038.0,
+            1926.0
           ],
           "type": "simulation_channel",
           "typeVersion": 1
@@ -2141,8 +2141,8 @@
             "operation": 2.0
           },
           "position": [
-            220.0,
-            760.0
+            1038.0,
+            1493.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2154,8 +2154,8 @@
             "operation": 2.0
           },
           "position": [
-            440.0,
-            720.0
+            1436.0,
+            1636.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2167,8 +2167,8 @@
             "key": "feedMultiplier"
           },
           "position": [
-            220.0,
-            940.0
+            594.0,
+            2172.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2180,8 +2180,8 @@
             "key": "killMultiplier"
           },
           "position": [
-            220.0,
-            1040.0
+            598.0,
+            2603.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2193,8 +2193,8 @@
             "key": "feed"
           },
           "position": [
-            440.0,
-            940.0
+            626.0,
+            2107.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2206,8 +2206,8 @@
             "key": "kill"
           },
           "position": [
-            440.0,
-            1040.0
+            626.0,
+            2523.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2219,8 +2219,8 @@
             "operation": 2.0
           },
           "position": [
-            660.0,
-            940.0
+            1038.0,
+            2090.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2232,8 +2232,8 @@
             "operation": 2.0
           },
           "position": [
-            660.0,
-            1040.0
+            1038.0,
+            2932.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2245,8 +2245,8 @@
             "key": "diffA"
           },
           "position": [
-            440.0,
-            400.0
+            1038.0,
+            946.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2258,8 +2258,8 @@
             "key": "diffB"
           },
           "position": [
-            440.0,
-            560.0
+            1038.0,
+            1346.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2271,8 +2271,8 @@
             "operation": 2.0
           },
           "position": [
-            660.0,
-            400.0
+            1436.0,
+            2069.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2284,8 +2284,8 @@
             "operation": 2.0
           },
           "position": [
-            660.0,
-            560.0
+            1436.0,
+            2502.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2298,8 +2298,8 @@
             "operation": 1.0
           },
           "position": [
-            660.0,
-            700.0
+            1436.0,
+            1203.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2311,8 +2311,8 @@
             "operation": 2.0
           },
           "position": [
-            880.0,
-            700.0
+            1834.0,
+            1203.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2324,8 +2324,8 @@
             "operation": 1.0
           },
           "position": [
-            880.0,
-            440.0
+            1834.0,
+            2069.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2337,8 +2337,8 @@
             "operation": 0.0
           },
           "position": [
-            1100.0,
-            520.0
+            2232.0,
+            2069.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2350,8 +2350,8 @@
             "operation": 0.0
           },
           "position": [
-            880.0,
-            980.0
+            1436.0,
+            2935.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2363,8 +2363,8 @@
             "operation": 2.0
           },
           "position": [
-            1100.0,
-            940.0
+            1834.0,
+            2935.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2376,8 +2376,8 @@
             "operation": 0.0
           },
           "position": [
-            880.0,
-            580.0
+            1834.0,
+            2502.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2389,8 +2389,8 @@
             "operation": 1.0
           },
           "position": [
-            1100.0,
-            660.0
+            2232.0,
+            2502.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2402,8 +2402,8 @@
             "key": "dt"
           },
           "position": [
-            1100.0,
-            1080.0
+            2232.0,
+            1454.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2415,8 +2415,8 @@
             "operation": 2.0
           },
           "position": [
-            1320.0,
-            500.0
+            2630.0,
+            2069.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2428,8 +2428,8 @@
             "operation": 2.0
           },
           "position": [
-            1320.0,
-            700.0
+            2630.0,
+            2502.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2441,8 +2441,8 @@
             "operation": 0.0
           },
           "position": [
-            1540.0,
-            480.0
+            3028.0,
+            2069.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2454,8 +2454,8 @@
             "operation": 0.0
           },
           "position": [
-            1540.0,
-            700.0
+            3028.0,
+            2502.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2469,8 +2469,8 @@
             "operation": 10.0
           },
           "position": [
-            1760.0,
-            480.0
+            3426.0,
+            2069.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2484,8 +2484,8 @@
             "operation": 10.0
           },
           "position": [
-            1760.0,
-            700.0
+            3426.0,
+            2502.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2495,8 +2495,8 @@
           "label": "Next Simulation State",
           "parameters": {},
           "position": [
-            1980.0,
-            580.0
+            3824.0,
+            2428.0
           ],
           "type": "simulation_next_state",
           "typeVersion": 1
@@ -2508,8 +2508,8 @@
             "key": "image"
           },
           "position": [
-            2200.0,
-            500.0
+            4222.0,
+            2428.0
           ],
           "type": "subgraph_output",
           "typeVersion": 1
@@ -2521,8 +2521,8 @@
             "key": "a"
           },
           "position": [
-            2200.0,
-            620.0
+            4222.0,
+            2575.0
           ],
           "type": "subgraph_output",
           "typeVersion": 1
@@ -2534,8 +2534,8 @@
             "key": "b"
           },
           "position": [
-            2200.0,
-            740.0
+            4222.0,
+            2722.0
           ],
           "type": "subgraph_output",
           "typeVersion": 1
