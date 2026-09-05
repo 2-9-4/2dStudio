@@ -97,8 +97,8 @@ std::vector<AddNodeEntry> buildRootEntries(const NodeRegistry& registry, const G
 std::vector<AddNodeEntry> buildSubgraphEditorEntries(
     const NodeRegistry& registry, const SubgraphDefinition& definition) {
     std::vector<AddNodeEntry> entries;
-    for (const auto* type : {"float", "math", "threshold", "select", "coordinates", "laplacian"})
-        if (const auto* descriptor = registry.descriptor(type)) addAliases(entries, *descriptor);
+    for (const auto* descriptor : registry.descriptors())
+        if (descriptor->lowerable) addAliases(entries, *descriptor);
 
     for (const auto* type : {"simulation_previous_state", "simulation_channel",
                              "simulation_initial_state", "simulation_next_state"}) {

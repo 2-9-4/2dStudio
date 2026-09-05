@@ -32,6 +32,9 @@ NodeRegistry registry() {
     add(result, {"float", 1, "Float", "Test",
         {{"out", "Out", ValueType::Float, SocketDirection::Output},
          {"value", "Value", ValueType::Float, SocketDirection::Output}}, {}});
+    add(result, {"vector", 1, "Vector", "Test",
+        {{"value", "Vector", ValueType::Vec2, SocketDirection::Output}},
+        {{"x", "X", 0.0F, -10.0F, 10.0F}, {"y", "Y", 0.0F, -10.0F, 10.0F}}});
     add(result, {"image", 1, "Image", "Test",
         {{"out", "Out", ValueType::Image2D, SocketDirection::Output}}, {}});
     add(result, {"math", 1, "Math", "Test",
@@ -55,8 +58,9 @@ NodeRegistry registry() {
          {"ifTrue", "If True", 1.0F, -10.0F, 10.0F},
          {"ifFalse", "If False", 0.0F, -10.0F, 10.0F}}});
     add(result, {"coordinates", 1, "Canvas Coordinates", "Input",
-        {{"x", "X", ValueType::AnyNumeric, SocketDirection::Output},
-         {"y", "Y", ValueType::AnyNumeric, SocketDirection::Output}}, {}});
+        {{"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Output}},
+        {{"pixels", "Pixels", 0.0F, 0.0F, 1.0F,
+          ParameterDescriptor::Control::Boolean}}});
     add(result, {"laplacian", 1, "Laplacian", "Filter",
         {{"value", "Value", ValueType::AnyVector, SocketDirection::Input},
          {"scale", "Scale", ValueType::Float, SocketDirection::Input, true},
@@ -306,6 +310,20 @@ TEST_CASE("built-in discrete reaction exposes a stable dynamic interface") {
     REQUIRE(descriptor->sockets[11].label == "Chemical A");
     REQUIRE(descriptor->sockets[12].label == "Chemical B");
     REQUIRE(graph.compile(nodes).valid);
+}
+
+TEST_CASE("built-in discrete reaction uses Vector Math for its seed distance") {
+    const auto& body = builtInSubgraphs().front().body;
+    const auto distance = std::ranges::find_if(body.nodes(), [](const NodeRecord& node) {
+        return node.type == "vector_math" &&
+            node.parameters.value("operation", -1.0F) ==
+                static_cast<float>(VectorMathOperation::Distance);
+    });
+    REQUIRE(distance != body.nodes().end());
+    REQUIRE(std::ranges::any_of(body.links(), [&](const LinkRecord& link) {
+        return link.toNode == distance->id && link.toSocket == "a" &&
+               link.fromSocket == "coordinates";
+    }));
 }
 
 TEST_CASE("custom shared subgraphs round trip once with per-instance values") {

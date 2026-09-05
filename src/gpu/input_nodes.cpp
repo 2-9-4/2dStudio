@@ -131,10 +131,12 @@ public:
 class VectorNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() {
-        return {"vector", 1, "Vector", "Input",
+        auto result = NodeDescriptor{"vector", 1, "Vector", "Input",
             {{"value", "Vector", ValueType::Vec2, SocketDirection::Output}},
             {{"x", "X", 0.0F, -10.0F, 10.0F},
              {"y", "Y", 0.0F, -10.0F, 10.0F}}};
+        result.lowerable = true;
+        return result;
     }
     const NodeDescriptor& descriptor() const override {
         static const auto value = describe(); return value;
@@ -142,6 +144,13 @@ public:
     void evaluate(EvaluationContext&, std::span<const Value> inputs, std::span<Value> outputs) override {
         outputs[0] = Vec2{floatAt(inputs, 0, parameter(parameters_, "x", 0.0F)),
                           floatAt(inputs, 1, parameter(parameters_, "y", 0.0F))};
+    }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto x = context.parameter("x", 0.0F);
+        const auto y = context.parameter("y", 0.0F);
+        (void)context.emitTyped("vec2(" + x.name + "," + y.name + ")",
+                                ShaderValueType::Vec2, "value");
+        return true;
     }
 };
 
@@ -216,10 +225,12 @@ public:
         if (program_) glDeleteProgram(program_);
     }
     static NodeDescriptor describe() {
-        return {"separate_vector", 1, "Separate Vector", "Utility",
+        auto result = NodeDescriptor{"separate_vector", 1, "Separate Vector", "Utility",
             {{"value", "Vector", ValueType::AnyVector, SocketDirection::Input},
              {"x", "X", ValueType::AnyNumeric, SocketDirection::Output},
              {"y", "Y", ValueType::AnyNumeric, SocketDirection::Output}}, {}};
+        result.lowerable = true;
+        return result;
     }
     const NodeDescriptor& descriptor() const override {
         static const auto value = describe(); return value;
@@ -253,6 +264,12 @@ public:
         gpu.dispatch(program_, context.width, context.height);
         outputs[0] = ImageHandle{textures_[0], context.width, context.height};
         outputs[1] = ImageHandle{textures_[1], context.width, context.height};
+    }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto value = context.vector("value", "value", 0.0F);
+        (void)context.emitTyped(value.name + ".x", ShaderValueType::Scalar, "x");
+        (void)context.emitTyped(value.name + ".y", ShaderValueType::Scalar, "y");
+        return true;
     }
 private:
     std::array<GLuint, 2> textures_{};

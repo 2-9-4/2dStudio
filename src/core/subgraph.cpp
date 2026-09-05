@@ -104,6 +104,16 @@ NodeId input(GraphBody& body, std::string key, std::string label, Vec2 position)
                    {{"key", std::move(key)}});
 }
 
+NodeId vector(GraphBody& body, std::string label, Vec2 position, float x, float y) {
+    return addNode(body, "vector", std::move(label), position, {{"x", x}, {"y", y}});
+}
+
+NodeId vectorMath(GraphBody& body, std::string label, VectorMathOperation operation,
+                  Vec2 position) {
+    return addNode(body, "vector_math", std::move(label), position,
+                   {{"operation", static_cast<float>(operation)}});
+}
+
 SubgraphDefinition discreteReaction() {
     SubgraphDefinition result;
     result.id = "builtin.reaction_diffusion.discrete";
@@ -140,22 +150,12 @@ SubgraphDefinition discreteReaction() {
 
     auto& body = result.body;
     const auto coordinates = addNode(body, "coordinates", "Canvas Coordinates", {0, 20});
-    const auto deltaX = math(body, "Horizontal Distance from Center", 1, {200, 0}, {{"b", .5F}});
-    const auto deltaY = math(body, "Vertical Distance from Center", 1, {200, 100}, {{"b", .5F}});
-    link(body, coordinates, "x", deltaX, "a");
-    link(body, coordinates, "y", deltaY, "a");
-    const auto deltaXSquared = math(body, "Horizontal Distance Squared", 2, {400, 0});
-    const auto deltaYSquared = math(body, "Vertical Distance Squared", 2, {400, 100});
-    link(body, deltaX, "result", deltaXSquared, "a");
-    link(body, deltaX, "result", deltaXSquared, "b");
-    link(body, deltaY, "result", deltaYSquared, "a");
-    link(body, deltaY, "result", deltaYSquared, "b");
-    const auto distanceSquared = math(body, "Distance Squared", 0, {600, 50});
-    link(body, deltaXSquared, "result", distanceSquared, "a");
-    link(body, deltaYSquared, "result", distanceSquared, "b");
-    const auto radius = math(body, "Distance from Center", 4, {800, 50}, {{"b", .5F}});
-    link(body, distanceSquared, "result", radius, "a");
-    const auto outsideSeed = addNode(body, "threshold", "Outside Seed Circle", {1000, 50},
+    const auto center = vector(body, "Seed Center", {200, 20}, .5F, .5F);
+    const auto radius = vectorMath(body, "Distance from Seed Center", VectorMathOperation::Distance,
+                                   {420, 20});
+    link(body, coordinates, "coordinates", radius, "a");
+    link(body, center, "value", radius, "b");
+    const auto outsideSeed = addNode(body, "threshold", "Outside Seed Circle", {640, 20},
                                      {{"threshold", .075F}});
     link(body, radius, "result", outsideSeed, "value");
     const auto defaultSeed = math(body, "Default Circular Seed", 1, {1200, 50}, {{"a", 1.0F}});
@@ -340,9 +340,8 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
         }
 
         NodeDescriptor descriptor;
-        const NodeDescriptor* resolved = nullptr;
-        if (isSubgraphBodyNodeType(node.type))
-            resolved = resolveSubgraphBodyDescriptor(definition, node, registry, descriptor);
+        const NodeDescriptor* resolved = resolveSubgraphBodyDescriptor(
+            definition, node, registry, descriptor);
         if (!resolved) {
             errors.push_back("Unsupported subgraph node type '" + node.type + "'");
         } else {
@@ -512,9 +511,9 @@ const NodeDescriptor* resolveDescriptor(const Graph& graph, const NodeRecord& no
 }
 
 bool isSubgraphBodyNodeType(std::string_view type) {
-    return type == "float" || type == "math" || type == "threshold" || type == "select" ||
-           type == "coordinates" || type == "laplacian" ||
-           type == "subgraph_input" || type == "subgraph_output" ||
+    return type == "float" || type == "vector" || type == "math" || type == "vector_math" ||
+           type == "threshold" || type == "select" || type == "coordinates" ||
+           type == "laplacian" || type == "subgraph_input" || type == "subgraph_output" ||
            type == "simulation_previous_state" ||
            type == "simulation_channel" ||
            type == "simulation_initial_state" ||
@@ -525,7 +524,6 @@ const NodeDescriptor* resolveSubgraphBodyDescriptor(const SubgraphDefinition& de
                                                     const NodeRecord& node,
                                                     const NodeRegistry& registry,
                                                     NodeDescriptor& storage) {
-    if (!isSubgraphBodyNodeType(node.type)) return nullptr;
     if (node.type == "subgraph_input" || node.type == "subgraph_output" ||
         node.type == "simulation_previous_state" ||
         node.type == "simulation_channel" ||
@@ -533,7 +531,13 @@ const NodeDescriptor* resolveSubgraphBodyDescriptor(const SubgraphDefinition& de
         node.type == "simulation_next_state") {
         return intrinsicDescriptor(definition, node, storage);
     }
-    return registry.descriptor(node.type);
+    if (node.type == "vector_math") {
+        storage = vectorMathDescriptor(vectorMathOperation(node.parameters.value("operation", 0.0F)));
+        return &storage;
+    }
+    const auto* descriptor = registry.descriptor(node.type);
+    return descriptor && (descriptor->lowerable || isSubgraphBodyNodeType(node.type))
+        ? descriptor : nullptr;
 }
 
 std::vector<std::string> validateSubgraph(const SubgraphDefinition& definition,

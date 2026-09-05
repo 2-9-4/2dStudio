@@ -267,6 +267,17 @@ private:
             return link ? inferredType(link->fromNode, link->fromSocket)
                         : ShaderValueType::Scalar;
         }
+        NodeDescriptor storage;
+        if (const auto* descriptor = resolveSubgraphBodyDescriptor(definition_, node, registry_, storage)) {
+            const auto output = std::ranges::find_if(descriptor->sockets, [&](const auto& item) {
+                return item.key == socket && item.direction == SocketDirection::Output;
+            });
+            if (output != descriptor->sockets.end()) {
+                if (output->type == ValueType::Vec2 || output->type == ValueType::AnyVector)
+                    return ShaderValueType::Vec2;
+                if (output->type == ValueType::Image2D) return ShaderValueType::Vec4;
+            }
+        }
         return ShaderValueType::Scalar;
     }
 

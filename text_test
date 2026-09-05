@@ -1215,116 +1215,6 @@
       "links": [
         {
           "from": {
-            "node": 1,
-            "socket": "x"
-          },
-          "id": 1,
-          "to": {
-            "node": 2,
-            "socket": "a"
-          }
-        },
-        {
-          "from": {
-            "node": 1,
-            "socket": "y"
-          },
-          "id": 2,
-          "to": {
-            "node": 3,
-            "socket": "a"
-          }
-        },
-        {
-          "from": {
-            "node": 2,
-            "socket": "result"
-          },
-          "id": 3,
-          "to": {
-            "node": 4,
-            "socket": "a"
-          }
-        },
-        {
-          "from": {
-            "node": 2,
-            "socket": "result"
-          },
-          "id": 4,
-          "to": {
-            "node": 4,
-            "socket": "b"
-          }
-        },
-        {
-          "from": {
-            "node": 3,
-            "socket": "result"
-          },
-          "id": 5,
-          "to": {
-            "node": 5,
-            "socket": "a"
-          }
-        },
-        {
-          "from": {
-            "node": 3,
-            "socket": "result"
-          },
-          "id": 6,
-          "to": {
-            "node": 5,
-            "socket": "b"
-          }
-        },
-        {
-          "from": {
-            "node": 4,
-            "socket": "result"
-          },
-          "id": 7,
-          "to": {
-            "node": 6,
-            "socket": "a"
-          }
-        },
-        {
-          "from": {
-            "node": 5,
-            "socket": "result"
-          },
-          "id": 8,
-          "to": {
-            "node": 6,
-            "socket": "b"
-          }
-        },
-        {
-          "from": {
-            "node": 6,
-            "socket": "result"
-          },
-          "id": 9,
-          "to": {
-            "node": 7,
-            "socket": "a"
-          }
-        },
-        {
-          "from": {
-            "node": 7,
-            "socket": "result"
-          },
-          "id": 10,
-          "to": {
-            "node": 8,
-            "socket": "value"
-          }
-        },
-        {
-          "from": {
             "node": 8,
             "socket": "result"
           },
@@ -1960,6 +1850,50 @@
             "node": 53,
             "socket": "value"
           }
+        },
+        {
+          "from": {
+            "node": 1,
+            "socket": "coordinates"
+          },
+          "id": 69,
+          "to": {
+            "node": 54,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 55,
+            "socket": "value"
+          },
+          "id": 70,
+          "to": {
+            "node": 54,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 54,
+            "socket": "result"
+          },
+          "id": 71,
+          "to": {
+            "node": 56,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 56,
+            "socket": "result"
+          },
+          "id": 72,
+          "to": {
+            "node": 8,
+            "socket": "value"
+          }
         }
       ],
       "name": "Reaction Diffusion (Discrete) (Editable 5)",
@@ -1969,91 +1903,10 @@
           "label": "Canvas Coordinates",
           "parameters": {},
           "position": [
-            0.0,
-            143.0
+            291.0,
+            2450.0
           ],
           "type": "coordinates",
-          "typeVersion": 1
-        },
-        {
-          "id": 2,
-          "label": "Horizontal Distance from Center",
-          "parameters": {
-            "b": 0.5,
-            "operation": 1.0
-          },
-          "position": [
-            242.0,
-            0.0
-          ],
-          "type": "math",
-          "typeVersion": 1
-        },
-        {
-          "id": 3,
-          "label": "Vertical Distance from Center",
-          "parameters": {
-            "b": 0.5,
-            "operation": 1.0
-          },
-          "position": [
-            242.0,
-            433.0
-          ],
-          "type": "math",
-          "typeVersion": 1
-        },
-        {
-          "id": 4,
-          "label": "Horizontal Distance Squared",
-          "parameters": {
-            "operation": 2.0
-          },
-          "position": [
-            640.0,
-            0.0
-          ],
-          "type": "math",
-          "typeVersion": 1
-        },
-        {
-          "id": 5,
-          "label": "Vertical Distance Squared",
-          "parameters": {
-            "operation": 2.0
-          },
-          "position": [
-            640.0,
-            433.0
-          ],
-          "type": "math",
-          "typeVersion": 1
-        },
-        {
-          "id": 6,
-          "label": "Distance Squared",
-          "parameters": {
-            "operation": 0.0
-          },
-          "position": [
-            1038.0,
-            0.0
-          ],
-          "type": "math",
-          "typeVersion": 1
-        },
-        {
-          "id": 7,
-          "label": "Distance from Center",
-          "parameters": {
-            "b": 0.5,
-            "operation": 4.0
-          },
-          "position": [
-            1436.0,
-            0.0
-          ],
-          "type": "math",
           "typeVersion": 1
         },
         {
@@ -2063,8 +1916,8 @@
             "threshold": 0.07500000298023224
           },
           "position": [
-            1834.0,
-            111.0
+            1414.0,
+            2413.0
           ],
           "type": "threshold",
           "typeVersion": 1
@@ -2077,8 +1930,8 @@
             "operation": 1.0
           },
           "position": [
-            2232.0,
-            0.0
+            1812.0,
+            2302.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2090,8 +1943,8 @@
             "key": "seed"
           },
           "position": [
-            1834.0,
-            321.0
+            1414.0,
+            2636.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2104,8 +1957,8 @@
             "operation": 1.0
           },
           "position": [
-            2232.0,
-            433.0
+            1812.0,
+            2735.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2117,8 +1970,8 @@
             "operation": 2.0
           },
           "position": [
-            2630.0,
-            0.0
+            2210.0,
+            2302.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2130,8 +1983,8 @@
             "operation": 2.0
           },
           "position": [
-            2630.0,
-            433.0
+            2210.0,
+            2735.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2143,8 +1996,8 @@
             "operation": 0.0
           },
           "position": [
-            3028.0,
-            216.0
+            2608.0,
+            2518.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2157,8 +2010,8 @@
             "operation": 2.0
           },
           "position": [
-            3426.0,
-            216.0
+            3006.0,
+            2518.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2171,8 +2024,8 @@
             "operation": 1.0
           },
           "position": [
-            3824.0,
-            216.0
+            3404.0,
+            2518.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2182,8 +2035,8 @@
           "label": "Initial Simulation State",
           "parameters": {},
           "position": [
-            4222.0,
-            359.0
+            3802.0,
+            2661.0
           ],
           "type": "simulation_initial_state",
           "typeVersion": 1
@@ -2193,8 +2046,8 @@
           "label": "Previous Simulation State",
           "parameters": {},
           "position": [
-            242.0,
-            1354.0
+            -46.0,
+            252.0
           ],
           "type": "simulation_previous_state",
           "typeVersion": 1
@@ -2204,8 +2057,8 @@
           "label": "Previous State Channels",
           "parameters": {},
           "position": [
-            640.0,
-            1337.0
+            291.0,
+            191.0
           ],
           "type": "simulation_channel",
           "typeVersion": 1
@@ -2217,8 +2070,8 @@
             "key": "structureScale"
           },
           "position": [
-            210.0,
-            1676.0
+            -14.0,
+            524.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2228,8 +2081,8 @@
           "label": "State Laplacian",
           "parameters": {},
           "position": [
-            640.0,
-            1648.0
+            291.0,
+            502.0
           ],
           "type": "laplacian",
           "typeVersion": 1
@@ -2239,8 +2092,8 @@
           "label": "Laplacian Channels",
           "parameters": {},
           "position": [
-            1038.0,
-            1926.0
+            618.0,
+            727.0
           ],
           "type": "simulation_channel",
           "typeVersion": 1
@@ -2252,8 +2105,8 @@
             "operation": 2.0
           },
           "position": [
-            1038.0,
-            1493.0
+            618.0,
+            147.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2265,8 +2118,8 @@
             "operation": 2.0
           },
           "position": [
-            1436.0,
-            1636.0
+            1016.0,
+            490.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2278,8 +2131,8 @@
             "key": "feedMultiplier"
           },
           "position": [
-            594.0,
-            2172.0
+            291.0,
+            689.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2291,8 +2144,8 @@
             "key": "killMultiplier"
           },
           "position": [
-            598.0,
-            2603.0
+            291.0,
+            983.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2304,8 +2157,8 @@
             "key": "feed"
           },
           "position": [
-            626.0,
-            2107.0
+            291.0,
+            355.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2317,8 +2170,8 @@
             "key": "kill"
           },
           "position": [
-            626.0,
-            2523.0
+            291.0,
+            836.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2330,8 +2183,8 @@
             "operation": 2.0
           },
           "position": [
-            1038.0,
-            2090.0
+            618.0,
+            891.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2343,8 +2196,8 @@
             "operation": 2.0
           },
           "position": [
-            1038.0,
-            2932.0
+            618.0,
+            1324.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2356,8 +2209,8 @@
             "key": "diffA"
           },
           "position": [
-            1038.0,
-            946.0
+            618.0,
+            0.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2369,8 +2222,8 @@
             "key": "diffB"
           },
           "position": [
-            1038.0,
-            1346.0
+            618.0,
+            580.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2382,8 +2235,8 @@
             "operation": 2.0
           },
           "position": [
-            1436.0,
-            2069.0
+            1016.0,
+            923.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2395,8 +2248,8 @@
             "operation": 2.0
           },
           "position": [
-            1436.0,
-            2502.0
+            1016.0,
+            1356.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2409,8 +2262,8 @@
             "operation": 1.0
           },
           "position": [
-            1436.0,
-            1203.0
+            1016.0,
+            57.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2422,8 +2275,8 @@
             "operation": 2.0
           },
           "position": [
-            1834.0,
-            1203.0
+            1414.0,
+            57.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2435,8 +2288,8 @@
             "operation": 1.0
           },
           "position": [
-            1834.0,
-            2069.0
+            1414.0,
+            923.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2448,8 +2301,8 @@
             "operation": 0.0
           },
           "position": [
-            2232.0,
-            2069.0
+            1812.0,
+            923.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2461,8 +2314,8 @@
             "operation": 0.0
           },
           "position": [
-            1436.0,
-            2935.0
+            1016.0,
+            1789.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2474,8 +2327,8 @@
             "operation": 2.0
           },
           "position": [
-            1834.0,
-            2935.0
+            1414.0,
+            1789.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2487,8 +2340,8 @@
             "operation": 0.0
           },
           "position": [
-            1834.0,
-            2502.0
+            1414.0,
+            1356.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2500,8 +2353,8 @@
             "operation": 1.0
           },
           "position": [
-            2232.0,
-            2502.0
+            1812.0,
+            1356.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2513,8 +2366,8 @@
             "key": "dt"
           },
           "position": [
-            2232.0,
-            1454.0
+            1954.0,
+            396.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2526,8 +2379,8 @@
             "operation": 2.0
           },
           "position": [
-            2630.0,
-            2069.0
+            2210.0,
+            923.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2539,8 +2392,8 @@
             "operation": 2.0
           },
           "position": [
-            2630.0,
-            2502.0
+            2210.0,
+            1356.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2552,8 +2405,8 @@
             "operation": 0.0
           },
           "position": [
-            3028.0,
-            2069.0
+            2608.0,
+            923.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2565,8 +2418,8 @@
             "operation": 0.0
           },
           "position": [
-            3028.0,
-            2502.0
+            2608.0,
+            1356.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2580,8 +2433,8 @@
             "operation": 10.0
           },
           "position": [
-            3426.0,
-            2069.0
+            3006.0,
+            923.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2595,8 +2448,8 @@
             "operation": 10.0
           },
           "position": [
-            3426.0,
-            2502.0
+            3006.0,
+            1356.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2606,8 +2459,8 @@
           "label": "Next Simulation State",
           "parameters": {},
           "position": [
-            3824.0,
-            2428.0
+            3404.0,
+            1282.0
           ],
           "type": "simulation_next_state",
           "typeVersion": 1
@@ -2619,8 +2472,8 @@
             "key": "image"
           },
           "position": [
-            4222.0,
-            2428.0
+            3802.0,
+            1282.0
           ],
           "type": "subgraph_output",
           "typeVersion": 1
@@ -2632,8 +2485,8 @@
             "key": "a"
           },
           "position": [
-            4222.0,
-            2575.0
+            3802.0,
+            1429.0
           ],
           "type": "subgraph_output",
           "typeVersion": 1
@@ -2645,10 +2498,47 @@
             "key": "b"
           },
           "position": [
-            4222.0,
-            2722.0
+            3802.0,
+            1576.0
           ],
           "type": "subgraph_output",
+          "typeVersion": 1
+        },
+        {
+          "id": 54,
+          "parameters": {
+            "operation": 23
+          },
+          "position": [
+            618.0,
+            2433.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 55,
+          "parameters": {
+            "x": 0.5,
+            "y": 0.5
+          },
+          "position": [
+            291.0,
+            2622.0
+          ],
+          "type": "vector",
+          "typeVersion": 1
+        },
+        {
+          "id": 56,
+          "parameters": {
+            "threshold": 0.44999998807907104
+          },
+          "position": [
+            1016.0,
+            2422.0
+          ],
+          "type": "threshold",
           "typeVersion": 1
         }
       ],

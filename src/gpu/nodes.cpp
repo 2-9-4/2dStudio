@@ -275,8 +275,9 @@ class CoordinatesNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() {
         auto result = NodeDescriptor{"coordinates", 1, "Canvas Coordinates", "Input",
-                {{"x", "X", ValueType::AnyNumeric, SocketDirection::Output},
-                 {"y", "Y", ValueType::AnyNumeric, SocketDirection::Output}}, {}};
+                {{"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Output}},
+                {{"pixels", "Pixels", 0.0F, 0.0F, 1.0F,
+                  ParameterDescriptor::Control::Boolean}}};
         result.lowerable = true;
         result.producedField = true;
         return result;
@@ -285,9 +286,13 @@ public:
         static const auto value = describe();
         return value;
     }
+    std::string shaderVariantKey(const nlohmann::json& parameters) const override {
+        return "pixels=" + std::to_string(parameter(parameters, "pixels", 0.0F) > 0.5F);
+    }
     bool lowerShader(ShaderLoweringContext& context) const override {
-        (void)context.emitTyped("uv.x", ShaderValueType::Scalar, "x");
-        (void)context.emitTyped("uv.y", ShaderValueType::Scalar, "y");
+        const bool pixels = parameter(parameters_, "pixels", 0.0F) > 0.5F;
+        (void)context.emitTyped(pixels ? "uv/pixelSize" : "uv", ShaderValueType::Vec2,
+                                "coordinates");
         return true;
     }
 };

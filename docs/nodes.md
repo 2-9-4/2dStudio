@@ -20,8 +20,8 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **Float** (`float`) — Outputs a constant scalar value.
 - **Time** (`time`) — Outputs elapsed time and frame delta, both multiplied by `Speed`.
   This is the usual source for time-based animation.
-- **Canvas Coordinates** (`coordinates`) — Outputs normalized canvas X and Y coordinate
-  images, ranging across the rendered canvas.
+- **Canvas Coordinates** (`coordinates`) — Outputs one Vector Field containing normalized XY
+  canvas coordinates. Enable **Pixels** to output pixel-center coordinates instead.
 
 ### Generators
 
