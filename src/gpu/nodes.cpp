@@ -144,7 +144,16 @@ vec4 applyOp(vec4 a,vec4 b,vec4 c){
  if(operation==4)return safePow(a,b);if(operation==5)return min(a,b);if(operation==6)return max(a,b);
  if(operation==7)return abs(a);if(operation==8)return sin(a);if(operation==9)return cos(a);
  if(operation==10)return clamp(a,b,c);
- return mix(vec4(remapRange.z),vec4(remapRange.w),clamp((a-vec4(remapRange.x))/max(remapRange.y-remapRange.x,1e-6),0.0,1.0));
+ if(operation==11)return mix(vec4(remapRange.z),vec4(remapRange.w),clamp((a-vec4(remapRange.x))/max(remapRange.y-remapRange.x,1e-6),0.0,1.0));
+ if(operation==12)return floor(a);if(operation==13)return ceil(a);if(operation==14)return round(a);
+ if(operation==15)return fract(a);if(operation==16)return sqrt(max(a,vec4(0.0)));
+ if(operation==17)return exp(a);if(operation==18)return log(max(a,vec4(1e-6)));if(operation==19)return log2(max(a,vec4(1e-6)));
+ if(operation==20)return sign(a);if(operation==21)return tan(a);
+ if(operation==22)return asin(clamp(a,vec4(-1.0),vec4(1.0)));if(operation==23)return acos(clamp(a,vec4(-1.0),vec4(1.0)));
+ if(operation==24)return atan(a);if(operation==25)return mod(a,b);if(operation==26)return atan(a,b);
+ if(operation==27)return step(a,b);if(operation==28)return sqrt(a*a+b*b);
+ if(operation==29){vec4 t=clamp((a-b)/max(c-b,vec4(1e-6)),0.0,1.0);return t*t*(3.0-2.0*t);}
+ return a*b+c;
 }
 void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(outputImage);if(any(greaterThanEqual(p,s)))return;vec2 uv=(vec2(p)+.5)/vec2(s);
  vec4 a=hasA!=0?texture(imageA,uv):scalarA,b=hasB!=0?texture(imageB,uv):scalarB,c=hasC!=0?texture(imageC,uv):scalarC;
@@ -158,9 +167,13 @@ public:
              {"b", "B", ValueType::AnyNumeric, SocketDirection::Input, true},
              {"c", "C", ValueType::AnyNumeric, SocketDirection::Input, true},
              {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
-            {{"operation", "Operation", 0, 0, 11, ParameterDescriptor::Control::Enum,
+            {{"operation", "Operation", 0, 0, 30, ParameterDescriptor::Control::Enum,
               {"Add", "Subtract", "Multiply", "Divide", "Power", "Minimum",
-               "Maximum", "Absolute", "Sine", "Cosine", "Clamp", "Remap"}},
+               "Maximum", "Absolute", "Sine", "Cosine", "Clamp", "Remap",
+               "Floor", "Ceil", "Round", "Fraction", "Square Root", "Exp",
+               "Natural Log", "Log2", "Sign", "Tangent", "Arc Sine", "Arc Cosine",
+               "Arc Tangent", "Modulo", "Arc Tangent 2", "Step", "Hypotenuse",
+               "Smoothstep", "Multiply Accumulate"}},
              {"a", "A", 0, -10, 10}, {"b", "B", 0, -10, 10},
              {"c", "C", 1, -10, 10}, {"inMin", "Input Min", 0, -10, 10}, {"inMax", "Input Max", 1, -10, 10},
              {"outMin", "Output Min", 0, -10, 10}, {"outMax", "Output Max", 1, -10, 10}}};

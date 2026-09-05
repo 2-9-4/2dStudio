@@ -98,10 +98,6 @@ if(REACTION_BUILD_APP)
         ${portable_file_dialogs_SOURCE_DIR})
     target_link_libraries(reaction_studio PRIVATE reaction_core reaction_gpu reaction_imgui)
     target_compile_options(reaction_studio PRIVATE -Wall -Wextra -Wpedantic)
-    add_custom_command(TARGET reaction_studio POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_CURRENT_SOURCE_DIR}/shaders
-            $<TARGET_FILE_DIR:reaction_studio>/shaders)
 endif()
 
 if(REACTION_BUILD_TESTS)

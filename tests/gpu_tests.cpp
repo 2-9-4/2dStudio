@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <png.h>
 
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -749,7 +750,7 @@ TEST_CASE("generated Math chain matches legacy execution and materializes previe
 TEST_CASE("every generated Math operation compiles and agrees with legacy pixels") {
     HiddenContext context;
     NodeRegistry registry; registerBuiltInNodes(registry);
-    for (int operation = 0; operation < 12; ++operation) {
+    for (int operation = 0; operation < static_cast<int>(kMathOperationNames.size()); ++operation) {
         Graph graph; graph.settings = {8, 8, 60};
         const auto coordinates = graph.addNode("coordinates");
         const auto math = graph.addNode("math");
@@ -1126,6 +1127,86 @@ TEST_CASE("discrete reaction stays within twice monolithic GPU time") {
     INFO("monolithic median=" << baseline << " ms, discrete median=" << median(discreteTimes) << " ms");
     REQUIRE(baseline > 0.0);
     REQUIRE(median(discreteTimes) <= baseline * 2.0);
+}
+
+TEST_CASE("color ramp factor fed by a field generator fuses and agrees with legacy") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {8, 1, 60};
+    const auto gradient = graph.addNode("gradient");
+    const auto ramp = graph.addNode("color_ramp");
+    graph.addLink(gradient, "value", ramp, "value");
+    GpuRuntime gpu;
+    GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    const auto fused = readImage(std::get<ImageHandle>(runtime.values().at(ramp).front()));
+    REQUIRE(runtime.generatedShaders().size() == 1);
+    REQUIRE(runtime.generatedShaders().front().mode == GeneratedExecutionMode::Generated);
+    const auto generatedInfo = runtime.generatedShaders().front();
+    const auto& inputs = generatedInfo.shader.inputs;
+    REQUIRE(inputs.size() == 9);
+    REQUIRE(inputs.front().kind == ShaderInputKind::Flexible);
+    REQUIRE(runtime.fusionInfo(ramp)->mode == GeneratedExecutionMode::Generated);
+    // A fixed image fed through fusion would flatten the ramp to its end color;
+    // the field must instead drive the interpolation.
+    REQUIRE_FALSE(fused[0] == fused[7 * 4]);
+    REQUIRE(fused[0] == Catch::Approx(0.015F).margin(.002F));
+    REQUIRE(fused[7 * 4] == Catch::Approx(1.0F).margin(.002F));
+    runtime.setFusionEnabled(false);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    const auto legacy = readImage(std::get<ImageHandle>(runtime.values().at(ramp).front()));
+    REQUIRE(fused.size() == legacy.size());
+    for (std::size_t index = 0; index < fused.size(); ++index)
+        REQUIRE(fused[index] == Catch::Approx(legacy[index]).margin(.002F));
+}
+
+TEST_CASE("text_test fusion matches legacy", "[.][text-test]") {
+    HiddenContext context;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto source = std::filesystem::current_path() / "text_test";
+    if (!std::filesystem::exists(source)) {
+        WARN("text_test project not found in " << std::filesystem::current_path());
+        return;
+    }
+
+    GpuRuntime gpuA; GpuRuntime gpuB;
+    auto graphA = loadProject(source, registry);
+    auto graphB = loadProject(source, registry);
+    if (graphA.nodes().empty()) { FAIL("text_test failed to load"); return; }
+    GraphRuntime runtimeA(graphA, registry, gpuA);
+    runtimeA.setFusionEnabled(true);
+    GraphRuntime runtimeB(graphB, registry, gpuB);
+    runtimeB.setFusionEnabled(false);
+
+    double time = 0.0;
+    for (int frame = 0; frame < 5; ++frame) {
+        REQUIRE(runtimeA.evaluate(time, 1.0 / 31.0, false));
+        REQUIRE(runtimeB.evaluate(time, 1.0 / 31.0, false));
+        time += 1.0 / 31.0;
+    }
+
+    const auto outA = runtimeA.outputImage();
+    const auto outB = runtimeB.outputImage();
+    REQUIRE(outA.texture != 0);
+    REQUIRE(outB.texture != 0);
+    INFO("sizeA=" << outA.width << "x" << outA.height
+         << " sizeB=" << outB.width << "x" << outB.height);
+    const auto pixelsA = readImage(outA);
+    const auto pixelsB = readImage(outB);
+    REQUIRE(pixelsA.size() == pixelsB.size());
+
+    std::size_t differing = 0;
+    float maxError = 0.0F;
+    for (std::size_t index = 0; index < pixelsA.size(); ++index) {
+        const float error = std::fabs(pixelsA[index] - pixelsB[index]);
+        maxError = std::max(maxError, error);
+        if (error > 1e-4F) ++differing;
+    }
+    // Fused execution must reproduce the native (fusion-off) result exactly room
+    // for room. The mix node here is fed by AnyVector field producers
+    // (transform_2d coordinates, worley featurePosition); without FlexibleVector
+    // lowering these fused inputs regress to constant fallbacks.
+    REQUIRE(differing == 0);
 }
 
 } // namespace reaction

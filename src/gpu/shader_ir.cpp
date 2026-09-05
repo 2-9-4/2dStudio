@@ -46,9 +46,10 @@ const LinkRecord* inputLink(const Graph& graph, NodeId node, std::string_view so
 
 class RegionBuilder final : public ShaderLoweringContext {
 public:
-    RegionBuilder(const Graph& graph, const CompileResult& compiled,
-                  const std::vector<NodeId>& nodes)
-        : graph_(graph), compiled_(compiled), regionNodes_(nodes.begin(), nodes.end()) {}
+    RegionBuilder(const Graph& graph, const NodeRegistry& registry,
+                  const CompileResult& compiled, const std::vector<NodeId>& nodes)
+        : graph_(graph), registry_(registry), compiled_(compiled),
+          regionNodes_(nodes.begin(), nodes.end()) {}
 
     ShaderRegion build(const NodeRegistry& registry, const std::vector<NodeId>& nodes) {
         ShaderRegion result;
@@ -104,15 +105,42 @@ public:
         if (link) {
             const bool image = compiled_.inferredOutputs.contains(link->fromNode) &&
                                compiled_.inferredOutputs.at(link->fromNode) == ValueType::Image2D;
-            const std::string key = std::string(image ? "image:" : "scalar:") +
+            // AnyNumeric/AnyVector upstream values broadcast as either a constant
+            // or a field image. A fused region cannot know which at lowering time,
+            // so it must be able to read the value both ways; native evaluation
+            // supplies a field image for these producers whenever their inputs are
+            // fields.
+            const bool flexible =
+                !image && anySourceOutput(link->fromNode, link->fromSocket,
+                                          ValueType::AnyNumeric);
+            const bool flexibleVector =
+                !image && !flexible &&
+                anySourceOutput(link->fromNode, link->fromSocket, ValueType::AnyVector);
+            const std::string key =
+                std::string(image ? "image:" : flexible ? "flex:" :
+                              flexibleVector ? "flexv:" : "scalar:") +
                 std::to_string(link->fromNode) + ":" + link->fromSocket;
             const auto required = requireInput(
-                key, image ? ShaderInputKind::Image : ShaderInputKind::Scalar,
+                key, image ? ShaderInputKind::Image
+                           : flexible ? ShaderInputKind::Flexible
+                                      : flexibleVector ? ShaderInputKind::FlexibleVector
+                                                       : ShaderInputKind::Scalar,
                 link->fromNode, link->fromSocket, 0, {}, fallback);
-            if (image && uvExpression != "uv")
-                return {ShaderValueType::Vec4, "texture(" +
-                    region_->inputs[requirements_.at(key)].uniformName + ",fract(" +
-                    std::string(uvExpression) + "))"};
+            if (uvExpression != "uv") {
+                const auto& input = region_->inputs[requirements_.at(key)];
+                if (input.kind == ShaderInputKind::Image)
+                    return {ShaderValueType::Vec4, "texture(" + input.uniformName + ",fract(" +
+                        std::string(uvExpression) + "))"};
+                if (input.kind == ShaderInputKind::Flexible)
+                    return {ShaderValueType::Scalar, "(" + input.hasImageUniformName +
+                        "!=0?texture(" + input.uniformName + ",fract(" +
+                        std::string(uvExpression) + ")).r:" + input.scalarUniformName + ")"};
+                if (input.kind == ShaderInputKind::FlexibleVector)
+                    return {ShaderValueType::Vec4, "vec4((" + input.hasImageUniformName +
+                        "!=0?texture(" + input.uniformName + ",fract(" +
+                        std::string(uvExpression) + ")).rg:" + input.vectorUniformName +
+                        "),0.0,1.0)"};
+            }
             return required;
         }
         const std::string key = "parameter:" + std::to_string(currentNode_->id) + ":" +
@@ -190,25 +218,56 @@ private:
         if (const auto found = requirements_.find(key); found != requirements_.end())
             return region_->inputs[found->second].value;
         const auto index = region_->inputs.size();
-        const std::string uniform = kind == ShaderInputKind::Image
-            ? "inputImage_" + std::to_string(index)
-            : "inputScalar_" + std::to_string(index);
+        const std::string suffix = std::to_string(index);
         ShaderValue value{kind == ShaderInputKind::Image ? ShaderValueType::Vec4
                                                         : ShaderValueType::Scalar,
-                          kind == ShaderInputKind::Image
-                              ? "sample_" + std::to_string(index) : uniform};
-        const int binding = kind == ShaderInputKind::Image
+                          kind == ShaderInputKind::Image ? "sample_" + suffix
+                                                         : "inputScalar_" + suffix};
+        const int binding = kind == ShaderInputKind::Image ||
+                            kind == ShaderInputKind::Flexible ||
+                            kind == ShaderInputKind::FlexibleVector
             ? static_cast<int>(std::ranges::count_if(region_->inputs, [](const auto& input) {
-                  return input.kind == ShaderInputKind::Image;
+                  return input.kind == ShaderInputKind::Image ||
+                         input.kind == ShaderInputKind::Flexible ||
+                         input.kind == ShaderInputKind::FlexibleVector;
               })) : -1;
+        ShaderInputRequirement requirement{kind, key,
+            kind == ShaderInputKind::Image ? "inputImage_" + suffix : "inputScalar_" + suffix,
+            binding, sourceNode, std::move(sourceSocket), parameterNode,
+            std::move(parameterKey), fallback, value};
+        if (kind == ShaderInputKind::Flexible) {
+            requirement.uniformName = "inputImage_" + suffix;
+            requirement.value.name = "inputFlex_" + suffix;
+            requirement.scalarUniformName = "inputScalar_" + suffix;
+            requirement.hasImageUniformName = "inputHasImage_" + suffix;
+            value.name = requirement.value.name;
+        }
+        if (kind == ShaderInputKind::FlexibleVector) {
+            requirement.uniformName = "inputImage_" + suffix;
+            requirement.value.name = "inputFlexVec_" + suffix;
+            requirement.vectorUniformName = "inputVec_" + suffix;
+            requirement.hasImageUniformName = "inputHasImage_" + suffix;
+            value = {ShaderValueType::Vec4, requirement.value.name};
+        }
         requirements_[key] = index;
-        region_->inputs.push_back(ShaderInputRequirement{kind, key, uniform, binding,
-            sourceNode, std::move(sourceSocket), parameterNode, std::move(parameterKey),
-            fallback, value});
+        region_->inputs.push_back(std::move(requirement));
         return value;
     }
 
+    bool anySourceOutput(NodeId node, std::string_view socket, ValueType type) const {
+        const auto* record = graph_.findNode(node);
+        if (!record) return false;
+        NodeDescriptor storage;
+        const auto* descriptor = resolveDescriptor(graph_, *record, registry_, storage);
+        if (!descriptor) return false;
+        for (const auto& port : descriptor->sockets)
+            if (port.direction == SocketDirection::Output && port.key == socket)
+                return port.type == type;
+        return false;
+    }
+
     const Graph& graph_;
+    const NodeRegistry& registry_;
     const CompileResult& compiled_;
     std::unordered_set<NodeId> regionNodes_;
     ShaderRegion* region_ = nullptr;
@@ -222,19 +281,23 @@ private:
 
 ShaderRegion lowerRegion(const Graph& graph, const NodeRegistry& registry,
                          const CompileResult& compiled, const std::vector<NodeId>& nodes) {
-    RegionBuilder builder(graph, compiled, nodes);
+    RegionBuilder builder(graph, registry, compiled, nodes);
     return builder.build(registry, nodes);
 }
 
 int imageInputCount(const ShaderRegion& region) {
     return static_cast<int>(std::ranges::count_if(region.inputs, [](const auto& input) {
-        return input.kind == ShaderInputKind::Image;
+        return input.kind == ShaderInputKind::Image ||
+               input.kind == ShaderInputKind::Flexible ||
+               input.kind == ShaderInputKind::FlexibleVector;
     }));
 }
 
 int scalarInputCount(const ShaderRegion& region) {
     return static_cast<int>(std::ranges::count_if(region.inputs, [](const auto& input) {
-        return input.kind == ShaderInputKind::Scalar;
+        return input.kind == ShaderInputKind::Scalar ||
+               input.kind == ShaderInputKind::Flexible ||
+               input.kind == ShaderInputKind::FlexibleVector;
     }));
 }
 
@@ -277,6 +340,38 @@ std::string mathGlslExpression(MathOperation operation,
                ",clamp((" + a + "-" + convert(remap.at(0)) + ")/max(" +
                convert(remap.at(1)) + "-" + convert(remap.at(0)) + "," +
                scalar("1e-6") + ")," + scalar("0.0") + "," + scalar("1.0") + "))";
+    case MathOperation::Floor: return "floor(" + a + ")";
+    case MathOperation::Ceil: return "ceil(" + a + ")";
+    case MathOperation::Round: return "round(" + a + ")";
+    case MathOperation::Fraction: return "fract(" + a + ")";
+    case MathOperation::SquareRoot: return "sqrt(max(" + a + "," + scalar("0.0") + "))";
+    case MathOperation::Exp: return "exp(" + a + ")";
+    case MathOperation::NaturalLog: return "log(max(" + a + "," + scalar("1e-6") + "))";
+    case MathOperation::Log2: return "log2(max(" + a + "," + scalar("1e-6") + "))";
+    case MathOperation::Sign: return "sign(" + a + ")";
+    case MathOperation::Tangent: return "tan(" + a + ")";
+    case MathOperation::ArcSine:
+        return "asin(clamp(" + a + "," + scalar("-1.0") + "," + scalar("1.0") + "))";
+    case MathOperation::ArcCosine:
+        return "acos(clamp(" + a + "," + scalar("-1.0") + "," + scalar("1.0") + "))";
+    case MathOperation::ArcTangent: return "atan(" + a + ")";
+    case MathOperation::Modulo: return "mod(" + a + "," + convert(operands.at(1)) + ")";
+    case MathOperation::ArcTangent2: return "atan(" + a + "," + convert(operands.at(1)) + ")";
+    case MathOperation::Step: return "step(" + a + "," + convert(operands.at(1)) + ")";
+    case MathOperation::Hypotenuse: {
+        const auto b = convert(operands.at(1));
+        return "sqrt((" + a + ")*(" + a + ")+(" + b + ")*(" + b + "))";
+    }
+    case MathOperation::Smoothstep: {
+        const auto b = convert(operands.at(1));
+        const auto c = convert(operands.at(2));
+        const auto t = "clamp((" + a + "-" + b + ")/max(" + c + "-" + b + "," +
+                       scalar("1e-6") + ")," + scalar("0.0") + "," + scalar("1.0") + ")";
+        return "(" + t + "*" + t + "*(3.0-2.0*" + t + "))";
+    }
+    case MathOperation::MultiplyAccumulate:
+        return "(" + a + "*" + convert(operands.at(1)) + "+" +
+               convert(operands.at(2)) + ")";
     }
     return a;
 }
@@ -391,6 +486,18 @@ GeneratedShader generateComputeShader(const ShaderRegion& region,
         if (input.kind == ShaderInputKind::Image)
             append("layout(binding=" + std::to_string(input.binding) + ") uniform sampler2D " +
                    input.uniformName + ";");
+        else if (input.kind == ShaderInputKind::Flexible) {
+            append("layout(binding=" + std::to_string(input.binding) + ") uniform sampler2D " +
+                   input.uniformName + ";");
+            append("uniform float " + input.scalarUniformName + ";");
+            append("uniform int " + input.hasImageUniformName + ";");
+        }
+        else if (input.kind == ShaderInputKind::FlexibleVector) {
+            append("layout(binding=" + std::to_string(input.binding) + ") uniform sampler2D " +
+                   input.uniformName + ";");
+            append("uniform vec2 " + input.vectorUniformName + ";");
+            append("uniform int " + input.hasImageUniformName + ";");
+        }
         else append("uniform float " + input.uniformName + ";");
     }
     append("vec2 pixelSize;");
@@ -408,6 +515,14 @@ GeneratedShader generateComputeShader(const ShaderRegion& region,
         const auto& input = generated.inputs[index];
         if (input.kind == ShaderInputKind::Image)
             append("    vec4 " + input.value.name + "=texture(" + input.uniformName + ",uv);");
+        else if (input.kind == ShaderInputKind::Flexible)
+            append("    float " + input.value.name + "=(" + input.hasImageUniformName +
+                   "!=0?texture(" + input.uniformName + ",uv).r:" +
+                   input.scalarUniformName + ");");
+        else if (input.kind == ShaderInputKind::FlexibleVector)
+            append("    vec4 " + input.value.name + "=vec4((" + input.hasImageUniformName +
+                   "!=0?texture(" + input.uniformName + ",uv).rg:" +
+                   input.vectorUniformName + "),0.0,1.0);");
     }
     for (const auto& instruction : region.instructions) {
         const auto first = lines.size() + 1;

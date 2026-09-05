@@ -616,7 +616,9 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                 }
                 glUseProgram(region.program);
                 for (const auto& input : region.generated.inputs) {
-                    if (input.kind == ShaderInputKind::Image) {
+                    if (input.kind == ShaderInputKind::Image ||
+                        input.kind == ShaderInputKind::Flexible ||
+                        input.kind == ShaderInputKind::FlexibleVector) {
                         const auto value = outputValue(graph_, registry_, values_,
                                                        input.sourceNode, input.sourceSocket);
                         const auto* image = std::get_if<ImageHandle>(&value);
@@ -626,6 +628,29 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                         }
                         glUniform1i(glGetUniformLocation(region.program, input.uniformName.c_str()),
                                     input.binding);
+                        const bool hasImage = image && *image;
+                        if (input.kind == ShaderInputKind::Flexible) {
+                            glUniform1i(glGetUniformLocation(region.program,
+                                        input.hasImageUniformName.c_str()), hasImage ? 1 : 0);
+                            float scalar = input.fallback;
+                            if (!hasImage) {
+                                if (input.sourceNode != 0) {
+                                    if (const auto* number = std::get_if<float>(&value))
+                                        scalar = *number;
+                                } else scalar = shaderParameter(graph_, input);
+                            }
+                            glUniform1f(glGetUniformLocation(region.program,
+                                       input.scalarUniformName.c_str()), scalar);
+                        } else if (input.kind == ShaderInputKind::FlexibleVector) {
+                            glUniform1i(glGetUniformLocation(region.program,
+                                        input.hasImageUniformName.c_str()), hasImage ? 1 : 0);
+                            Vec2 vector = {};
+                            if (!hasImage && input.sourceNode != 0) {
+                                if (const auto* pair = std::get_if<Vec2>(&value)) vector = *pair;
+                            }
+                            glUniform2f(glGetUniformLocation(region.program,
+                                       input.vectorUniformName.c_str()), vector.x, vector.y);
+                        }
                     } else {
                         float value = input.fallback;
                         if (input.sourceNode != 0) {

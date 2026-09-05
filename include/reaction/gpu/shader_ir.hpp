@@ -11,7 +11,7 @@
 namespace reaction {
 
 enum class ShaderValueType { Scalar, Vec2, Vec4 };
-enum class ShaderInputKind { Image, Scalar };
+enum class ShaderInputKind { Image, Scalar, Flexible, FlexibleVector };
 
 struct ShaderValue {
     ShaderValueType type = ShaderValueType::Vec4;
@@ -29,6 +29,13 @@ struct ShaderInputRequirement {
     std::string parameterKey;
     float fallback = 0.0F;
     ShaderValue value;
+    // Flexible inputs carry a sampler plus a broadcast scalar and select which one
+    // is live at dispatch time with a has-image flag.
+    std::string scalarUniformName;
+    std::string hasImageUniformName;
+    // FlexibleVector inputs carry a sampler plus a vec2 constant and select which
+    // one is live at dispatch time with a has-image flag.
+    std::string vectorUniformName;
 };
 
 struct ShaderInstruction {
