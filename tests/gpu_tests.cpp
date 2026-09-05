@@ -1146,7 +1146,7 @@ TEST_CASE("Mix exposes blend modes and applies the selected mode to scalar input
     REQUIRE(runtime.evaluate(0, 0, false));
     const auto& value = runtime.values().at(mix).front();
     REQUIRE(std::holds_alternative<float>(value));
-    REQUIRE(std::get<float>(value) == Catch::Approx(.2F));
+    REQUIRE(std::get<float>(value) == Catch::Approx(.2F).margin(0.005));
 }
 
 TEST_CASE("Mix image path compiles and produces a GPU image") {

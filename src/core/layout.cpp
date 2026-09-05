@@ -85,6 +85,22 @@ void layoutGraph(GraphBody& body, const std::unordered_map<NodeId, Vec2>* nodeSi
     for (const auto& node : body.nodes())
         if (predecessors[node.id].empty() && successors[node.id].empty())
             layer[node.id] = 0;
+    // When a source feeds a consumer that also has a non-source single-consumer
+    // input in the same column, that column cannot host both of them on the
+    // consumer's row. Relocate the source to the leftmost column so the
+    // non-source chain node can sit exactly behind the consumer.
+    for (const auto& node : body.nodes()) {
+        if (!predecessors[node.id].empty() || successors[node.id].size() != 1) continue;
+        bool competed = false;
+        for (const auto p : predecessors[successors[node.id].front()]) {
+            if (p == node.id) continue;
+            if (predecessors[p].empty()) continue;
+            if (successors[p].size() != 1 || layer[p] != layer[node.id]) continue;
+            competed = true;
+            break;
+        }
+        if (competed) layer[node.id] = 0;
+    }
 
     // Depth from the nearest source: identifies a node's longest-running input
     // line so short side inputs don't drag a chain off its lane.
@@ -267,6 +283,32 @@ void layoutGraph(GraphBody& body, const std::unordered_map<NodeId, Vec2>* nodeSi
         }
         for (const auto id : comp) centerY[id] += stackOffset - compTop;
         stackOffset += (compBottom - compTop) + kRowGap * 2.0F;
+    }
+
+    // Snap pass: a node that feeds exactly one consumer moves onto that
+    // consumer's row when the row is free in the node's own column, so chains
+    // hug their downstream node instead of drifting onto a fresh row.
+    for (int l = minLayer; l <= maxLayer; ++l) {
+        for (const auto id : byLayer[l]) {
+            if (successors[id].size() != 1) continue;
+            const auto succ = successors[id].front();
+            if (layer[succ] == l) continue;
+            const float targetRow = centerY[succ];
+            bool free = true;
+            for (const auto other : byLayer[l]) {
+                if (other == id) continue;
+                if (componentOf[other] != componentOf[id]) continue;
+                const float otherTop = centerY[other] - size[other].y * 0.5F;
+                const float otherBottom = otherTop + size[other].y;
+                const float idTop = targetRow - size[id].y * 0.5F;
+                const float idBottom = idTop + size[id].y;
+                if (idTop < otherBottom + kRowGap && idBottom > otherTop - kRowGap) {
+                    free = false;
+                    break;
+                }
+            }
+            if (free) centerY[id] = targetRow;
+        }
     }
 
     for (auto& node : body.nodes()) {

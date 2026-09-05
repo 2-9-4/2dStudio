@@ -20,7 +20,7 @@ using node_support::uniform;
 std::string offsetTexel(const std::string& base, int x, int y) {
     return base + "-ivec2(" + std::to_string(x) + "," + std::to_string(y) + ")";
 }
-constexpr int kMaximumKernelSize = 15;
+constexpr int kMaximumKernelSize = 101;
 
 struct ConvolutionSpec {
     int operation = 0;

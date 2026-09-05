@@ -908,7 +908,7 @@
       "id": 49,
       "parameters": {
         "addressMode": 1.0,
-        "sampling": 0.0
+        "sampling": 1.0
       },
       "position": [
         6539.0,
@@ -944,7 +944,7 @@
     {
       "id": 83,
       "parameters": {
-        "octaves": 8.0,
+        "octaves": 5.0,
         "persistence": 0.5860000252723694,
         "scale": 3.648200035095215,
         "seed": 5437.0,

@@ -13,6 +13,38 @@ NOT USED YET
 * **Particle Buffer** — persistent collection of particles containing at minimum position, velocity, age, lifetime, and ID. Proposed new graph/state type.
 * **Histogram** — fixed-size array of scalar bin counts. Proposed auxiliary type for analysis nodes.
 
+## Socket colors and type indicators
+
+Every input and output pin renders one small filled square per concrete type it accepts, using the
+per-type color below. A union socket (Numeric / Vector Numeric) renders one square per member so
+the acceptable inputs are visible at a glance; a single-type socket renders exactly one square.
+
+| ValueType | Accepts | Square color | Tooltip |
+|---|---|---|---|
+| `Float` | Float | blue | `Float — Input` / `Output` |
+| `Vec2` | Float2 / Vector | teal | `Float2 / Vector — Input` / `Output` |
+| `Image2D` | per-pixel field | amber | `Image (per-pixel) — Input` / `Output` |
+| `AnyNumeric` | Float, per-pixel field | blue + amber | `Float \| Image (per-pixel) — Input` |
+| `AnyVector` | Float, Float2 / Vector, per-pixel field | blue + teal + amber | `Float \| Float2 / Vector \| Image (per-pixel) — Input` |
+
+Hovering a pin shows its accepted types plus direction; hovering a wire shows the type it carries.
+`Image2D` is the GPU storage type for every per-pixel value: a socket's contract gives it meaning
+(scalar field = R, vector field = RG, color = RGBA), so all three share the amber color and the
+"per-pixel" tooltip wording.
+
+### Materialized outputs and wires
+
+An **output pin or wire whose concrete type is known** collapses to that single type: one square in
+the resolved color, a label in the resolved color, and a tooltip naming exactly that type. The root
+canvas first looks up the runtime's evaluated value for the output (Float / Float2 / Image), so
+anything that has actually run states its result with certainty; when a node has not run yet it
+falls back to the promotion rules below. Subgraph body nodes resolve by promotion only (their
+body-local ids cannot be correlated with root runtime values).
+
+Union outputs still show the full accept set while their type is undetermined. When the strong
+`Image2D` subtyping the roadmap calls for arrives, these resolved lookups gain a fourth concrete
+type and the promotion rules extend to it unchanged.
+
 ## Type aliases
 
 **Numeric**
@@ -94,3 +126,24 @@ single-precision values represent every integer through `2^24` exactly. It clamp
 mask to zero and returns zero for an invalid bit index before shifting.
 
 ---
+## Auto-layout
+
+`layoutGraph` (`src/core/layout.cpp`) is a deterministic layered left-to-right pass:
+
+- A node's column is `globalDepth - sinkDepth` (how many edge-hops separate it from the
+  nearest downstream sink). A true source that drives a merge from the same column as a
+  non-source single-consumer chain node is relocated to column 0 so that one of the two can
+  sit exactly on the consumer's row.
+- Forward placement: a node with exactly one consumer follows its longest dedicated input
+  line; a junction averages its inputs' rows; sources spread symmetrically; then each column
+  is compacted by a cursor over target-sorted nodes.
+- Snap pass: any node feeding a single consumer moves onto that consumer's row when that row
+  is free in the node's own column (overlap-checked against every node in the column, same
+  component only, `kRowGap` effective spacing). Chains thus hug their downstream node.
+- Hard limit: two single-consumer nodes in the same column can never both sit on their shared
+  consumer's row; only relocating one to its own column (and only if that row is free there)
+  fixes it. Dense graphs necessarily leave such merges one row off. Do not try to force this
+  with an iterative solver — relaxation versions diverge or regress already-aligned junctions.
+
+The auto-layout test contract lives in `tests/core_tests.cpp` (cases around lines 688-760):
+chain collinearity, merge-at-average, disjoint components, single-consumer-through-merge snap.

@@ -38,6 +38,36 @@ inline std::string toString(ValueType type) {
     return "unknown";
 }
 
+// The concrete graph types a socket accepts, used to render one colored square
+// per accept type. Union sockets (AnyNumeric/AnyVector) expand to their members
+// so the UI can show every acceptable connection kind.
+inline std::pair<const ValueType*, std::size_t> acceptedTypes(ValueType type) {
+    switch (type) {
+    case ValueType::Float: {
+        static constexpr ValueType accepted[]{ValueType::Float};
+        return {accepted, 1};
+    }
+    case ValueType::Vec2: {
+        static constexpr ValueType accepted[]{ValueType::Vec2};
+        return {accepted, 1};
+    }
+    case ValueType::Image2D: {
+        static constexpr ValueType accepted[]{ValueType::Image2D};
+        return {accepted, 1};
+    }
+    case ValueType::AnyNumeric: {
+        static constexpr ValueType accepted[]{ValueType::Float, ValueType::Image2D};
+        return {accepted, 2};
+    }
+    case ValueType::AnyVector: {
+        static constexpr ValueType accepted[]{ValueType::Float, ValueType::Vec2,
+                                              ValueType::Image2D};
+        return {accepted, 3};
+    }
+    }
+    return {nullptr, 0};
+}
+
 // Image2D is the GPU storage type for every per-pixel value. A socket's
 // contract gives it meaning: Numeric image data is a scalar field (R), Vector
 // Numeric image data is a vector field (RG), and color data uses RGBA. Keeping
