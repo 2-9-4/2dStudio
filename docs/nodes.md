@@ -18,6 +18,8 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **Image** (`image`) — Loads a PNG file and outputs it as an image. An empty or invalid
   path produces no image.
 - **Float** (`float`) — Outputs a constant scalar value.
+- **Resolution** (`resolution`) — Outputs render `Resolution` (width, height) in pixels,
+  normalized `Pixel Size` (1/width, 1/height), and scalar `Aspect Ratio` (width/height).
 - **Time** (`time`) — Outputs elapsed time and frame delta, both multiplied by `Speed`.
   This is the usual source for time-based animation.
 - **Canvas Coordinates** (`coordinates`) — Outputs one Vector Field containing normalized XY

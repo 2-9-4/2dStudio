@@ -128,6 +128,28 @@ public:
     }
 };
 
+class ResolutionNode final : public ParameterNode {
+public:
+    static NodeDescriptor describe() {
+        return {"resolution", 1, "Resolution", "Input",
+            {{"resolution", "Resolution", ValueType::Vec2, SocketDirection::Output},
+             {"pixelSize", "Pixel Size", ValueType::Vec2, SocketDirection::Output},
+             {"aspectRatio", "Aspect Ratio", ValueType::Float, SocketDirection::Output}}, {}};
+    }
+    const NodeDescriptor& descriptor() const override {
+        static const auto value = describe();
+        return value;
+    }
+    void evaluate(EvaluationContext& context, std::span<const Value>,
+                  std::span<Value> outputs) override {
+        const float width = static_cast<float>(std::max(context.width, 1));
+        const float height = static_cast<float>(std::max(context.height, 1));
+        outputs[0] = Vec2{width, height};
+        outputs[1] = Vec2{1.0F / width, 1.0F / height};
+        outputs[2] = width / height;
+    }
+};
+
 class VectorNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() {
@@ -319,6 +341,7 @@ template <typename T> void addNode(NodeRegistry& registry) {
 void registerInputNodes(NodeRegistry& registry) {
     addNode<ImageNode>(registry);
     addNode<FloatNode>(registry);
+    addNode<ResolutionNode>(registry);
     addNode<VectorNode>(registry);
     addNode<CombineVectorNode>(registry);
     addNode<SeparateVectorNode>(registry);

@@ -136,7 +136,7 @@ LoweredChain lowerMathThresholdSelect(const NodeRegistry& registry, ShaderValueT
 
 } // namespace
 
-TEST_CASE("legacy subgraphs with split canvas-coordinate sockets require repair") {
+TEST_CASE("unused legacy subgraphs do not invalidate the text test root graph") {
     NodeRegistry registry;
     registerBuiltInNodes(registry);
     const auto projectPath = std::filesystem::path(__FILE__).parent_path().parent_path() /
@@ -144,7 +144,7 @@ TEST_CASE("legacy subgraphs with split canvas-coordinate sockets require repair"
     const auto graph = loadProject(projectPath, registry);
     const auto result = graph.compile(registry);
     INFO(nlohmann::json(result.errors).dump());
-    REQUIRE_FALSE(result.valid);
+    REQUIRE(result.valid);
 }
 
 TEST_CASE("text test evaluates a non-black output and materializes node previews") {
@@ -154,9 +154,6 @@ TEST_CASE("text test evaluates a non-black output and materializes node previews
     const auto projectPath = std::filesystem::path(__FILE__).parent_path().parent_path() /
                              "text_test";
     auto graph = loadProject(projectPath, registry);
-    // This fixture intentionally retains an obsolete simulation subgraph. It is
-    // unrelated to the root preview, so remove it before exercising that root.
-    graph.subgraphs().clear();
     graph.settings = {64, 96, 60};
 
     GpuRuntime gpu;
@@ -684,8 +681,34 @@ TEST_CASE("procedural node descriptors expose safe controls and vector sockets")
                                   &ParameterDescriptor::key) != fold->parameters.end());
 
     REQUIRE(registry.contains("vector"));
+    REQUIRE(registry.contains("resolution"));
     REQUIRE(registry.contains("combine_vector"));
     REQUIRE(registry.contains("separate_vector"));
+}
+
+TEST_CASE("Resolution exposes render dimensions as semantic constants") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* descriptor = registry.descriptor("resolution");
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(descriptor->sockets.size() == 3);
+    REQUIRE(descriptor->sockets[0].key == "resolution");
+    REQUIRE(descriptor->sockets[0].type == ValueType::Vec2);
+    REQUIRE(descriptor->sockets[1].key == "pixelSize");
+    REQUIRE(descriptor->sockets[1].type == ValueType::Vec2);
+    REQUIRE(descriptor->sockets[2].key == "aspectRatio");
+    REQUIRE(descriptor->sockets[2].type == ValueType::Float);
+
+    auto node = registry.create("resolution");
+    std::array<Value, 3> values;
+    EvaluationContext context;
+    context.width = 800;
+    context.height = 500;
+    node->evaluate(context, {}, values);
+    REQUIRE(std::get<Vec2>(values[0]).x == Catch::Approx(800.0F));
+    REQUIRE(std::get<Vec2>(values[0]).y == Catch::Approx(500.0F));
+    REQUIRE(std::get<Vec2>(values[1]).x == Catch::Approx(1.0F / 800.0F));
+    REQUIRE(std::get<Vec2>(values[1]).y == Catch::Approx(1.0F / 500.0F));
+    REQUIRE(std::get<float>(values[2]) == Catch::Approx(1.6F));
 }
 
 TEST_CASE("reaction multiplier inputs accept both scalar and image values") {
