@@ -38,10 +38,11 @@ Use **Record** in the toolbar or **File → Start Video Recording…** to captur
 
 Use **Window → Shader Inspector** to inspect generated shader regions. Each node contribution
 is commented and color-coded, compiler diagnostics remain attached to the failed source,
-and **Execute fused shaders** can force the legacy path for comparison. Interior Math values
+and **Fuse lowered shader chains** can switch between fused and solo generated regions. Interior Math values
 do not normally allocate textures; use **Preview Intermediate** to temporarily materialize one.
-Inspector and execution-debug settings are session-only. If generated GLSL cannot compile,
-the affected region automatically uses the legacy per-node implementation.
+Inspector and execution-debug settings are session-only. Lowering/type errors and GLSL compiler
+errors are attached to the affected region; native evaluation remains available only for nodes
+or parameter modes that explicitly opt out of lowering.
 
 ## Current boundaries
 

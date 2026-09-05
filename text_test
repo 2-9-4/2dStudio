@@ -37,28 +37,6 @@
     },
     {
       "from": {
-        "node": 7,
-        "socket": "image"
-      },
-      "id": 65,
-      "to": {
-        "node": 24,
-        "socket": "image"
-      }
-    },
-    {
-      "from": {
-        "node": 24,
-        "socket": "image"
-      },
-      "id": 66,
-      "to": {
-        "node": 23,
-        "socket": "value"
-      }
-    },
-    {
-      "from": {
         "node": 14,
         "socket": "result"
       },
@@ -88,28 +66,6 @@
       "to": {
         "node": 5,
         "socket": "value"
-      }
-    },
-    {
-      "from": {
-        "node": 39,
-        "socket": "image"
-      },
-      "id": 115,
-      "to": {
-        "node": 40,
-        "socket": "a"
-      }
-    },
-    {
-      "from": {
-        "node": 40,
-        "socket": "result"
-      },
-      "id": 136,
-      "to": {
-        "node": 48,
-        "socket": "seed"
       }
     },
     {
@@ -158,28 +114,6 @@
     },
     {
       "from": {
-        "node": 55,
-        "socket": "coordinates"
-      },
-      "id": 179,
-      "to": {
-        "node": 49,
-        "socket": "coordinates"
-      }
-    },
-    {
-      "from": {
-        "node": 68,
-        "socket": "coordinates"
-      },
-      "id": 213,
-      "to": {
-        "node": 71,
-        "socket": "a"
-      }
-    },
-    {
-      "from": {
         "node": 44,
         "socket": "image"
       },
@@ -187,17 +121,6 @@
       "to": {
         "node": 49,
         "socket": "source"
-      }
-    },
-    {
-      "from": {
-        "node": 71,
-        "socket": "result"
-      },
-      "id": 258,
-      "to": {
-        "node": 55,
-        "socket": "coordinates"
       }
     },
     {
@@ -232,6 +155,72 @@
         "node": 71,
         "socket": "b"
       }
+    },
+    {
+      "from": {
+        "node": 84,
+        "socket": "coordinates"
+      },
+      "id": 276,
+      "to": {
+        "node": 71,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 71,
+        "socket": "result"
+      },
+      "id": 277,
+      "to": {
+        "node": 49,
+        "socket": "coordinates"
+      }
+    },
+    {
+      "from": {
+        "node": 85,
+        "socket": "image"
+      },
+      "id": 284,
+      "to": {
+        "node": 86,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 86,
+        "socket": "result"
+      },
+      "id": 285,
+      "to": {
+        "node": 48,
+        "socket": "seed"
+      }
+    },
+    {
+      "from": {
+        "node": 88,
+        "socket": "result"
+      },
+      "id": 287,
+      "to": {
+        "node": 71,
+        "socket": "factor"
+      }
+    },
+    {
+      "from": {
+        "node": 87,
+        "socket": "image"
+      },
+      "id": 288,
+      "to": {
+        "node": 88,
+        "socket": "a"
+      }
     }
   ],
   "nodes": [
@@ -246,8 +235,8 @@
         "r1": 0.14130401611328125
       },
       "position": [
-        5138.0,
-        740.0
+        5103.0,
+        225.0
       ],
       "type": "color_ramp",
       "typeVersion": 1
@@ -256,8 +245,8 @@
       "id": 4,
       "parameters": {},
       "position": [
-        7269.0,
-        770.0
+        7233.0,
+        227.0
       ],
       "type": "output",
       "typeVersion": 1
@@ -267,7 +256,7 @@
       "parameters": {},
       "position": [
         438.0,
-        356.0
+        225.0
       ],
       "type": "threshold",
       "typeVersion": 1
@@ -295,7 +284,7 @@
       },
       "position": [
         1033.0,
-        268.0
+        138.0
       ],
       "type": "convolution",
       "typeVersion": 1
@@ -539,7 +528,7 @@
       },
       "position": [
         1635.0,
-        139.0
+        8.0
       ],
       "type": "convolution",
       "typeVersion": 1
@@ -552,7 +541,7 @@
       },
       "position": [
         2441.0,
-        308.0
+        178.0
       ],
       "type": "math",
       "typeVersion": 1
@@ -566,67 +555,9 @@
       },
       "position": [
         3036.0,
-        433.0
+        178.0
       ],
       "type": "math",
-      "typeVersion": 1
-    },
-    {
-      "id": 23,
-      "parameters": {
-        "g1": 1.0,
-        "r0": 0.0,
-        "r1": 0.0
-      },
-      "position": [
-        7269.0,
-        356.0
-      ],
-      "type": "color_ramp",
-      "typeVersion": 1
-    },
-    {
-      "id": 24,
-      "parameters": {
-        "bias": 0.0,
-        "iterations": 3.0,
-        "kernel": [
-          0.0,
-          0.0,
-          1.0,
-          0.0,
-          0.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          0.2800000011920929,
-          0.0,
-          1.0,
-          0.0,
-          0.0
-        ],
-        "kernelSize": 5,
-        "normalize": 0.0,
-        "operation": 0.0,
-        "preset": "Custom"
-      },
-      "position": [
-        6575.0,
-        254.0
-      ],
-      "type": "convolution",
       "typeVersion": 1
     },
     {
@@ -691,8 +622,8 @@
         "preset": "Sharpen"
       },
       "position": [
-        3814.0,
-        424.0
+        3702.0,
+        92.0
       ],
       "type": "convolution",
       "typeVersion": 1
@@ -704,35 +635,9 @@
       },
       "position": [
         0.0,
-        354.0
+        224.0
       ],
       "type": "image",
-      "typeVersion": 1
-    },
-    {
-      "id": 39,
-      "parameters": {},
-      "position": [
-        3036.0,
-        0.0
-      ],
-      "type": "perlin",
-      "typeVersion": 1
-    },
-    {
-      "id": 40,
-      "parameters": {
-        "b": 5.679999828338623,
-        "inMin": -1.0,
-        "operation": 2.0,
-        "outMax": 1.0,
-        "outMin": 0.6000000238418579
-      },
-      "position": [
-        3814.0,
-        8.0
-      ],
-      "type": "math",
       "typeVersion": 1
     },
     {
@@ -973,8 +878,8 @@
         "preset": "Custom"
       },
       "position": [
-        5769.0,
-        514.0
+        5733.0,
+        0.0
       ],
       "type": "convolution",
       "typeVersion": 1
@@ -987,13 +892,13 @@
         "diffB": 0.23199999332427979,
         "dt": 0.8259000182151794,
         "feed": 0.08020000159740448,
-        "iterations": 64.0,
+        "iterations": 23.0,
         "kill": 0.06199999898672104,
         "structureScale": 0.25
       },
       "position": [
-        4508.0,
-        667.0
+        4480.0,
+        152.0
       ],
       "subgraphId": "project.reaction_diffusion.49.1",
       "type": "subgraph",
@@ -1002,50 +907,14 @@
     {
       "id": 49,
       "parameters": {
-        "addressMode": 1.0,
-        "sampling": 1.0
+        "addressMode": 3.0,
+        "sampling": 0.0
       },
       "position": [
-        6575.0,
-        779.0
+        6539.0,
+        235.0
       ],
       "type": "texture_sample",
-      "typeVersion": 1
-    },
-    {
-      "id": 55,
-      "parameters": {
-        "rotation": 0.0
-      },
-      "position": [
-        5752.0,
-        1287.0
-      ],
-      "type": "transform_2d",
-      "typeVersion": 1
-    },
-    {
-      "id": 61,
-      "parameters": {
-        "frequency": 6.800000190734863
-      },
-      "position": [
-        3036.0,
-        849.0
-      ],
-      "type": "worley_noise",
-      "typeVersion": 1
-    },
-    {
-      "id": 68,
-      "parameters": {
-        "rotation": 0.0
-      },
-      "position": [
-        4508.0,
-        366.0
-      ],
-      "type": "transform_2d",
       "typeVersion": 1
     },
     {
@@ -1055,8 +924,8 @@
         "mode": 0.0
       },
       "position": [
-        5138.0,
-        1275.0
+        5704.0,
+        1093.0
       ],
       "type": "mix",
       "typeVersion": 1
@@ -1069,8 +938,8 @@
         "speed": 1.5759999752044678
       },
       "position": [
-        3799.0,
-        1259.0
+        4480.0,
+        619.0
       ],
       "type": "perlin",
       "typeVersion": 1
@@ -1079,8 +948,8 @@
       "id": 82,
       "parameters": {},
       "position": [
-        4406.0,
-        1393.0
+        5103.0,
+        847.0
       ],
       "type": "combine_vector",
       "typeVersion": 1
@@ -1095,10 +964,71 @@
         "speed": 1.840000033378601
       },
       "position": [
-        3744.0,
-        1580.0
+        4480.0,
+        1052.0
       ],
       "type": "perlin",
+      "typeVersion": 1
+    },
+    {
+      "id": 84,
+      "parameters": {},
+      "position": [
+        5103.0,
+        546.0
+      ],
+      "type": "transform_2d",
+      "typeVersion": 1
+    },
+    {
+      "id": 85,
+      "parameters": {
+        "octaves": 1.0,
+        "scale": 3.648200035095215,
+        "seed": 5762.0,
+        "speed": 1.5759999752044678
+      },
+      "position": [
+        3152.0,
+        764.0
+      ],
+      "type": "perlin",
+      "typeVersion": 1
+    },
+    {
+      "id": 86,
+      "parameters": {
+        "b": 5.28000020980835,
+        "operation": 2
+      },
+      "position": [
+        3762.0,
+        773.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 87,
+      "parameters": {},
+      "position": [
+        4768.0,
+        1467.0
+      ],
+      "type": "perlin",
+      "typeVersion": 1
+    },
+    {
+      "id": 88,
+      "parameters": {
+        "b": 0.11999999731779099,
+        "operation": 2
+      },
+      "position": [
+        5327.0,
+        1438.0
+      ],
+      "type": "math",
       "typeVersion": 1
     }
   ],

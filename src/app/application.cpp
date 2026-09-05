@@ -830,7 +830,12 @@ void Application::renderGraph() {
         const auto fusion = runtime_->fusionInfo(node.id);
         const bool selectedFusedRegion = shaderInspectorOpen_ && selectedShaderRegion_ != 0 &&
             fusion && fusion->region == selectedShaderRegion_;
-        if (selectedFusedRegion) {
+        const bool failedGeneratedRegion = fusion && fusion->compileFailed;
+        if (failedGeneratedRegion) {
+            ed::PushStyleColor(ed::StyleColor_NodeBorder, ImVec4(1.0F, .18F, .14F, 1.0F));
+            ed::PushStyleColor(ed::StyleColor_NodeBg, ImVec4(.24F, .045F, .04F, 1.0F));
+            ed::PushStyleVar(ed::StyleVar_NodeBorderWidth, 4.0F);
+        } else if (selectedFusedRegion) {
             ed::PushStyleColor(ed::StyleColor_NodeBorder, ImVec4(.3F, .82F, 1.0F, 1.0F));
             ed::PushStyleColor(ed::StyleColor_NodeBg, ImVec4(.06F, .14F, .19F, 1.0F));
             ed::PushStyleVar(ed::StyleVar_NodeBorderWidth, 4.0F);
@@ -893,13 +898,10 @@ void Application::renderGraph() {
             if (fusion) {
                 if (fusion->compileFailed)
                     ImGui::TextColored(ImVec4(1.0F, .45F, .25F, 1.0F),
-                                       "Generated shader failed — legacy fallback");
+                                       "Type or generated shader error");
                 else if (fusion->mode == GeneratedExecutionMode::LegacyFallback)
                     ImGui::TextColored(ImVec4(1.0F, .65F, .25F, 1.0F),
-                                       "Image unavailable — legacy fallback");
-                else if (fusion->mode == GeneratedExecutionMode::ForcedLegacy)
-                    ImGui::TextDisabled("Generated region #%llu — forced legacy",
-                        static_cast<unsigned long long>(fusion->region));
+                                       "Input unavailable");
                 else if (fusion->nodeCount == 1)
                     ImGui::TextColored(ImVec4(.45F, .8F, 1.0F, 1.0F), "Generated shader");
                 else if (fusion->interior)
@@ -962,7 +964,7 @@ void Application::renderGraph() {
         }
         ImGui::PopID();
         ed::EndNode();
-        if (selectedFusedRegion) {
+        if (failedGeneratedRegion || selectedFusedRegion) {
             ed::PopStyleVar();
             ed::PopStyleColor(2);
         }
@@ -1106,12 +1108,12 @@ void Application::renderShaderInspector() {
         ImGui::End();
         return;
     }
-    if (ImGui::Checkbox("Execute fused shaders", &executeFusedShaders_))
+    if (ImGui::Checkbox("Fuse lowered shader chains", &executeFusedShaders_))
         runtime_->setFusionEnabled(executeFusedShaders_);
     ImGui::SameLine();
     ImGui::TextDisabled("Session only");
     if (shaders.empty()) {
-        ImGui::TextDisabled("No image-valued Math nodes are available to generate.");
+        ImGui::TextDisabled("No lowerable nodes are available to generate.");
         ImGui::End();
         return;
     }
@@ -1165,13 +1167,11 @@ void Application::renderShaderInspector() {
     ImGui::TextDisabled("Cached regions reuse their prior output until an input, parameter, or time changes.");
     ImGui::TextDisabled("Selected region nodes are outlined in cyan on the canvas.");
     if (!selected->diagnostic.empty())
-        ImGui::TextColored(ImVec4(1, .35F, .25F, 1), "Compile failed — legacy fallback active");
+        ImGui::TextColored(ImVec4(1, .35F, .25F, 1), "Generated shader error");
     else if (selected->mode == GeneratedExecutionMode::Generated)
         ImGui::TextColored(ImVec4(.4F, .9F, .5F, 1), "Generated execution active");
-    else if (selected->mode == GeneratedExecutionMode::ForcedLegacy)
-        ImGui::TextColored(ImVec4(.9F, .75F, .35F, 1), "Generated execution disabled");
     else
-        ImGui::TextColored(ImVec4(.9F, .75F, .35F, 1), "Input unavailable — legacy fallback active");
+        ImGui::TextColored(ImVec4(.9F, .75F, .35F, 1), "Input unavailable");
 
     ImGui::SeparatorText("Contributors");
     for (const auto id : selected->nodes) {
@@ -1661,7 +1661,7 @@ void Application::renderEditor() {
         const std::string key = std::to_string(failed->id) + failed->diagnostic;
         if (reportedShaderError_ != key) {
             reportedShaderError_ = key;
-            setStatus("Generated shader region failed; using legacy fallback", true);
+            setStatus("Generated shader region has a lowering or compile error", true);
         }
     } else if (!reportedShaderError_.empty()) {
         reportedShaderError_.clear();

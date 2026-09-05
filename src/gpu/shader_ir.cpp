@@ -47,9 +47,11 @@ const LinkRecord* inputLink(const Graph& graph, NodeId node, std::string_view so
 class RegionBuilder final : public ShaderLoweringContext {
 public:
     RegionBuilder(const Graph& graph, const NodeRegistry& registry,
-                  const CompileResult& compiled, const std::vector<NodeId>& nodes)
+                  const CompileResult& compiled, const std::vector<NodeId>& nodes,
+                  ShaderBoundaryResolver boundaryResolver)
         : graph_(graph), registry_(registry), compiled_(compiled),
-          regionNodes_(nodes.begin(), nodes.end()) {}
+          regionNodes_(nodes.begin(), nodes.end()),
+          boundaryResolver_(std::move(boundaryResolver)) {}
 
     ShaderRegion build(const NodeRegistry& registry, const std::vector<NodeId>& nodes) {
         ShaderRegion result;
@@ -69,14 +71,20 @@ public:
             currentDescriptor_ = descriptor;
             currentLabel_ = record->label.empty() && descriptor
                 ? descriptor->displayName : record->label;
+            nodeHasFieldDependency_ = descriptor->producedField;
             if (!instance->lowerShader(*this))
                 throw std::runtime_error("Node does not support shader lowering: " + record->type);
             for (const auto& socket : descriptor->sockets) {
                 if (socket.direction != SocketDirection::Output) continue;
                 const auto found = values_.find(valueKey(id, socket.key));
-                if (found != values_.end())
+                if (found != values_.end()) {
+                    const bool requiresImage = found->second.field ||
+                        found->second.type == ShaderValueType::Vec4 ||
+                        outputFeedsImageConsumer(id, socket.key);
                     result.candidateOutputs.push_back(
-                        ShaderOutputRequirement{id, socket.key, found->second, -1, {}});
+                        ShaderOutputRequirement{id, socket.key, found->second, -1, {},
+                                                requiresImage});
+                }
             }
             const auto variant = instance->shaderVariantKey(record->parameters);
             if (!variant.empty())
@@ -100,53 +108,32 @@ public:
             const auto found = values_.find(valueKey(link->fromNode, link->fromSocket));
             if (found == values_.end())
                 throw std::runtime_error("Generated region is not in dependency order");
+            nodeHasFieldDependency_ |= found->second.field;
             return found->second;
         }
         if (link) {
-            const bool image = compiled_.inferredOutputs.contains(link->fromNode) &&
-                               compiled_.inferredOutputs.at(link->fromNode) == ValueType::Image2D;
-            // AnyNumeric/AnyVector upstream values broadcast as either a constant
-            // or a field image. A fused region cannot know which at lowering time,
-            // so it must be able to read the value both ways; native evaluation
-            // supplies a field image for these producers whenever their inputs are
-            // fields.
-            const bool flexible =
-                !image && anySourceOutput(link->fromNode, link->fromSocket,
-                                          ValueType::AnyNumeric);
-            const bool flexibleVector =
-                !image && !flexible &&
-                anySourceOutput(link->fromNode, link->fromSocket, ValueType::AnyVector);
-            const std::string key =
-                std::string(image ? "image:" : flexible ? "flex:" :
-                              flexibleVector ? "flexv:" : "scalar:") +
-                std::to_string(link->fromNode) + ":" + link->fromSocket;
-            const auto required = requireInput(
-                key, image ? ShaderInputKind::Image
-                           : flexible ? ShaderInputKind::Flexible
-                                      : flexibleVector ? ShaderInputKind::FlexibleVector
-                                                       : ShaderInputKind::Scalar,
-                link->fromNode, link->fromSocket, 0, {}, fallback);
-            if (uvExpression != "uv") {
-                const auto& input = region_->inputs[requirements_.at(key)];
-                if (input.kind == ShaderInputKind::Image)
-                    return {ShaderValueType::Vec4, "texture(" + input.uniformName + ",fract(" +
-                        std::string(uvExpression) + "))"};
-                if (input.kind == ShaderInputKind::Flexible)
-                    return {ShaderValueType::Scalar, "(" + input.hasImageUniformName +
-                        "!=0?texture(" + input.uniformName + ",fract(" +
-                        std::string(uvExpression) + ")).r:" + input.scalarUniformName + ")"};
-                if (input.kind == ShaderInputKind::FlexibleVector)
-                    return {ShaderValueType::Vec4, "vec4((" + input.hasImageUniformName +
-                        "!=0?texture(" + input.uniformName + ",fract(" +
-                        std::string(uvExpression) + ")).rg:" + input.vectorUniformName +
-                        "),0.0,1.0)"};
+            const auto kind = boundaryKind(link->fromNode, link->fromSocket);
+            if (socketRequiresImage(socket) && kind != ShaderInputKind::Field)
+                typedError("Input '" + std::string(socket) + "' requires a field image");
+            const auto type = semanticType(link->fromNode, link->fromSocket, socket);
+            const std::string key = "source:" + std::to_string(link->fromNode) + ":" +
+                                    link->fromSocket;
+            auto required = requireInput(key, kind, type, link->fromNode,
+                                         link->fromSocket, 0, {}, fallback);
+            if (kind == ShaderInputKind::Field && uvExpression != "uv") {
+                const auto& requirement = region_->inputs[requirements_.at(key)];
+                required.name = sampled(requirement.uniformName,
+                    "fract(" + std::string(uvExpression) + ")", type);
             }
+            nodeHasFieldDependency_ |= required.field;
             return required;
         }
+        if (socketRequiresImage(socket))
+            typedError("Input '" + std::string(socket) + "' requires a field image");
         const std::string key = "parameter:" + std::to_string(currentNode_->id) + ":" +
                                 std::string(parameterKey);
-        return requireInput(key, ShaderInputKind::Scalar, 0, {}, currentNode_->id,
-                            std::string(parameterKey), fallback);
+        return requireInput(key, ShaderInputKind::Float, ShaderValueType::Scalar, 0, {},
+                            currentNode_->id, std::string(parameterKey), fallback);
     }
 
     ShaderValue inputTexel(std::string_view socket, std::string_view pixelExpression,
@@ -154,18 +141,26 @@ public:
         const auto* link = inputLink(graph_, currentNode_->id, socket);
         if (link && regionNodes_.contains(link->fromNode))
             throw std::runtime_error("Neighborhood input crosses an in-region value");
-        if (!link) return parameter(parameterKey, fallback);
-        const bool image = compiled_.inferredOutputs.contains(link->fromNode) &&
-                           compiled_.inferredOutputs.at(link->fromNode) == ValueType::Image2D;
-        if (!image) return inputAt(socket, pixelExpression, parameterKey, fallback);
-        const std::string key = "image:" + std::to_string(link->fromNode) + ":" +
+        if (!link) {
+            typedError("Input '" + std::string(socket) + "' requires a field image");
+            return parameter(parameterKey, fallback);
+        }
+        const auto kind = boundaryKind(link->fromNode, link->fromSocket);
+        if (kind != ShaderInputKind::Field) {
+            typedError("Input '" + std::string(socket) + "' requires a field image");
+            return inputAt(socket, "uv", parameterKey, fallback);
+        }
+        const auto type = semanticType(link->fromNode, link->fromSocket, socket);
+        const std::string key = "source:" + std::to_string(link->fromNode) + ":" +
                                 link->fromSocket;
-        const auto required = requireInput(
-            key, ShaderInputKind::Image, link->fromNode, link->fromSocket, 0, {}, fallback);
+        (void)requireInput(key, kind, type, link->fromNode, link->fromSocket,
+                           0, {}, fallback);
         const auto& uniformName = region_->inputs[requirements_.at(key)].uniformName;
-        return {ShaderValueType::Vec4, "texelFetch(" + uniformName + ",clamp(ivec2(" +
+        ShaderValue result{type, sampledTexel(uniformName, "clamp(ivec2(" +
             std::string(pixelExpression) + "),ivec2(0),textureSize(" + uniformName +
-            ",0)-ivec2(1)),0)"};
+            ",0)-ivec2(1))", type), true};
+        nodeHasFieldDependency_ = true;
+        return result;
     }
 
     ShaderValue parameter(std::string_view key, float fallback) override {
@@ -174,8 +169,8 @@ public:
             return input(key, key, fallback);
         const std::string requirementKey = "parameter:" + std::to_string(currentNode_->id) +
                                            ":" + std::string(key);
-        return requireInput(requirementKey, ShaderInputKind::Scalar, 0, {}, currentNode_->id,
-                            std::string(key), fallback);
+        return requireInput(requirementKey, ShaderInputKind::Float, ShaderValueType::Scalar,
+                            0, {}, currentNode_->id, std::string(key), fallback);
     }
 
     std::string helper(std::string_view name, std::string source) override {
@@ -189,16 +184,26 @@ public:
     }
 
     ShaderValue emit(std::string expression, std::string_view socket = {}) override {
+        return emitTyped(std::move(expression), valueType(), socket);
+    }
+
+    ShaderValue emitTyped(std::string expression, ShaderValueType type,
+                          std::string_view socket = {}) override {
         const auto outputSocket = socket.empty() ? defaultOutputSocket() : std::string(socket);
-        ShaderValue result{ShaderValueType::Vec4, "v_" + std::to_string(currentNode_->id) +
-                           "_" + identifier(outputSocket)};
+        ShaderValue result{type, "v_" + std::to_string(currentNode_->id) +
+                           "_" + identifier(outputSocket), nodeHasFieldDependency_};
         region_->instructions.push_back(
             ShaderInstruction{result, std::move(expression), currentNode_->id, currentLabel_});
         values_[valueKey(currentNode_->id, outputSocket)] = result;
         return result;
     }
 
-    ShaderValueType valueType() const override { return ShaderValueType::Vec4; }
+    ShaderValueType valueType() const override {
+        if (compiled_.inferredOutputs.contains(currentNode_->id) &&
+            compiled_.inferredOutputs.at(currentNode_->id) == ValueType::Vec2)
+            return ShaderValueType::Vec2;
+        return ShaderValueType::Vec4;
+    }
 
 private:
     static std::string valueKey(NodeId id, std::string_view socket) {
@@ -211,7 +216,35 @@ private:
         return "result";
     }
 
+    bool outputFeedsImageConsumer(NodeId id, std::string_view socket) const {
+        for (const auto& link : graph_.links()) {
+            if (link.fromNode != id || link.fromSocket != socket ||
+                regionNodes_.contains(link.toNode)) continue;
+            const auto* target = graph_.findNode(link.toNode);
+            NodeDescriptor storage;
+            const auto* descriptor = target
+                ? resolveDescriptor(graph_, *target, registry_, storage) : nullptr;
+            if (!descriptor) continue;
+            for (const auto& input : descriptor->sockets) {
+                if (input.direction != SocketDirection::Input || input.key != link.toSocket)
+                    continue;
+                if (input.requiresImage) return false;
+                if (input.type == ValueType::Image2D && !descriptor->lowerable) return true;
+            }
+        }
+        return false;
+    }
+
+    bool socketRequiresImage(std::string_view socket) const {
+        return currentDescriptor_ && std::ranges::any_of(
+            currentDescriptor_->sockets, [&](const SocketDescriptor& candidate) {
+                return candidate.direction == SocketDirection::Input &&
+                       candidate.key == socket && candidate.requiresImage;
+            });
+    }
+
     ShaderValue requireInput(const std::string& key, ShaderInputKind kind,
+                             ShaderValueType type,
                              NodeId sourceNode, std::string sourceSocket,
                              NodeId parameterNode, std::string parameterKey,
                              float fallback) {
@@ -219,57 +252,87 @@ private:
             return region_->inputs[found->second].value;
         const auto index = region_->inputs.size();
         const std::string suffix = std::to_string(index);
-        ShaderValue value{kind == ShaderInputKind::Image ? ShaderValueType::Vec4
-                                                        : ShaderValueType::Scalar,
-                          kind == ShaderInputKind::Image ? "sample_" + suffix
-                                                         : "inputScalar_" + suffix};
-        const int binding = kind == ShaderInputKind::Image ||
-                            kind == ShaderInputKind::Flexible ||
-                            kind == ShaderInputKind::FlexibleVector
-            ? static_cast<int>(std::ranges::count_if(region_->inputs, [](const auto& input) {
-                  return input.kind == ShaderInputKind::Image ||
-                         input.kind == ShaderInputKind::Flexible ||
-                         input.kind == ShaderInputKind::FlexibleVector;
-              })) : -1;
+        std::string uniformName = kind == ShaderInputKind::Field ? "inputImage_" + suffix :
+                                  kind == ShaderInputKind::Vector ? "inputVector_" + suffix :
+                                                                   "inputFloat_" + suffix;
+        ShaderValue value{type, kind == ShaderInputKind::Field ? "sample_" + suffix :
+                                kind == ShaderInputKind::Empty ? glslFallback(type, fallback) :
+                                                                 uniformName,
+                          kind == ShaderInputKind::Field};
+        const int binding = kind == ShaderInputKind::Field
+            ? static_cast<int>(std::ranges::count(region_->inputs, ShaderInputKind::Field,
+                                                  &ShaderInputRequirement::kind)) : -1;
         ShaderInputRequirement requirement{kind, key,
-            kind == ShaderInputKind::Image ? "inputImage_" + suffix : "inputScalar_" + suffix,
+            std::move(uniformName),
             binding, sourceNode, std::move(sourceSocket), parameterNode,
             std::move(parameterKey), fallback, value};
-        if (kind == ShaderInputKind::Flexible) {
-            requirement.uniformName = "inputImage_" + suffix;
-            requirement.value.name = "inputFlex_" + suffix;
-            requirement.scalarUniformName = "inputScalar_" + suffix;
-            requirement.hasImageUniformName = "inputHasImage_" + suffix;
-            value.name = requirement.value.name;
-        }
-        if (kind == ShaderInputKind::FlexibleVector) {
-            requirement.uniformName = "inputImage_" + suffix;
-            requirement.value.name = "inputFlexVec_" + suffix;
-            requirement.vectorUniformName = "inputVec_" + suffix;
-            requirement.hasImageUniformName = "inputHasImage_" + suffix;
-            value = {ShaderValueType::Vec4, requirement.value.name};
-        }
         requirements_[key] = index;
         region_->inputs.push_back(std::move(requirement));
         return value;
     }
 
-    bool anySourceOutput(NodeId node, std::string_view socket, ValueType type) const {
+    ShaderInputKind boundaryKind(NodeId node, std::string_view socket) const {
+        if (boundaryResolver_) return boundaryResolver_(node, socket);
+        const auto found = compiled_.inferredOutputs.find(node);
+        if (found == compiled_.inferredOutputs.end()) return ShaderInputKind::Empty;
+        if (found->second == ValueType::Image2D) return ShaderInputKind::Field;
+        if (found->second == ValueType::Vec2) return ShaderInputKind::Vector;
+        return ShaderInputKind::Float;
+    }
+
+    ShaderValueType semanticType(NodeId node, std::string_view socket,
+                                 std::string_view targetSocket) const {
         const auto* record = graph_.findNode(node);
-        if (!record) return false;
+        if (!record) return ShaderValueType::Scalar;
         NodeDescriptor storage;
         const auto* descriptor = resolveDescriptor(graph_, *record, registry_, storage);
-        if (!descriptor) return false;
-        for (const auto& port : descriptor->sockets)
-            if (port.direction == SocketDirection::Output && port.key == socket)
-                return port.type == type;
-        return false;
+        if (descriptor) for (const auto& port : descriptor->sockets) {
+            if (port.direction != SocketDirection::Output || port.key != socket) continue;
+            if (port.type == ValueType::Vec2 || port.type == ValueType::AnyVector)
+                return ShaderValueType::Vec2;
+            if (port.type == ValueType::Image2D) return ShaderValueType::Vec4;
+        }
+        if (currentDescriptor_) for (const auto& port : currentDescriptor_->sockets) {
+            if (port.direction != SocketDirection::Input || port.key != targetSocket) continue;
+            if (port.type == ValueType::Vec2 || port.type == ValueType::AnyVector)
+                return ShaderValueType::Vec2;
+            if (port.type == ValueType::Image2D) return ShaderValueType::Vec4;
+        }
+        return ShaderValueType::Scalar;
+    }
+
+    static std::string sampled(std::string_view sampler, std::string uv,
+                               ShaderValueType type) {
+        const std::string base = "texture(" + std::string(sampler) + "," + uv + ")";
+        return type == ShaderValueType::Scalar ? base + ".r" :
+               type == ShaderValueType::Vec2 ? base + ".rg" : base;
+    }
+
+    static std::string sampledTexel(std::string_view sampler, std::string pixel,
+                                    ShaderValueType type) {
+        const std::string base = "texelFetch(" + std::string(sampler) + "," + pixel + ",0)";
+        return type == ShaderValueType::Scalar ? base + ".r" :
+               type == ShaderValueType::Vec2 ? base + ".rg" : base;
+    }
+
+    static std::string glslFallback(ShaderValueType type, float fallback) {
+        const auto scalar = std::to_string(fallback);
+        return type == ShaderValueType::Scalar ? scalar :
+               type == ShaderValueType::Vec2 ? "vec2(" + scalar + ")" :
+                                                "vec4(" + scalar + ")";
+    }
+
+    void typedError(std::string message) {
+        if (!region_->diagnostic.empty()) return;
+        region_->diagnostic = currentLabel_ + ": " + std::move(message);
+        region_->diagnosticNode = currentNode_->id;
     }
 
     const Graph& graph_;
     const NodeRegistry& registry_;
     const CompileResult& compiled_;
     std::unordered_set<NodeId> regionNodes_;
+    ShaderBoundaryResolver boundaryResolver_;
     ShaderRegion* region_ = nullptr;
     const NodeRecord* currentNode_ = nullptr;
     const NodeDescriptor* currentDescriptor_ = nullptr;
@@ -277,39 +340,89 @@ private:
     std::unordered_map<std::string, std::size_t> requirements_;
     std::unordered_map<std::string, ShaderValue> values_;
     std::unordered_set<std::string> helperNames_;
+    bool nodeHasFieldDependency_ = false;
 };
 
 ShaderRegion lowerRegion(const Graph& graph, const NodeRegistry& registry,
-                         const CompileResult& compiled, const std::vector<NodeId>& nodes) {
-    RegionBuilder builder(graph, registry, compiled, nodes);
+                         const CompileResult& compiled, const std::vector<NodeId>& nodes,
+                         const ShaderBoundaryResolver& boundaryResolver = {}) {
+    RegionBuilder builder(graph, registry, compiled, nodes, boundaryResolver);
     return builder.build(registry, nodes);
 }
 
 int imageInputCount(const ShaderRegion& region) {
     return static_cast<int>(std::ranges::count_if(region.inputs, [](const auto& input) {
-        return input.kind == ShaderInputKind::Image ||
-               input.kind == ShaderInputKind::Flexible ||
-               input.kind == ShaderInputKind::FlexibleVector;
+        return input.kind == ShaderInputKind::Field;
     }));
 }
 
 int scalarInputCount(const ShaderRegion& region) {
-    return static_cast<int>(std::ranges::count_if(region.inputs, [](const auto& input) {
-        return input.kind == ShaderInputKind::Scalar ||
-               input.kind == ShaderInputKind::Flexible ||
-               input.kind == ShaderInputKind::FlexibleVector;
-    }));
+    int result = 0;
+    for (const auto& input : region.inputs) {
+        if (input.kind == ShaderInputKind::Float) ++result;
+        else if (input.kind == ShaderInputKind::Vector) result += 2;
+    }
+    return result;
 }
 
 } // namespace
+
+std::string convertShaderValue(const ShaderValue& value, ShaderValueType type) {
+    if (value.type == type) return value.name;
+    if (type == ShaderValueType::Scalar) return "(" + value.name + ").x";
+    if (type == ShaderValueType::Vec2)
+        return value.type == ShaderValueType::Scalar ? "vec2(" + value.name + ")"
+                                                     : "(" + value.name + ").xy";
+    if (value.type == ShaderValueType::Scalar) return "vec4(" + value.name + ")";
+    return "vec4(" + value.name + ",0.0,1.0)";
+}
+
+ShaderValueType promotedShaderType(const std::vector<ShaderValue>& values) {
+    ShaderValueType result = ShaderValueType::Scalar;
+    for (const auto& value : values)
+        if (static_cast<int>(value.type) > static_cast<int>(result)) result = value.type;
+    return result;
+}
+
+ShaderValue ShaderLoweringContext::scalar(std::string_view socket,
+                                          std::string_view parameterKey,
+                                          float fallback) {
+    auto value = input(socket, parameterKey, fallback);
+    value.name = convertShaderValue(value, ShaderValueType::Scalar);
+    value.type = ShaderValueType::Scalar;
+    return value;
+}
+
+ShaderValue ShaderLoweringContext::vector(std::string_view socket,
+                                          std::string_view parameterKey,
+                                          float fallback) {
+    auto value = input(socket, parameterKey, fallback);
+    value.name = convertShaderValue(value, ShaderValueType::Vec2);
+    value.type = ShaderValueType::Vec2;
+    return value;
+}
+
+ShaderValue ShaderLoweringContext::color(std::string_view socket,
+                                         std::string_view parameterKey,
+                                         float fallback) {
+    auto value = input(socket, parameterKey, fallback);
+    value.name = convertShaderValue(value, ShaderValueType::Vec4);
+    value.type = ShaderValueType::Vec4;
+    return value;
+}
+
+ShaderValue ShaderLoweringContext::emitTyped(std::string expression,
+                                             ShaderValueType,
+                                             std::string_view socket) {
+    return emit(std::move(expression), socket);
+}
 
 std::string mathGlslExpression(MathOperation operation,
                                const std::vector<ShaderValue>& operands,
                                const std::vector<ShaderValue>& remap,
                                ShaderValueType type) {
     const auto convert = [&](const ShaderValue& value) {
-        if (value.type == type) return value.name;
-        return glslType(type) + "(" + value.name + ")";
+        return convertShaderValue(value, type);
     };
     const auto a = convert(operands.at(0));
     const auto scalar = [&](std::string_view value) {
@@ -378,14 +491,14 @@ std::string mathGlslExpression(MathOperation operation,
 
 std::vector<ShaderRegion> planShaderRegions(
     const Graph& graph, const NodeRegistry& registry, const CompileResult& compiled,
-    int maximumImageInputs, int maximumScalarInputs) {
+    int maximumImageInputs, int maximumScalarInputs, bool fuseChains,
+    const ShaderBoundaryResolver& boundaryResolver) {
     std::unordered_set<NodeId> eligible;
     for (const auto id : compiled.order) {
         const auto* node = graph.findNode(id);
         NodeDescriptor storage;
         const auto* descriptor = node ? resolveDescriptor(graph, *node, registry, storage) : nullptr;
-        if (!descriptor || !descriptor->lowerable || !compiled.inferredOutputs.contains(id) ||
-            compiled.inferredOutputs.at(id) != ValueType::Image2D) continue;
+        if (!descriptor || !descriptor->lowerable) continue;
         auto instance = registry.create(node->type);
         if (!instance) continue;
         instance->setParameters(node->parameters);
@@ -427,7 +540,8 @@ std::vector<ShaderRegion> planShaderRegions(
         if (!eligible.contains(start) || hasChainPredecessor.contains(start) || visited.contains(start))
             continue;
         std::vector<NodeId> chain;
-        for (NodeId id = start; id != 0 && !visited.contains(id); id = continuation(id)) {
+        for (NodeId id = start; id != 0 && !visited.contains(id);
+             id = fuseChains ? continuation(id) : 0) {
             chain.push_back(id);
             visited.insert(id);
         }
@@ -438,12 +552,14 @@ std::vector<ShaderRegion> planShaderRegions(
             std::vector<NodeId> acceptedNodes(
                 chain.begin() + static_cast<std::ptrdiff_t>(first),
                 chain.begin() + static_cast<std::ptrdiff_t>(last));
-            ShaderRegion accepted = lowerRegion(graph, registry, compiled, acceptedNodes);
-            while (last < chain.size()) {
+            ShaderRegion accepted = lowerRegion(graph, registry, compiled, acceptedNodes,
+                                                boundaryResolver);
+            while (fuseChains && last < chain.size()) {
                 const std::vector<NodeId> candidateNodes(
                     chain.begin() + static_cast<std::ptrdiff_t>(first),
                     chain.begin() + static_cast<std::ptrdiff_t>(last + 1));
-                auto candidate = lowerRegion(graph, registry, compiled, candidateNodes);
+                auto candidate = lowerRegion(graph, registry, compiled, candidateNodes,
+                                             boundaryResolver);
                 if (imageInputCount(candidate) > maximumImageInputs ||
                     scalarInputCount(candidate) > maximumScalarInputs) break;
                 accepted = std::move(candidate);
@@ -455,8 +571,15 @@ std::vector<ShaderRegion> planShaderRegions(
     }
     // Defensive coverage for an eligible node omitted by malformed chain metadata.
     for (const auto id : compiled.order) if (eligible.contains(id) && !visited.contains(id))
-        regions.push_back(lowerRegion(graph, registry, compiled, {id}));
+        regions.push_back(lowerRegion(graph, registry, compiled, {id}, boundaryResolver));
     return regions;
+}
+
+ShaderRegion lowerShaderRegion(const Graph& graph, const NodeRegistry& registry,
+                               const CompileResult& compiled,
+                               const std::vector<NodeId>& nodes,
+                               const ShaderBoundaryResolver& boundaryResolver) {
+    return lowerRegion(graph, registry, compiled, nodes, boundaryResolver);
 }
 
 GeneratedShader generateComputeShader(const ShaderRegion& region,
@@ -483,22 +606,13 @@ GeneratedShader generateComputeShader(const ShaderRegion& region,
         append("layout(rgba16f,binding=" + std::to_string(output.binding) +
                ") writeonly uniform image2D " + output.imageName + ";");
     for (const auto& input : generated.inputs) {
-        if (input.kind == ShaderInputKind::Image)
+        if (input.kind == ShaderInputKind::Field)
             append("layout(binding=" + std::to_string(input.binding) + ") uniform sampler2D " +
                    input.uniformName + ";");
-        else if (input.kind == ShaderInputKind::Flexible) {
-            append("layout(binding=" + std::to_string(input.binding) + ") uniform sampler2D " +
-                   input.uniformName + ";");
-            append("uniform float " + input.scalarUniformName + ";");
-            append("uniform int " + input.hasImageUniformName + ";");
-        }
-        else if (input.kind == ShaderInputKind::FlexibleVector) {
-            append("layout(binding=" + std::to_string(input.binding) + ") uniform sampler2D " +
-                   input.uniformName + ";");
-            append("uniform vec2 " + input.vectorUniformName + ";");
-            append("uniform int " + input.hasImageUniformName + ";");
-        }
-        else append("uniform float " + input.uniformName + ";");
+        else if (input.kind == ShaderInputKind::Float)
+            append("uniform float " + input.uniformName + ";");
+        else if (input.kind == ShaderInputKind::Vector)
+            append("uniform vec2 " + input.uniformName + ";");
     }
     append("vec2 pixelSize;");
     for (const auto& helper : region.helpers) {
@@ -513,16 +627,14 @@ GeneratedShader generateComputeShader(const ShaderRegion& region,
     append("    pixelSize=1.0/vec2(s);");
     for (std::size_t index = 0; index < generated.inputs.size(); ++index) {
         const auto& input = generated.inputs[index];
-        if (input.kind == ShaderInputKind::Image)
-            append("    vec4 " + input.value.name + "=texture(" + input.uniformName + ",uv);");
-        else if (input.kind == ShaderInputKind::Flexible)
-            append("    float " + input.value.name + "=(" + input.hasImageUniformName +
-                   "!=0?texture(" + input.uniformName + ",uv).r:" +
-                   input.scalarUniformName + ");");
-        else if (input.kind == ShaderInputKind::FlexibleVector)
-            append("    vec4 " + input.value.name + "=vec4((" + input.hasImageUniformName +
-                   "!=0?texture(" + input.uniformName + ",uv).rg:" +
-                   input.vectorUniformName + "),0.0,1.0);");
+        if (input.kind == ShaderInputKind::Field) {
+            const std::string sample = "texture(" + input.uniformName + ",uv)";
+            const std::string expression = input.value.type == ShaderValueType::Scalar
+                ? sample + ".r" : input.value.type == ShaderValueType::Vec2
+                ? sample + ".rg" : sample;
+            append("    " + glslType(input.value.type) + " " + input.value.name + "=" +
+                   expression + ";");
+        }
     }
     for (const auto& instruction : region.instructions) {
         const auto first = lines.size() + 1;
@@ -536,7 +648,11 @@ GeneratedShader generateComputeShader(const ShaderRegion& region,
     for (const auto& output : generated.outputs) {
         const auto first = lines.size() + 1;
         append("    // materialized output for node " + std::to_string(output.node));
-        append("    imageStore(" + output.imageName + ",p," + output.value.name + ");");
+        const auto stored = output.value.type == ShaderValueType::Scalar
+            ? "vec4(" + output.value.name + ")"
+            : output.value.type == ShaderValueType::Vec2
+            ? "vec4(" + output.value.name + ",0.0,1.0)" : output.value.name;
+        append("    imageStore(" + output.imageName + ",p," + stored + ");");
         generated.annotations.push_back({output.node, "Materialized output", first, lines.size()});
     }
     append("}");

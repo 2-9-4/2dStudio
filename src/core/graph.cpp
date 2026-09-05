@@ -170,6 +170,7 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
         const auto* descriptor = node ? resolveDescriptor(*this, *node, registry, descriptorStorage) : nullptr;
         if (!descriptor) continue;
         ValueType inferred = ValueType::Float;
+        if (descriptor->producedField) inferred = ValueType::Image2D;
         for (const auto& port : descriptor->sockets) {
             if (port.direction == SocketDirection::Output && port.type == ValueType::Image2D) {
                 inferred = ValueType::Image2D;

@@ -18,7 +18,7 @@
 16. Open **Window → Shader Inspector**. Confirm the region lists all three Math contributors, their comments and statement lines use matching legend colors, and **Copy Source** copies GLSL without an operation selector or `hasA`/`hasB` branches.
 17. Change a numeric Math control and confirm the output updates without changing the displayed shader source. Change its operation and confirm the source regenerates with the new direct expression.
 18. Use **Preview Intermediate** for an interior node and confirm its thumbnail appears; stop the preview and confirm the intermediate texture is elided again.
-19. Disable **Execute fused shaders** and confirm the preview remains equivalent while nodes report forced legacy execution. Re-enable it and close/reopen the inspector to confirm these debug controls are not stored in the project.
+19. Disable **Fuse lowered shader chains** and confirm the preview remains equivalent while each lowerable node executes as a solo generated region. Re-enable it and close/reopen the inspector to confirm this debug control is not stored in the project.
 20. Attempt to create a cycle and confirm the editor reports the graph error while preserving the last valid preview.
 21. Save, modify the root graph, load the saved file, and confirm topology, values, positions, resolution, and target FPS restore while the simulation restarts.
 22. Close the preview, keep editing, and reopen it from Window → Open Preview.

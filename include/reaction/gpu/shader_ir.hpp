@@ -4,6 +4,7 @@
 #include "reaction/core/math.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -11,15 +12,16 @@
 namespace reaction {
 
 enum class ShaderValueType { Scalar, Vec2, Vec4 };
-enum class ShaderInputKind { Image, Scalar, Flexible, FlexibleVector };
+enum class ShaderInputKind { Float, Vector, Field, Empty, Expression };
 
 struct ShaderValue {
     ShaderValueType type = ShaderValueType::Vec4;
     std::string name;
+    bool field = false;
 };
 
 struct ShaderInputRequirement {
-    ShaderInputKind kind = ShaderInputKind::Scalar;
+    ShaderInputKind kind = ShaderInputKind::Float;
     std::string key;
     std::string uniformName;
     int binding = -1;
@@ -29,13 +31,6 @@ struct ShaderInputRequirement {
     std::string parameterKey;
     float fallback = 0.0F;
     ShaderValue value;
-    // Flexible inputs carry a sampler plus a broadcast scalar and select which one
-    // is live at dispatch time with a has-image flag.
-    std::string scalarUniformName;
-    std::string hasImageUniformName;
-    // FlexibleVector inputs carry a sampler plus a vec2 constant and select which
-    // one is live at dispatch time with a has-image flag.
-    std::string vectorUniformName;
 };
 
 struct ShaderInstruction {
@@ -56,6 +51,7 @@ struct ShaderOutputRequirement {
     ShaderValue value;
     int binding = -1;
     std::string imageName;
+    bool requiresImage = false;
 };
 
 struct ShaderSourceAnnotation {
@@ -73,6 +69,8 @@ struct ShaderRegion {
     std::vector<ShaderInstruction> instructions;
     std::vector<ShaderOutputRequirement> candidateOutputs;
     std::string specializationKey;
+    std::string diagnostic;
+    NodeId diagnosticNode = 0;
 };
 
 struct GeneratedShader {
@@ -107,14 +105,34 @@ public:
     }
     [[nodiscard]] virtual ShaderValue parameter(std::string_view key,
                                                 float fallback) = 0;
+    [[nodiscard]] ShaderValue scalar(std::string_view socket,
+                                     std::string_view parameterKey,
+                                     float fallback);
+    [[nodiscard]] ShaderValue vector(std::string_view socket,
+                                     std::string_view parameterKey,
+                                     float fallback);
+    [[nodiscard]] ShaderValue color(std::string_view socket,
+                                    std::string_view parameterKey,
+                                    float fallback);
     // Registers a helper local to the current node and returns its collision-free
     // name. Occurrences of `name` in source are rewritten to that returned name.
     [[nodiscard]] virtual std::string helper(std::string_view name,
                                              std::string source) = 0;
     [[nodiscard]] virtual ShaderValue emit(std::string expression,
                                            std::string_view socket = {}) = 0;
+    [[nodiscard]] virtual ShaderValue emitTyped(std::string expression,
+                                                ShaderValueType type,
+                                                std::string_view socket = {});
     [[nodiscard]] virtual ShaderValueType valueType() const = 0;
 };
+
+[[nodiscard]] ShaderValueType promotedShaderType(
+    const std::vector<ShaderValue>& values);
+[[nodiscard]] std::string convertShaderValue(const ShaderValue& value,
+                                             ShaderValueType type);
+
+using ShaderBoundaryResolver =
+    std::function<ShaderInputKind(NodeId, std::string_view)>;
 
 [[nodiscard]] std::string mathGlslExpression(
     MathOperation operation, const std::vector<ShaderValue>& operands,
@@ -122,7 +140,13 @@ public:
 
 [[nodiscard]] std::vector<ShaderRegion> planShaderRegions(
     const Graph& graph, const NodeRegistry& registry, const CompileResult& compiled,
-    int maximumImageInputs, int maximumScalarInputs);
+    int maximumImageInputs, int maximumScalarInputs, bool fuseChains = true,
+    const ShaderBoundaryResolver& boundaryResolver = {});
+
+[[nodiscard]] ShaderRegion lowerShaderRegion(
+    const Graph& graph, const NodeRegistry& registry, const CompileResult& compiled,
+    const std::vector<NodeId>& nodes,
+    const ShaderBoundaryResolver& boundaryResolver = {});
 
 [[nodiscard]] GeneratedShader generateComputeShader(
     const ShaderRegion& region, const std::vector<NodeId>& materializedNodes);

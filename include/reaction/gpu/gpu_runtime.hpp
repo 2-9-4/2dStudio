@@ -34,6 +34,8 @@ public:
                                               std::string_view label = "cached compute shader");
     [[nodiscard]] ComputeCompileResult tryCompileCompute(
         std::string_view source, std::string_view label = "generated compute shader") const;
+    [[nodiscard]] ComputeCompileResult tryCompileComputeCached(
+        std::string_view source, std::string_view label = "generated compute shader");
     [[nodiscard]] int maximumComputeTextureInputs() const;
     [[nodiscard]] int maximumComputeUniformComponents() const;
     [[nodiscard]] GLuint createTexture(int width, int height, GLenum format = GL_RGBA16F) const;
@@ -48,7 +50,7 @@ private:
     std::unordered_map<std::string, GLuint> computeCache_;
 };
 
-enum class GeneratedExecutionMode { Generated, LegacyFallback, ForcedLegacy };
+enum class GeneratedExecutionMode { Generated, LegacyFallback };
 
 struct GeneratedShaderInfo {
     std::uint64_t id = 0;
@@ -62,6 +64,7 @@ struct GeneratedShaderInfo {
     // True only when this region was dispatched (or fell back) in the latest evaluation.
     // Otherwise its prior outputs are being reused.
     bool evaluated = false;
+    std::size_t specializationCount = 0;
 };
 
 struct NodeFusionInfo {
@@ -72,6 +75,7 @@ struct NodeFusionInfo {
     bool materialized = false;
     bool compileFailed = false;
     GeneratedExecutionMode mode = GeneratedExecutionMode::Generated;
+    std::size_t specializationCount = 0;
 };
 
 void registerBuiltInNodes(NodeRegistry& registry);
@@ -120,6 +124,7 @@ private:
     std::unordered_map<NodeId, GLuint> timerQueries_;
     std::unordered_map<NodeId, nlohmann::json> previousParameters_;
     std::unordered_map<NodeId, std::string> subgraphSignatures_;
+    std::unordered_map<NodeId, std::string> typeErrors_;
     std::unordered_set<NodeId> pendingResets_;
     bool needsReset_ = true;
     bool forceDirty_ = true;

@@ -27,6 +27,24 @@ void NodeRegistry::add(NodeDescriptor descriptor, Factory factory) {
         throw std::invalid_argument("A node registration needs a type and factory");
     }
     addParameterInputSockets(descriptor);
+    if (descriptor.producedField && !descriptor.lowerable)
+        throw std::invalid_argument("Node '" + descriptor.type +
+                                    "' marks producedField but is not lowerable");
+    for (const auto& socket : descriptor.sockets) {
+        if (socket.requiresImage && socket.direction != SocketDirection::Input)
+            throw std::invalid_argument("Node '" + descriptor.type +
+                                        "' marks a non-input socket as requiresImage");
+    }
+    if (!descriptor.neighborhoodSocket.empty()) {
+        const auto socket = std::ranges::find_if(descriptor.sockets, [&](const auto& item) {
+            return item.direction == SocketDirection::Input &&
+                   item.key == descriptor.neighborhoodSocket;
+        });
+        if (socket == descriptor.sockets.end() || !socket->requiresImage)
+            throw std::invalid_argument("Neighborhood socket '" +
+                descriptor.neighborhoodSocket + "' on node '" + descriptor.type +
+                "' must be a requiresImage input");
+    }
     std::unordered_set<std::string> parameterKeys;
     for (const auto& parameter : descriptor.parameters) {
         if (parameter.key.empty() || parameter.label.empty())

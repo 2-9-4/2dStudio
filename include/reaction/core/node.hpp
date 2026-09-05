@@ -28,6 +28,9 @@ struct SocketDescriptor {
     ValueType type = ValueType::Float;
     SocketDirection direction = SocketDirection::Input;
     bool optional = false;
+    // Sampling accessors require a real field on this input. Constants are a
+    // typed lowering error instead of being silently broadcast.
+    bool requiresImage = false;
 };
 
 struct ParameterDescriptor {
@@ -61,9 +64,12 @@ struct NodeDescriptor {
     std::vector<ParameterDescriptor> parameters;
     bool timeDependent = false;
     bool stateful = false;
-    // Lowerable nodes can participate in generated shader regions. Whether a
-    // particular instance is eligible still depends on its inferred output type.
+    // Lowerable nodes execute through generated shader regions. A particular
+    // instance may still opt out for parameter-dependent native escape hatches.
     bool lowerable = false;
+    // Pure generators that read canvas position have field outputs even when
+    // all of their explicit inputs are constants.
+    bool producedField = false;
     // When non-empty, links feeding this socket sample a pixel neighborhood and
     // therefore form a materialization boundary in generated shader regions.
     std::string neighborhoodSocket{};

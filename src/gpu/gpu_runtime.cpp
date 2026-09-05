@@ -184,11 +184,13 @@ struct GraphRuntime::FusionState {
         std::size_t errorLine = 0;
         double milliseconds = 0.0;
         bool runtimeFallback = false;
+        std::vector<NodeId> materializedNodes;
+        std::vector<ShaderInputKind> boundarySignature;
+        std::size_t specializationCount = 0;
     };
 
     ~FusionState() {
         for (auto& item : regions) {
-            if (item.program) glDeleteProgram(item.program);
             for (const auto texture : item.textures) if (texture) glDeleteTextures(1, &texture);
         }
     }
@@ -228,6 +230,16 @@ ComputeCompileResult GpuRuntime::tryCompileCompute(std::string_view source,
                                                    std::string_view label) const {
     try {
         return {compileCompute(source, label), {}, 0};
+    } catch (const std::exception& error) {
+        const std::string log = error.what();
+        return {0, log, reportedLine(log)};
+    }
+}
+
+ComputeCompileResult GpuRuntime::tryCompileComputeCached(std::string_view source,
+                                                         std::string_view label) {
+    try {
+        return {compileComputeCached(source, label), {}, 0};
     } catch (const std::exception& error) {
         const std::string log = error.what();
         return {0, log, reportedLine(log)};
@@ -307,6 +319,7 @@ void GraphRuntime::clear() {
     timings_.clear();
     previousParameters_.clear();
     subgraphSignatures_.clear();
+    typeErrors_.clear();
     pendingResets_.clear();
     evaluated_.clear();
     frame_ = 0;
@@ -364,6 +377,7 @@ void GraphRuntime::rebuild() {
         return !instances_.contains(item.first);
     });
     std::erase_if(pendingResets_, [&](NodeId id) { return !instances_.contains(id); });
+    std::erase_if(typeErrors_, [&](const auto& item) { return !instances_.contains(item.first); });
     std::erase_if(values_, [&](const auto& item) { return !instances_.contains(item.first); });
     for (auto it = timerQueries_.begin(); it != timerQueries_.end();) {
         if (!instances_.contains(it->first)) {
@@ -385,8 +399,7 @@ std::string GraphRuntime::fusionSignature() const {
         const auto* node = graph_.findNode(id);
         NodeDescriptor storage;
         const auto* descriptor = node ? resolveDescriptor(graph_, *node, registry_, storage) : nullptr;
-        if (!descriptor || !descriptor->lowerable || !compiled_.inferredOutputs.contains(id) ||
-            compiled_.inferredOutputs.at(id) != ValueType::Image2D) continue;
+        if (!descriptor || !descriptor->lowerable) continue;
         result += std::to_string(id) + ":" + node->type;
         if (const auto found = instances_.find(id); found != instances_.end()) {
             const auto variant = found->second->shaderVariantKey(node->parameters);
@@ -409,20 +422,26 @@ void GraphRuntime::rebuildFusion() {
     next->previewNode = preview;
     try {
         auto planned = planShaderRegions(graph_, registry_, compiled_,
-            gpu_.maximumComputeTextureInputs(), gpu_.maximumComputeUniformComponents());
+            gpu_.maximumComputeTextureInputs(), gpu_.maximumComputeUniformComponents(), enabled);
         for (auto& region : planned) {
             std::vector<NodeId> outputs{region.nodes.back()};
             if (preview && std::ranges::find(region.nodes, *preview) != region.nodes.end() &&
                 *preview != region.nodes.back()) outputs.push_back(*preview);
             auto generated = generateComputeShader(region, outputs);
-            const auto compiled = gpu_.tryCompileCompute(generated.source,
-                "Generated shader region " + std::to_string(region.id));
+            const auto compiled = region.diagnostic.empty()
+                ? gpu_.tryCompileComputeCached(generated.source,
+                    "Generated shader region " + std::to_string(region.id))
+                : ComputeCompileResult{0, region.diagnostic, 0};
             FusionState::RegionRuntime runtime;
             runtime.region = std::move(region);
             runtime.generated = std::move(generated);
             runtime.program = compiled.program;
             runtime.diagnostic = compiled.log;
             runtime.errorLine = compiled.reportedLine;
+            runtime.materializedNodes = outputs;
+            for (const auto& input : runtime.generated.inputs)
+                runtime.boundarySignature.push_back(input.kind);
+            runtime.specializationCount = 1;
             runtime.textures.resize(runtime.generated.outputs.size());
             const auto index = next->regions.size();
             for (const auto id : runtime.region.nodes) next->regionForNode[id] = index;
@@ -510,7 +529,50 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
         const auto fused = fusion_->regionForNode.find(id);
         if (fused != fusion_->regionForNode.end()) {
             auto& region = fusion_->regions[fused->second];
-            const bool generated = fusion_->enabled && region.program != 0;
+            if (id == region.region.nodes.back()) {
+                const auto resolveKind = [&](NodeId sourceNode,
+                                             std::string_view sourceSocket) {
+                    const auto value = outputValue(graph_, registry_, values_,
+                                                   sourceNode, sourceSocket);
+                    if (std::holds_alternative<float>(value)) return ShaderInputKind::Float;
+                    if (std::holds_alternative<Vec2>(value)) return ShaderInputKind::Vector;
+                    if (const auto* image = std::get_if<ImageHandle>(&value); image && *image)
+                        return ShaderInputKind::Field;
+                    return ShaderInputKind::Empty;
+                };
+                std::vector<ShaderInputKind> liveSignature;
+                liveSignature.reserve(region.generated.inputs.size());
+                for (const auto& input : region.generated.inputs)
+                    liveSignature.push_back(input.sourceNode == 0
+                        ? ShaderInputKind::Float
+                        : resolveKind(input.sourceNode, input.sourceSocket));
+                if (liveSignature != region.boundarySignature) {
+                    auto lowered = lowerShaderRegion(graph_, registry_, compiled_,
+                                                     region.region.nodes, resolveKind);
+                    auto generated = generateComputeShader(lowered, region.materializedNodes);
+                    const auto compiled = lowered.diagnostic.empty()
+                        ? gpu_.tryCompileComputeCached(generated.source,
+                            "Generated shader region " + std::to_string(lowered.id))
+                        : ComputeCompileResult{0, lowered.diagnostic, 0};
+                    region.region = std::move(lowered);
+                    region.generated = std::move(generated);
+                    region.program = compiled.program;
+                    region.diagnostic = compiled.log;
+                    region.errorLine = compiled.reportedLine;
+                    region.boundarySignature.clear();
+                    for (const auto& input : region.generated.inputs)
+                        region.boundarySignature.push_back(input.kind);
+                    if (region.textures.size() > region.generated.outputs.size()) {
+                        for (std::size_t index = region.generated.outputs.size();
+                             index < region.textures.size(); ++index)
+                            if (region.textures[index]) glDeleteTextures(1, &region.textures[index]);
+                    }
+                    region.textures.resize(region.generated.outputs.size());
+                    ++region.specializationCount;
+                    forceDirty_ = true;
+                }
+            }
+            const bool generated = region.program != 0;
             if (generated && id != region.region.nodes.back()) continue;
             if (generated) {
                 bool parametersChanged = false;
@@ -549,7 +611,11 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
 
                 bool missingImageInput = false;
                 for (const auto& input : region.generated.inputs) {
-                    if (input.kind != ShaderInputKind::Image) continue;
+                    if (input.kind == ShaderInputKind::Empty) {
+                        missingImageInput = true;
+                        continue;
+                    }
+                    if (input.kind != ShaderInputKind::Field) continue;
                     const auto value = outputValue(graph_, registry_, values_,
                                                    input.sourceNode, input.sourceSocket);
                     const auto* image = std::get_if<ImageHandle>(&value);
@@ -606,19 +672,22 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                 }
                 region.runtimeFallback = false;
 
-                if (region.width != context.width || region.height != context.height) {
+                const bool materializesImage = std::ranges::any_of(
+                    region.generated.outputs,
+                    [](const auto& output) { return output.requiresImage; });
+                const int dispatchWidth = materializesImage ? context.width : 1;
+                const int dispatchHeight = materializesImage ? context.height : 1;
+                if (region.width != dispatchWidth || region.height != dispatchHeight) {
                     for (auto& texture : region.textures) {
                         if (texture) glDeleteTextures(1, &texture);
-                        texture = gpu_.createTexture(context.width, context.height);
+                        texture = gpu_.createTexture(dispatchWidth, dispatchHeight);
                     }
-                    region.width = context.width;
-                    region.height = context.height;
+                    region.width = dispatchWidth;
+                    region.height = dispatchHeight;
                 }
                 glUseProgram(region.program);
                 for (const auto& input : region.generated.inputs) {
-                    if (input.kind == ShaderInputKind::Image ||
-                        input.kind == ShaderInputKind::Flexible ||
-                        input.kind == ShaderInputKind::FlexibleVector) {
+                    if (input.kind == ShaderInputKind::Field) {
                         const auto value = outputValue(graph_, registry_, values_,
                                                        input.sourceNode, input.sourceSocket);
                         const auto* image = std::get_if<ImageHandle>(&value);
@@ -628,30 +697,16 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                         }
                         glUniform1i(glGetUniformLocation(region.program, input.uniformName.c_str()),
                                     input.binding);
-                        const bool hasImage = image && *image;
-                        if (input.kind == ShaderInputKind::Flexible) {
-                            glUniform1i(glGetUniformLocation(region.program,
-                                        input.hasImageUniformName.c_str()), hasImage ? 1 : 0);
-                            float scalar = input.fallback;
-                            if (!hasImage) {
-                                if (input.sourceNode != 0) {
-                                    if (const auto* number = std::get_if<float>(&value))
-                                        scalar = *number;
-                                } else scalar = shaderParameter(graph_, input);
-                            }
-                            glUniform1f(glGetUniformLocation(region.program,
-                                       input.scalarUniformName.c_str()), scalar);
-                        } else if (input.kind == ShaderInputKind::FlexibleVector) {
-                            glUniform1i(glGetUniformLocation(region.program,
-                                        input.hasImageUniformName.c_str()), hasImage ? 1 : 0);
-                            Vec2 vector = {};
-                            if (!hasImage && input.sourceNode != 0) {
-                                if (const auto* pair = std::get_if<Vec2>(&value)) vector = *pair;
-                            }
-                            glUniform2f(glGetUniformLocation(region.program,
-                                       input.vectorUniformName.c_str()), vector.x, vector.y);
+                    } else if (input.kind == ShaderInputKind::Vector) {
+                        Vec2 value{};
+                        if (input.sourceNode != 0) {
+                            const auto source = outputValue(graph_, registry_, values_,
+                                                            input.sourceNode, input.sourceSocket);
+                            if (const auto* pair = std::get_if<Vec2>(&source)) value = *pair;
                         }
-                    } else {
+                        glUniform2f(glGetUniformLocation(region.program, input.uniformName.c_str()),
+                                    value.x, value.y);
+                    } else if (input.kind == ShaderInputKind::Float) {
                         float value = input.fallback;
                         if (input.sourceNode != 0) {
                             const auto source = outputValue(graph_, registry_, values_,
@@ -676,7 +731,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                 }
                 const GLuint query = timerQueries_.at(region.region.nodes.back());
                 glBeginQuery(GL_TIME_ELAPSED, query);
-                gpu_.dispatch(region.program, context.width, context.height);
+                gpu_.dispatch(region.program, dispatchWidth, dispatchHeight);
                 glEndQuery(GL_TIME_ELAPSED);
                 GLuint64 nanoseconds = 0;
                 glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
@@ -690,8 +745,16 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                     if (!slot) continue;
                     auto& nodeValues = values_[generatedOutput.node];
                     if (nodeValues.size() <= *slot) nodeValues.resize(*slot + 1);
-                    nodeValues[*slot] = ImageHandle{region.textures[outputIndex],
-                                                    context.width, context.height};
+                    if (generatedOutput.requiresImage) {
+                        nodeValues[*slot] = ImageHandle{region.textures[outputIndex],
+                                                        dispatchWidth, dispatchHeight};
+                    } else {
+                        std::array<float, 4> folded{};
+                        glBindTexture(GL_TEXTURE_2D, region.textures[outputIndex]);
+                        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, folded.data());
+                        nodeValues[*slot] = generatedOutput.value.type == ShaderValueType::Vec2
+                            ? Value{Vec2{folded[0], folded[1]}} : Value{folded[0]};
+                    }
                 }
                 continue;
             }
@@ -739,6 +802,28 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
         applyUnconnectedParameterInputs(desc, inputKeys, inputs, record->parameters);
         auto& outputs = values_[id];
         outputs.resize(outputCount);
+        bool invalidRequiredImage = false;
+        std::size_t inputIndex = 0;
+        for (const auto& socket : desc.sockets) {
+            if (socket.direction != SocketDirection::Input) continue;
+            if (socket.requiresImage) {
+                const auto* image = inputIndex < inputs.size()
+                    ? std::get_if<ImageHandle>(&inputs[inputIndex]) : nullptr;
+                if (!image || !*image) {
+                    typeErrors_[id] = desc.displayName + ": input '" + socket.key +
+                                      "' requires a field image";
+                    invalidRequiredImage = true;
+                    break;
+                }
+            }
+            ++inputIndex;
+        }
+        if (invalidRequiredImage) {
+            for (auto& output : outputs) output = {};
+            timings_.erase(id);
+            continue;
+        }
+        typeErrors_.erase(id);
         instance.setParameters(withConnectedParameterOverrides(
             desc, inputKeys, inputs, record->parameters));
         if ((needsReset_ || nodeReset) && desc.stateful) instance.reset(context);
@@ -765,11 +850,10 @@ std::vector<GeneratedShaderInfo> GraphRuntime::generatedShaders() const {
     for (const auto& region : fusion_->regions) {
         result.push_back(GeneratedShaderInfo{region.region.id, region.region.nodes.back(),
             region.region.nodes, region.generated,
-            !fusion_->enabled ? GeneratedExecutionMode::ForcedLegacy :
             region.program && !region.runtimeFallback ? GeneratedExecutionMode::Generated :
                              GeneratedExecutionMode::LegacyFallback,
             region.diagnostic, region.errorLine, region.milliseconds,
-            evaluated_.contains(region.region.nodes.back())});
+            evaluated_.contains(region.region.nodes.back()), region.specializationCount});
     }
     if (!fusion_->planningDiagnostic.empty()) {
         GeneratedShaderInfo failure;
@@ -783,23 +867,28 @@ std::vector<GeneratedShaderInfo> GraphRuntime::generatedShaders() const {
 std::optional<NodeFusionInfo> GraphRuntime::fusionInfo(NodeId id) const {
     if (!fusion_) return std::nullopt;
     const auto found = fusion_->regionForNode.find(id);
-    if (found == fusion_->regionForNode.end()) return std::nullopt;
+    if (found == fusion_->regionForNode.end()) {
+        if (typeErrors_.contains(id))
+            return NodeFusionInfo{id, id, 1, false, false, true,
+                                  GeneratedExecutionMode::LegacyFallback, 0};
+        return std::nullopt;
+    }
     const auto& region = fusion_->regions[found->second];
     const bool materialized = std::ranges::find(region.generated.outputs, id,
                                                 &ShaderOutputRequirement::node) !=
                               region.generated.outputs.end();
     return NodeFusionInfo{region.region.id, region.region.nodes.back(), region.region.nodes.size(),
         id != region.region.nodes.back(), materialized, region.program == 0,
-        !fusion_->enabled ? GeneratedExecutionMode::ForcedLegacy :
         region.program && !region.runtimeFallback ? GeneratedExecutionMode::Generated :
-                         GeneratedExecutionMode::LegacyFallback};
+                         GeneratedExecutionMode::LegacyFallback,
+        region.specializationCount};
 }
 
 void GraphRuntime::setFusionEnabled(bool enabled) {
     if (!fusion_) fusion_ = std::make_unique<FusionState>();
     if (fusion_->enabled == enabled) return;
     fusion_->enabled = enabled;
-    forceDirty_ = true;
+    rebuildFusion();
 }
 
 bool GraphRuntime::fusionEnabled() const { return !fusion_ || fusion_->enabled; }

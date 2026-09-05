@@ -52,4 +52,37 @@ All spatial nodes use normalized coordinates unless otherwise stated:
 
 Neighborhood filters default to `Clamp` boundary handling unless an Address Mode is exposed.
 
+## Generated-node execution contract
+
+Built-in per-pixel nodes have one GPU implementation: `NodeInstance::lowerShader`. The runtime
+executes a lowerable node as a solo generated region when chain fusion is disabled, and may fuse
+it with adjacent lowerable nodes when fusion is enabled. `evaluate` is reserved for nodes that
+cannot be lowered and for explicit parameter-dependent escape hatches such as multipass
+convolution.
+
+Lowering works with concrete runtime boundary values:
+
+* `Float` and `Vector` become scalar or `vec2` uniforms.
+* `Field` becomes one sampler and is sampled automatically.
+* `Empty` prevents generated dispatch until the source becomes available.
+* Values produced inside a region remain expressions and are substituted directly.
+
+The `ShaderValue` width (`Scalar`, `Vec2`, or `Vec4`) is independent of its constant/field
+category. Use `scalar`, `vector`, or `color` when a socket has a fixed semantic width, and use
+the raw `input` value plus `promotedShaderType` for component-wise operations whose width follows
+their operands. `convertShaderValue` implements scalar broadcast, vector extension, and `.x`/`.xy`
+projection consistently.
+
+Field-ness is derived by the lowering infrastructure. An emitted value is a field when any value
+it uses is a field. Position-dependent generators set `NodeDescriptor::producedField`; ordinary
+nodes must not mark constant expressions as images. Constant scalar/vector results are folded by
+a one-pixel generated dispatch and returned as `Float`/`Vec2`. They are materialized at canvas
+size only when a native image consumer requires a texture.
+
+A socket sampled at arbitrary coordinates or neighboring texels must set
+`SocketDescriptor::requiresImage`. Supplying a constant to it is a typed lowering error attributed
+to that node; it is never silently broadcast as a fake texture. Concrete boundary kinds are part
+of a region specialization. The runtime re-lowers when a live value changes between constant,
+vector, field, and empty, while the generated-source cache reuses prior specializations.
+
 ---

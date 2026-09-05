@@ -54,8 +54,8 @@ NodeRegistry registry() {
          {"ifTrue", "If True", 1.0F, -10.0F, 10.0F},
          {"ifFalse", "If False", 0.0F, -10.0F, 10.0F}}});
     add(result, {"coordinates", 1, "Canvas Coordinates", "Input",
-        {{"x", "X", ValueType::Image2D, SocketDirection::Output},
-         {"y", "Y", ValueType::Image2D, SocketDirection::Output}}, {}});
+        {{"x", "X", ValueType::AnyNumeric, SocketDirection::Output},
+         {"y", "Y", ValueType::AnyNumeric, SocketDirection::Output}}, {}});
     add(result, {"laplacian", 1, "Laplacian", "Filter",
         {{"value", "Value", ValueType::AnyVector, SocketDirection::Input},
          {"scale", "Scale", ValueType::Float, SocketDirection::Input, true},
@@ -89,6 +89,36 @@ TEST_CASE("registry rejects incomplete enum metadata") {
     REQUIRE_THROWS_AS(add(nodes, {"bad_enum", 1, "Bad Enum", "Test", {},
         {{"mode", "Mode", 0.0F, 0.0F, 2.0F, ParameterDescriptor::Control::Enum,
           {"Only one label"}}}}), std::invalid_argument);
+}
+
+TEST_CASE("registry validates generated field and neighborhood declarations") {
+    NodeRegistry nodes;
+    auto generator = NodeDescriptor{"bad_generator", 1, "Bad Generator", "Test",
+        {{"out", "Out", ValueType::AnyNumeric, SocketDirection::Output}}, {}};
+    generator.producedField = true;
+    REQUIRE_THROWS_AS(add(nodes, generator), std::invalid_argument);
+
+    auto filter = NodeDescriptor{"bad_filter", 1, "Bad Filter", "Test",
+        {{"source", "Source", ValueType::Image2D, SocketDirection::Input},
+         {"out", "Out", ValueType::Image2D, SocketDirection::Output}}, {}};
+    filter.lowerable = true;
+    filter.neighborhoodSocket = "source";
+    REQUIRE_THROWS_AS(add(nodes, filter), std::invalid_argument);
+}
+
+TEST_CASE("producedField makes an AnyNumeric generator infer a field output") {
+    NodeRegistry nodes;
+    auto generator = NodeDescriptor{"field_generator", 1, "Field Generator", "Test",
+        {{"out", "Out", ValueType::AnyNumeric, SocketDirection::Output}}, {}};
+    generator.lowerable = true;
+    generator.producedField = true;
+    add(nodes, generator);
+
+    Graph graph;
+    const auto node = graph.addNode("field_generator");
+    const auto compiled = graph.compile(nodes);
+    REQUIRE(compiled.valid);
+    REQUIRE(compiled.inferredOutputs.at(node) == ValueType::Image2D);
 }
 
 TEST_CASE("cycles are rejected without mutating the graph") {

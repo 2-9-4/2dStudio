@@ -99,6 +99,15 @@ std::string glslFloat(float value) {
     return text;
 }
 
+std::string glslType(ShaderValueType type) {
+    switch (type) {
+    case ShaderValueType::Scalar: return "float";
+    case ShaderValueType::Vec2: return "vec2";
+    case ShaderValueType::Vec4: return "vec4";
+    }
+    return "float";
+}
+
 class ConvolutionNode final : public TextureNode {
 public:
     ~ConvolutionNode() override { if (scratch_ != 0) glDeleteTextures(1, &scratch_); }
@@ -109,6 +118,7 @@ public:
             {{"iterations", "Iterations", 1.0F, 1.0F, 32.0F}}};
         result.lowerable = true;
         result.neighborhoodSocket = "image";
+        result.sockets[0].requiresImage = true;
         return result;
     }
     const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
@@ -123,12 +133,15 @@ public:
 
         const auto spec = convolutionSpec(parameters_);
         const auto bias = context.parameter("bias", 0.0F);
+        const auto sourceType = context.inputTexel(
+            "image", "p", "image", 0.0F).type;
+        const auto typeName = glslType(sourceType);
 
         std::ostringstream source;
-        source << "vec4 convolutionKernel(ivec2 p){\n";
+        source << typeName << " convolutionKernel(ivec2 p){\n";
 
         if (spec.operation == 0) {
-            source << "vec4 sum=vec4(0.0);\n";
+            source << typeName << " sum=" << typeName << "(0.0);\n";
 
             for (int y = -spec.radius; y <= spec.radius; ++y) {
                 for (int x = -spec.radius; x <= spec.radius; ++x) {
@@ -156,11 +169,11 @@ public:
                 }
             }
 
-            source << "return sum+vec4(" << bias.name << ");\n";
+            source << "return sum+" << convertShaderValue(bias, sourceType) << ";\n";
         } else {
             const bool erode = spec.operation == 1;
 
-            source << "vec4 v=vec4("
+            source << typeName << " v=" << typeName << "("
                 << (erode ? "3.402823e38" : "-3.402823e38")
                 << ");\n";
 
@@ -198,7 +211,7 @@ public:
         const auto helper =
             context.helper("convolutionKernel", source.str());
 
-        (void)context.emit(helper + "(p)", "image");
+        (void)context.emitTyped(helper + "(p)", sourceType, "image");
         return true;
     }
     void evaluate(EvaluationContext& context, std::span<const Value> inputs, std::span<Value> outputs) override {

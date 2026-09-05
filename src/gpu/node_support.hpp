@@ -18,6 +18,7 @@ inline ImageHandle imageAt(std::span<const Value> values, std::size_t index) {
 inline float floatAt(std::span<const Value> values, std::size_t index, float fallback = 0.0F) {
     if (index >= values.size()) return fallback;
     if (const auto* number = std::get_if<float>(&values[index])) return *number;
+    if (const auto* vector = std::get_if<Vec2>(&values[index])) return vector->x;
     return fallback;
 }
 
@@ -36,6 +37,13 @@ inline void bindTexture(int unit, GLuint texture) {
 
 class ParameterNode : public NodeInstance {
 public:
+    // Fully lowered nodes inherit this empty fallback. Native nodes override it;
+    // an unavailable generated input therefore propagates an empty value without
+    // requiring a second per-node implementation.
+    void evaluate(EvaluationContext&, std::span<const Value>,
+                  std::span<Value> outputs) override {
+        for (auto& output : outputs) output = {};
+    }
     [[nodiscard]] nlohmann::json parameters() const override { return parameters_; }
     void setParameters(const nlohmann::json& values) override { parameters_ = values; }
 

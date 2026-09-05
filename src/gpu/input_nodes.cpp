@@ -123,13 +123,8 @@ public:
     const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
     bool lowerShader(ShaderLoweringContext& context) const override {
         const auto value = context.parameter("value", 0.5F);
-        const auto expression = context.valueType() == ShaderValueType::Vec4
-            ? "vec4(" + value.name + ")" : value.name;
-        (void)context.emit(expression, "value");
+        (void)context.emitTyped(value.name, ShaderValueType::Scalar, "value");
         return true;
-    }
-    void evaluate(EvaluationContext&, std::span<const Value>, std::span<Value> outputs) override {
-        outputs[0] = parameter(parameters_, "value", 0.5F);
     }
 };
 

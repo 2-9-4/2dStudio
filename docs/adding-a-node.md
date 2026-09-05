@@ -6,16 +6,21 @@ family registration function in `src/gpu/nodes_internal.hpp`, and call that func
 `registerBuiltInNodes`. Shared parameter, texture, and uniform helpers live in
 `src/gpu/node_support.hpp`.
 
-Each implementation derives from `NodeInstance` and provides a stable `NodeDescriptor`
-plus evaluation, parameter serialization, and optional reset behavior.
+Each implementation derives from `NodeInstance` directly or through
+`node_support::ParameterNode`, and provides a stable `NodeDescriptor`, parameter serialization,
+and either generated lowering or native evaluation. Prefer lowering for per-pixel work;
+`ParameterNode` supplies the empty native fallback needed by a fully lowerable node, so that node
+does not implement `evaluate` or own a standalone compute program.
 
 ```cpp
-class InvertNode final : public NodeInstance {
+class InvertNode final : public node_support::ParameterNode {
 public:
     static NodeDescriptor describe() {
-        return {"example.invert", 1, "Invert", "Color",
+        auto result = NodeDescriptor{"example.invert", 1, "Invert", "Color",
             {{"image", "Image", ValueType::Image2D, SocketDirection::Input},
              {"result", "Result", ValueType::Image2D, SocketDirection::Output}}, {}};
+        result.lowerable = true;
+        return result;
     }
 
     const NodeDescriptor& descriptor() const override {
@@ -23,17 +28,13 @@ public:
         return descriptor;
     }
 
-    void evaluate(EvaluationContext& context,
-                  std::span<const Value> inputs,
-                  std::span<Value> outputs) override {
-        // Allocate or reuse an output through the GpuRuntime in context.gpu,
-        // dispatch compute work, then assign an ImageHandle to outputs[0].
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto image = context.color("image", "image", 0.0F);
+        (void)context.emitTyped(
+            "vec4(vec3(1.0)-(" + image.name + ").rgb,(" + image.name + ").a)",
+            ShaderValueType::Vec4, "result");
+        return true;
     }
-
-    nlohmann::json parameters() const override { return parameters_; }
-    void setParameters(const nlohmann::json& value) override { parameters_ = value; }
-private:
-    nlohmann::json parameters_;
 };
 ```
 
@@ -52,14 +53,15 @@ exactly match the parameter key:
 {{"rotation", "Rotation", 0.0F, -6.2831853F, 6.2831853F}}
 ```
 
-The runtime supplies an unconnected Float/Integer parameter socket with the current slider
-value before calling `evaluate`. A connected value replaces it. Therefore evaluate the input
-slot normally; do not invent a second unrelated default or read a different key. Procedural
-nodes may use `procedural::numericParameterInput` to make the relationship explicit.
+For native nodes, the runtime supplies an unconnected Float/Integer parameter socket with the
+current slider value before calling `evaluate`; a connected value replaces it. Lowerable nodes
+request the socket and parameter together through `input`, `scalar`, `vector`, or `color`.
+Do not invent a second unrelated default or read a different key. Native procedural nodes may
+use `procedural::numericParameterInput` to make the relationship explicit.
 
-Input indices count input sockets only, in descriptor order. Output sockets do not consume an
-input index. Keep the descriptor and evaluator beside each other and add a descriptor/runtime
-test when changing socket order. A safer procedural-node convention is:
+Native input indices count input sockets only, in descriptor order. Output sockets do not consume
+an input index. Keep the descriptor and implementation beside each other and add a
+descriptor/runtime test when changing socket order. A safer native procedural-node convention is:
 
 ```cpp
 const auto rotation = procedural::numericParameterInput(
@@ -106,10 +108,10 @@ texture,” because the canvas state is negative and must not sample an unbound 
 
 ## Before registering a node
 
-- Confirm every Float/Integer slider key matches the socket key consumed by evaluate.
+- Confirm every Float/Integer slider key matches the socket key consumed by lowering or evaluate.
 - Give every Enum a complete ordered label list and use the generic popup path.
 - Use one RG `AnyVector` socket for coordinates and `coordinateInput` for canvas defaults.
-- Initialize every output on every evaluation path, including missing required inputs.
+- Native nodes must initialize every output on every evaluation path, including missing required inputs.
 - Preserve Float/field promotion: constants return Float or Float2; any field input returns an image.
 - Compile the full application and exercise the node once with inputs disconnected and connected.
 
@@ -138,21 +140,31 @@ Runtime-loaded shared libraries are intentionally outside the first milestone; t
 
 ## Generated shader lowering
 
-`NodeInstance::lowerShader` is an optional GPU extension point. Nodes that do not override it
-continue through `evaluate` unchanged. A lowerable node asks `ShaderLoweringContext` for only
-the linked inputs and numeric parameters required by its selected operation, then emits a
-typed expression. The region builder records those requests as deduplicated image samplers or
-scalar uniforms and records the emitted value as an SSA-style instruction with its contributor
-node ID.
+Set `NodeDescriptor::lowerable` and implement `NodeInstance::lowerShader` for per-pixel nodes.
+The runtime always uses generated execution for supported parameters: fusion on combines safe
+linear chains, while fusion off creates one generated region per node. Planning stops at branches,
+joins, neighborhood edges, unsupported nodes, and GPU resource limits.
 
-The root planner currently invokes this capability for image-valued Math nodes. It specializes
-single nodes and fuses safe linear chains, but stops at branches, joins, unsupported nodes, and
-GPU resource limits. The IR itself supports several candidate outputs so future planners can
-form DAG regions without changing node lowerers. Numeric controls should remain uniforms when
-interactive editing must not trigger recompilation; parameters that change shader structure,
-such as Math's operation, belong in the specialization key.
+Ask only for operands used by the selected specialization. `scalar`, `vector`, and `color`
+automatically sample field legs and broadcast or project constant legs. For a component-wise node
+whose width follows its operands, use `input`, compute `promotedShaderType(operands)`, normalize
+with `convertShaderValue`, and emit with `emitTyped`. The IR derives whether the result is constant
+or a field; node code does not dispatch on that category.
 
-Generated sources must preserve the node's legacy `evaluate` semantics because that evaluator
-is also the runtime fallback for compilation failures and temporarily unavailable image inputs.
-Use the shared Math operation helpers as the model: persisted operation IDs, CPU behavior, root
-GLSL, simulation-subgraph GLSL, and UI names all come from one definition.
+Mark UV-dependent generators with `NodeDescriptor::producedField`. Mark neighborhood/source
+sockets with `SocketDescriptor::requiresImage` (and `neighborhoodSocket` when the edge must split
+regions). `inputAt` and `inputTexel` then reject constant legs with an attributed typed error.
+
+Numeric controls remain uniforms so interactive edits do not recompile. Parameters that change
+shader structure belong in `shaderVariantKey`. If only some settings lower correctly, implement
+`supportsRegionFusion` and keep `evaluate` solely for those native escape-hatch settings; the
+single-pass/multipass convolution split is the model.
+
+Concrete boundary kinds (`Float`, `Vector`, `Field`, `Empty`) are baked into generated source.
+The runtime re-lowers when a live boundary kind changes and caches generated programs by source.
+Scalar/vector constant outputs use a one-pixel fold and remain `Float`/`Vec2`; field results and
+values handed to native image consumers are materialized as textures.
+
+Tests for a new lowerable node must cover constant and compatible field legs, verify constant-only
+outputs remain semantic values, verify required-image errors, and compare fused pixels with solo
+lowered pixels. Do not add a "generated versus native" duplicate-implementation test.

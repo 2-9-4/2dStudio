@@ -253,7 +253,7 @@ TEST_CASE("shared node lowering follows the same contract for Scalar and Vec4 pl
     REQUIRE(scalar.expressions[1].find("step(") != std::string::npos);
     REQUIRE(vector.expressions[1].find("step(") != std::string::npos);
     REQUIRE(scalar.expressions[2].find('?') != std::string::npos);
-    REQUIRE(vector.expressions[2].find(".r") != std::string::npos);
+    REQUIRE(vector.expressions[2].find(".x") != std::string::npos);
 }
 
 TEST_CASE("general shader planner fuses threshold and select and preserves multi-output sockets") {
@@ -275,7 +275,7 @@ TEST_CASE("general shader planner fuses threshold and select and preserves multi
     REQUIRE(regions.front().nodes == std::vector<NodeId>{threshold, select});
     const auto generated = generateComputeShader(regions.front(), {select});
     REQUIRE(generated.source.find("step(") != std::string::npos);
-    REQUIRE(generated.source.find(".r") != std::string::npos);
+    REQUIRE(generated.source.find("step(vec4(") != std::string::npos);
 
     Graph coordinatesGraph;
     const auto coordinates = coordinatesGraph.addNode("coordinates");
@@ -305,7 +305,7 @@ TEST_CASE("Laplacian neighborhood inputs form region boundaries") {
     const auto generated = generateComputeShader(regions[1], {threshold});
     REQUIRE(generated.source.find("laplacianKernel_") != std::string::npos);
     REQUIRE(std::ranges::count_if(generated.inputs, [](const auto& input) {
-        return input.kind == ShaderInputKind::Image;
+        return input.kind == ShaderInputKind::Field;
     }) == 1);
 }
 
@@ -339,9 +339,8 @@ TEST_CASE("convolution fuses with clamp sampling and specializes") {
     compiled = graph.compile(registry);
     regions = planShaderRegions(graph, registry, compiled, 16, 1024);
     const auto normalized = generateComputeShader(regions[1], {threshold});
-    REQUIRE(normalized.source != originalSource);
     REQUIRE(normalized.specializationKey != originalKey);
-    REQUIRE(normalized.source.find("weightSum") != std::string::npos);
+    REQUIRE(normalized.source == originalSource);
 }
 
 TEST_CASE("convolution iterations above one stay a materialized boundary") {
@@ -364,6 +363,129 @@ TEST_CASE("convolution iterations above one stay a materialized boundary") {
     REQUIRE_FALSE(contains(convolution));
     REQUIRE(contains(source));
     REQUIRE(contains(threshold));
+}
+
+TEST_CASE("boundary lowering specializes constants and fields without flexible uniforms") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph;
+    const auto source = graph.addNode("math");
+    const auto threshold = graph.addNode("threshold");
+    graph.addLink(source, "result", threshold, "value");
+    const auto compiled = graph.compile(registry);
+    REQUIRE(compiled.valid);
+
+    const auto constant = lowerShaderRegion(graph, registry, compiled, {threshold},
+        [](NodeId, std::string_view) { return ShaderInputKind::Float; });
+    REQUIRE(constant.inputs.front().kind == ShaderInputKind::Float);
+    REQUIRE_FALSE(constant.candidateOutputs.front().value.field);
+    const auto constantShader = generateComputeShader(constant, {threshold});
+    REQUIRE(constantShader.source.find("sampler2D") == std::string::npos);
+    REQUIRE(constantShader.source.find("inputHasImage") == std::string::npos);
+
+    const auto field = lowerShaderRegion(graph, registry, compiled, {threshold},
+        [](NodeId, std::string_view) { return ShaderInputKind::Field; });
+    REQUIRE(field.inputs.front().kind == ShaderInputKind::Field);
+    REQUIRE(field.candidateOutputs.front().value.field);
+    const auto fieldShader = generateComputeShader(field, {threshold});
+    REQUIRE(fieldShader.source.find("sampler2D") != std::string::npos);
+    REQUIRE(fieldShader.source != constantShader.source);
+}
+
+TEST_CASE("constant-only lowering stays semantic and fusion off plans solo regions") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph constants;
+    const auto value = constants.addNode("float");
+    const auto math = constants.addNode("math");
+    constants.addLink(value, "value", math, "a");
+    const auto compiled = constants.compile(registry);
+    REQUIRE(compiled.valid);
+
+    const auto fused = planShaderRegions(constants, registry, compiled, 16, 1024, true);
+    REQUIRE(fused.size() == 1);
+    REQUIRE(fused.front().nodes == std::vector<NodeId>{value, math});
+    REQUIRE_FALSE(fused.front().candidateOutputs.front().value.field);
+    REQUIRE(fused.front().candidateOutputs.front().value.type == ShaderValueType::Scalar);
+
+    const auto solo = planShaderRegions(constants, registry, compiled, 16, 1024, false);
+    REQUIRE(solo.size() == 2);
+    REQUIRE(solo[0].nodes.size() == 1);
+    REQUIRE(solo[1].nodes.size() == 1);
+}
+
+TEST_CASE("every fully lowerable built-in executes as a solo generated region") {
+    HiddenContext window;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const std::array<const char*, 9> independent = {
+        "float", "math", "mix", "threshold", "select", "compare",
+        "color_ramp", "perlin", "coordinates"};
+    for (const auto* type : independent) {
+        INFO(type);
+        Graph graph; graph.settings = {4, 4, 60};
+        const auto node = graph.addNode(type);
+        GpuRuntime gpu;
+        GraphRuntime runtime(graph, registry, gpu);
+        runtime.setFusionEnabled(false);
+        REQUIRE(runtime.evaluate(0.0, 0.0, false));
+        REQUIRE(runtime.fusionInfo(node).has_value());
+        REQUIRE(runtime.fusionInfo(node)->nodeCount == 1);
+        REQUIRE(runtime.fusionInfo(node)->mode == GeneratedExecutionMode::Generated);
+        if (std::string_view(type) == "float" || std::string_view(type) == "math" ||
+            std::string_view(type) == "mix" || std::string_view(type) == "threshold" ||
+            std::string_view(type) == "select" || std::string_view(type) == "compare")
+            REQUIRE(std::holds_alternative<float>(runtime.values().at(node).front()));
+    }
+
+    for (const auto* type : {"invert", "laplacian", "convolution"}) {
+        INFO(type);
+        Graph graph; graph.settings = {4, 4, 60};
+        const auto source = graph.addNode("perlin");
+        const auto node = graph.addNode(type);
+        graph.addLink(source, "image", node,
+                      std::string_view(type) == "laplacian" ? "value" : "image");
+        GpuRuntime gpu;
+        GraphRuntime runtime(graph, registry, gpu);
+        runtime.setFusionEnabled(false);
+        REQUIRE(runtime.evaluate(0.0, 0.0, false));
+        REQUIRE(runtime.fusionInfo(node)->nodeCount == 1);
+        REQUIRE(runtime.fusionInfo(node)->mode == GeneratedExecutionMode::Generated);
+        REQUIRE(std::holds_alternative<ImageHandle>(runtime.values().at(node).front()));
+    }
+}
+
+TEST_CASE("requiresImage reports the contributing node for constant inputs") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph;
+    const auto constant = graph.addNode("math");
+    const auto convolution = graph.addNode("convolution");
+    graph.addLink(constant, "result", convolution, "image");
+    const auto compiled = graph.compile(registry);
+    REQUIRE(compiled.valid);
+
+    const auto invalid = lowerShaderRegion(graph, registry, compiled, {convolution},
+        [](NodeId, std::string_view) { return ShaderInputKind::Float; });
+    REQUIRE(invalid.diagnosticNode == convolution);
+    REQUIRE(invalid.diagnostic.find("requires a field image") != std::string::npos);
+
+    const auto valid = lowerShaderRegion(graph, registry, compiled, {convolution},
+        [](NodeId, std::string_view) { return ShaderInputKind::Field; });
+    REQUIRE(valid.diagnostic.empty());
+}
+
+TEST_CASE("native convolution escape hatch still rejects a constant source") {
+    HiddenContext window;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {4, 4, 60};
+    const auto constant = graph.addNode("math");
+    const auto convolution = graph.addNode("convolution");
+    graph.findNode(convolution)->parameters = {{"iterations", 2.0F}};
+    graph.addLink(constant, "result", convolution, "image");
+    GpuRuntime gpu;
+    GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0.0, 0.0, false));
+    REQUIRE(runtime.fusionInfo(convolution).has_value());
+    REQUIRE(runtime.fusionInfo(convolution)->compileFailed);
+    REQUIRE(std::holds_alternative<std::monostate>(
+        runtime.values().at(convolution).front()));
 }
 
 TEST_CASE("shader planner keeps branch and join boundaries materialized") {
@@ -399,7 +521,7 @@ TEST_CASE("shader requirements deduplicate bindings and split at resource limits
     const auto one = planShaderRegions(deduplicated, registry, compiled, 16, 1024);
     REQUIRE(one.size() == 1);
     REQUIRE(std::ranges::count_if(one.front().inputs, [](const auto& input) {
-        return input.kind == ShaderInputKind::Image;
+        return input.kind == ShaderInputKind::Field;
     }) == 1);
 
     Graph limited;
@@ -474,6 +596,39 @@ TEST_CASE("image input loads PNG pixels with the graph image orientation") {
     REQUIRE(values[3] == Catch::Approx(128.0F / 255.0F).margin(.002F));
     REQUIRE(values[4] == Catch::Approx(1.0F).margin(.002F));
     REQUIRE(values[6] == Catch::Approx(0.0F).margin(.002F));
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("empty to field boundary change re-specializes exactly once") {
+    HiddenContext window;
+    GpuRuntime gpu;
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph; graph.settings = {2, 2, 60};
+    const auto image = graph.addNode("image");
+    const auto threshold = graph.addNode("threshold");
+    graph.addLink(image, "image", threshold, "value");
+    GraphRuntime runtime(graph, registry, gpu);
+
+    REQUIRE(runtime.evaluate(0.0, 0.0, false));
+    const auto emptyCount = runtime.fusionInfo(threshold)->specializationCount;
+
+    const auto path = std::filesystem::temp_directory_path() /
+                      "reaction-boundary-specialization-test.png";
+    const std::array<png_byte, 4> pixels = {255, 255, 255, 255};
+    png_image png{};
+    png.version = PNG_IMAGE_VERSION;
+    png.width = 1;
+    png.height = 1;
+    png.format = PNG_FORMAT_RGBA;
+    REQUIRE(png_image_write_to_file(&png, path.string().c_str(), 0,
+                                    pixels.data(), 4, nullptr));
+    graph.findNode(image)->parameters = {{"path", path.string()}};
+
+    REQUIRE(runtime.evaluate(0.0, 0.0, false));
+    REQUIRE(runtime.fusionInfo(threshold)->specializationCount == emptyCount + 1);
+    REQUIRE(std::holds_alternative<ImageHandle>(runtime.values().at(threshold).front()));
+    REQUIRE(runtime.evaluate(0.0, 0.0, false));
+    REQUIRE(runtime.fusionInfo(threshold)->specializationCount == emptyCount + 1);
     std::filesystem::remove(path);
 }
 
@@ -602,9 +757,9 @@ TEST_CASE("spatial simulation operators are ordinary registered nodes") {
     REQUIRE(coordinates->category == "Input");
     REQUIRE(coordinates->sockets.size() == 2);
     REQUIRE(coordinates->sockets[0].key == "x");
-    REQUIRE(coordinates->sockets[0].type == ValueType::Image2D);
+    REQUIRE(coordinates->sockets[0].type == ValueType::AnyNumeric);
     REQUIRE(coordinates->sockets[1].key == "y");
-    REQUIRE(coordinates->sockets[1].type == ValueType::Image2D);
+    REQUIRE(coordinates->sockets[1].type == ValueType::AnyNumeric);
 
     const auto* laplacian = registry.descriptor("laplacian");
     REQUIRE(laplacian != nullptr);
@@ -639,14 +794,12 @@ TEST_CASE("Select is an ordinary registered node with exact nonzero semantics") 
     REQUIRE(descriptor->sockets.size() == 4);
 
     auto node = registry.create("select");
-    EvaluationContext context{};
-    std::array<Value, 3> inputs{Value{-0.25F}, Value{2.0F}, Value{3.0F}};
-    std::array<Value, 1> outputs;
-    node->evaluate(context, inputs, outputs);
-    REQUIRE(std::get<float>(outputs[0]) == 2.0F);
-    inputs[0] = 0.0F;
-    node->evaluate(context, inputs, outputs);
-    REQUIRE(std::get<float>(outputs[0]) == 3.0F);
+    CapturingLoweringContext lowering(ShaderValueType::Scalar);
+    lowering.inputs = {{"condition", {ShaderValueType::Scalar, "condition"}},
+                       {"ifTrue", {ShaderValueType::Scalar, "yes"}},
+                       {"ifFalse", {ShaderValueType::Scalar, "no"}}};
+    REQUIRE(node->lowerShader(lowering));
+    REQUIRE(lowering.emitted.name == "((condition)!=0.0?yes:no)");
 }
 
 TEST_CASE("canvas coordinates and Laplacian execute through the normal graph runtime") {
@@ -696,22 +849,16 @@ TEST_CASE("Perlin advances by evaluated frame rather than wall time") {
     REQUIRE(readImage(runtime.outputImage()) == first);
 }
 
-TEST_CASE("scalar Math protects division and remains on CPU") {
+TEST_CASE("scalar Math safe division is emitted by its only implementation") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     auto math = registry.create("math");
-    EvaluationContext context;
-    std::array<Value, 1> outputs;
     math->setParameters({{"operation", 3}, {"a", 1.0}, {"b", 0.0}});
-    math->evaluate(context, {}, outputs);
-    REQUIRE(std::holds_alternative<float>(outputs.front()));
-    REQUIRE(std::isfinite(std::get<float>(outputs.front())));
-    REQUIRE(std::get<float>(outputs.front()) == 1'000'000.0F);
-    math->setParameters({{"operation", 3}, {"a", 1.0}, {"b", -1.0e-12F}});
-    math->evaluate(context, {}, outputs);
-    REQUIRE(std::get<float>(outputs.front()) == -1'000'000.0F);
+    CapturingLoweringContext lowering(ShaderValueType::Scalar);
+    REQUIRE(math->lowerShader(lowering));
+    REQUIRE(lowering.emitted.name.find("1e-6") != std::string::npos);
 }
 
-TEST_CASE("generated Math chain matches legacy execution and materializes previews on demand") {
+TEST_CASE("fused Math chain matches solo lowering and materializes previews on demand") {
     HiddenContext context;
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph; graph.settings = {16, 16, 60};
@@ -734,8 +881,8 @@ TEST_CASE("generated Math chain matches legacy execution and materializes previe
     runtime.setFusionEnabled(false);
     REQUIRE(runtime.evaluate(0, 0, false));
     REQUIRE(runtime.values().contains(add));
-    const auto legacy = readImage(std::get<ImageHandle>(runtime.values().at(multiply).front()));
-    REQUIRE(generated == legacy);
+    const auto solo = readImage(std::get<ImageHandle>(runtime.values().at(multiply).front()));
+    REQUIRE(generated == solo);
 
     runtime.setFusionEnabled(true);
     runtime.setIntermediatePreview(add);
@@ -747,7 +894,7 @@ TEST_CASE("generated Math chain matches legacy execution and materializes previe
     REQUIRE_FALSE(runtime.values().contains(add));
 }
 
-TEST_CASE("every generated Math operation compiles and agrees with legacy pixels") {
+TEST_CASE("every generated Math operation compiles and fused pixels agree with solo lowering") {
     HiddenContext context;
     NodeRegistry registry; registerBuiltInNodes(registry);
     for (int operation = 0; operation < static_cast<int>(kMathOperationNames.size()); ++operation) {
@@ -767,10 +914,10 @@ TEST_CASE("every generated Math operation compiles and agrees with legacy pixels
         const auto generated = readImage(std::get<ImageHandle>(runtime.values().at(math).front()));
         runtime.setFusionEnabled(false);
         REQUIRE(runtime.evaluate(0, 0, false));
-        const auto legacy = readImage(std::get<ImageHandle>(runtime.values().at(math).front()));
-        REQUIRE(generated.size() == legacy.size());
+        const auto solo = readImage(std::get<ImageHandle>(runtime.values().at(math).front()));
+        REQUIRE(generated.size() == solo.size());
         for (std::size_t index = 0; index < generated.size(); ++index)
-            REQUIRE(generated[index] == Catch::Approx(legacy[index]).margin(.002F));
+            REQUIRE(generated[index] == Catch::Approx(solo[index]).margin(.002F));
     }
 }
 
@@ -1129,7 +1276,7 @@ TEST_CASE("discrete reaction stays within twice monolithic GPU time") {
     REQUIRE(median(discreteTimes) <= baseline * 2.0);
 }
 
-TEST_CASE("color ramp factor fed by a field generator fuses and agrees with legacy") {
+TEST_CASE("color ramp factor fed by a field generator agrees when fused and solo") {
     HiddenContext context;
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph; graph.settings = {8, 1, 60};
@@ -1145,7 +1292,7 @@ TEST_CASE("color ramp factor fed by a field generator fuses and agrees with lega
     const auto generatedInfo = runtime.generatedShaders().front();
     const auto& inputs = generatedInfo.shader.inputs;
     REQUIRE(inputs.size() == 9);
-    REQUIRE(inputs.front().kind == ShaderInputKind::Flexible);
+    REQUIRE(inputs.front().kind == ShaderInputKind::Field);
     REQUIRE(runtime.fusionInfo(ramp)->mode == GeneratedExecutionMode::Generated);
     // A fixed image fed through fusion would flatten the ramp to its end color;
     // the field must instead drive the interpolation.
@@ -1154,13 +1301,13 @@ TEST_CASE("color ramp factor fed by a field generator fuses and agrees with lega
     REQUIRE(fused[7 * 4] == Catch::Approx(1.0F).margin(.002F));
     runtime.setFusionEnabled(false);
     REQUIRE(runtime.evaluate(0, 0, false));
-    const auto legacy = readImage(std::get<ImageHandle>(runtime.values().at(ramp).front()));
-    REQUIRE(fused.size() == legacy.size());
+    const auto solo = readImage(std::get<ImageHandle>(runtime.values().at(ramp).front()));
+    REQUIRE(fused.size() == solo.size());
     for (std::size_t index = 0; index < fused.size(); ++index)
-        REQUIRE(fused[index] == Catch::Approx(legacy[index]).margin(.002F));
+        REQUIRE(fused[index] == Catch::Approx(solo[index]).margin(.002F));
 }
 
-TEST_CASE("text_test fusion matches legacy", "[.][text-test]") {
+TEST_CASE("text_test fusion matches solo lowering", "[.][text-test]") {
     HiddenContext context;
     NodeRegistry registry; registerBuiltInNodes(registry);
     const auto source = std::filesystem::current_path() / "text_test";
@@ -1202,55 +1349,9 @@ TEST_CASE("text_test fusion matches legacy", "[.][text-test]") {
         maxError = std::max(maxError, error);
         if (error > 1e-4F) ++differing;
     }
-    // Fused execution must reproduce the native (fusion-off) result exactly room
-    // for room. The mix node here is fed by AnyVector field producers
-    // (transform_2d coordinates, worley featurePosition); without FlexibleVector
-    // lowering these fused inputs regress to constant fallbacks.
+    // Fused execution must reproduce solo lowered regions exactly, including
+    // AnyVector field producers such as transform coordinates and Worley positions.
     REQUIRE(differing == 0);
-}
-
-TEST_CASE("compare scalar output matches exact and epsilon semantics") {
-    NodeRegistry registry;
-    registerBuiltInNodes(registry);
-    auto compare = registry.create("compare");
-    EvaluationContext context;
-    context.width = 32;
-    context.height = 32;
-
-    const auto run = [&](float mode, float a, float b, float c, float epsilon) {
-        compare->setParameters({{"mode", mode}, {"epsilon", epsilon}});
-        std::vector<Value> inputs{Value{a}, Value{b}, Value{c}};
-        std::vector<Value> outputs{Value{std::monostate{}}};
-        compare->evaluate(context, inputs, outputs);
-        return std::get<float>(outputs[0]);
-    };
-
-    REQUIRE(run(0.0F, 3.0F, 5.0F, 0.0F, 1e-4F) == 1.0F);
-    REQUIRE(run(0.0F, 5.0F, 5.0F, 0.0F, 1e-4F) == 0.0F);
-    REQUIRE(run(1.0F, 5.0F, 5.0F, 0.0F, 1e-4F) == 1.0F);
-    REQUIRE(run(1.0F, 6.0F, 5.0F, 0.0F, 1e-4F) == 0.0F);
-    REQUIRE(run(2.0F, 5.0F, 3.0F, 0.0F, 1e-4F) == 1.0F);
-    REQUIRE(run(2.0F, 3.0F, 5.0F, 0.0F, 1e-4F) == 0.0F);
-    REQUIRE(run(3.0F, 5.0F, 5.0F, 0.0F, 1e-4F) == 1.0F);
-    REQUIRE(run(3.0F, 4.0F, 5.0F, 0.0F, 1e-4F) == 0.0F);
-
-    REQUIRE(run(4.0F, 1.0F, 1.0F + 1e-3F, 0.0F, 1e-2F) == 1.0F);
-    REQUIRE(run(4.0F, 1.0F, 1.0F + 1e-1F, 0.0F, 1e-2F) == 0.0F);
-    REQUIRE(run(5.0F, 1.0F, 1.0F + 1e-1F, 0.0F, 1e-2F) == 1.0F);
-
-    REQUIRE(run(6.0F, 4.0F, 3.0F, 5.0F, 1e-4F) == 1.0F);
-    REQUIRE(run(6.0F, 2.0F, 3.0F, 5.0F, 1e-4F) == 0.0F);
-    REQUIRE(run(7.0F, 4.0F, 3.0F, 5.0F, 1e-4F) == 1.0F);
-    REQUIRE(run(7.0F, 3.0F, 3.0F, 5.0F, 1e-4F) == 0.0F);
-
-    REQUIRE(run(8.0F, 1.0F, 1.0F, 0.0F, 1e-4F) == 1.0F);
-    REQUIRE(run(8.0F, 1.0F, 0.0F, 0.0F, 1e-4F) == 0.0F);
-    REQUIRE(run(9.0F, 0.0F, 1.0F, 0.0F, 1e-4F) == 1.0F);
-    REQUIRE(run(9.0F, 0.0F, 0.0F, 0.0F, 1e-4F) == 0.0F);
-    REQUIRE(run(10.0F, 1.0F, 0.0F, 0.0F, 1e-4F) == 1.0F);
-    REQUIRE(run(10.0F, 0.0F, 0.0F, 0.0F, 1e-4F) == 0.0F);
-    REQUIRE(run(11.0F, 1.0F, 0.0F, 0.0F, 1e-4F) == 0.0F);
-    REQUIRE(run(11.0F, 0.0F, 7.0F, 0.0F, 1e-4F) == 1.0F);
 }
 
 TEST_CASE("compare lowers all modes to scalar truth comparisons") {
