@@ -59,8 +59,9 @@ submodes, and the special nodes available inside simulation subgraphs.
 
 - **Deterministic Hash** (`hash`) — Produces stable scalar and XY vector hashes in `[0,1)`
   from a Vector Numeric position plus scalar Seed and optional Salt. Its fixed 32-bit integer
-  mixing algorithm is versioned with the node. Input Handling chooses integer truncation or
-  explicit floor, with the canonical use being `Hash(floor(position), seed)`.
+  mixing algorithm is versioned with the node. Input Handling provides **Canvas Space** for
+  per-pixel vector-field variation and **Pixel Space** for integer cell hashing; the canonical
+  cell use is `Hash(floor(position), seed)`.
 
 - **Threshold** (`threshold`) — Converts a value to 0 or 1 depending on whether it is at
   least the configured threshold.

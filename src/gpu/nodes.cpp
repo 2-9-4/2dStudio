@@ -437,7 +437,13 @@ class OutputNode final : public ParameterNode {
 public:
     static NodeDescriptor describe(){return {"output",1,"Output","Output",{{"image","Image",ValueType::Image2D,SocketDirection::Input},{"image","Image",ValueType::Image2D,SocketDirection::Output}},{}};}
     const NodeDescriptor& descriptor()const override{static const auto value=describe();return value;}
-    void evaluate(EvaluationContext&,std::span<const Value> inputs,std::span<Value> outputs)override{outputs[0]=inputs.empty()?Value{}:inputs[0];}
+    void evaluate(EvaluationContext&,std::span<const Value> inputs,std::span<Value> outputs)override{
+        // A generated scalar/vector producer normally materializes before this
+        // image-only boundary. Keep an unexpected constant from escaping as an
+        // invalid image value if that boundary cannot be generated.
+        outputs[0] = !inputs.empty() && std::holds_alternative<ImageHandle>(inputs[0])
+            ? inputs[0] : Value{};
+    }
 };
 
 template <typename T> void addNode(NodeRegistry& registry) {

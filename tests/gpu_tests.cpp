@@ -733,6 +733,43 @@ TEST_CASE("Deterministic Hash exposes typed outputs and fixed integer lowering")
     REQUIRE(std::ranges::find(lowering.trace, "helper:deterministicHash") != lowering.trace.end());
     REQUIRE(lowering.emitted.name.find("vec2(") != std::string::npos);
     REQUIRE(lowering.emitted.name.find("floor(position)") != std::string::npos);
+
+    node->setParameters({{"inputMode", 0.0F}});
+    CapturingLoweringContext rawLowering(ShaderValueType::Scalar);
+    rawLowering.inputs = {{"position", {ShaderValueType::Vec2, "position"}},
+                          {"seed", {ShaderValueType::Scalar, "seed"}},
+                          {"salt", {ShaderValueType::Scalar, "salt"}}};
+    REQUIRE(node->lowerShader(rawLowering));
+    REQUIRE(rawLowering.emitted.name.find("floatBitsToUint(position.x)") != std::string::npos);
+}
+
+TEST_CASE("Hash promotes a vector field and materializes a disconnected position for Output") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph;
+    const auto coordinates = graph.addNode("coordinates");
+    const auto fieldHash = graph.addNode("hash");
+    const auto constantHash = graph.addNode("hash");
+    const auto output = graph.addNode("output");
+    graph.addLink(coordinates, "coordinates", fieldHash, "position");
+    graph.addLink(constantHash, "scalar", output, "image");
+    const auto compiled = graph.compile(registry);
+    REQUIRE(compiled.valid);
+    const auto regions = planShaderRegions(graph, registry, compiled, 16, 1024);
+    const auto fieldRegion = std::ranges::find(regions, fieldHash, &ShaderRegion::id);
+    REQUIRE(fieldRegion != regions.end());
+    const auto fieldOutput = std::ranges::find_if(fieldRegion->candidateOutputs, [](const auto& output) {
+        return output.socket == "scalar";
+    });
+    REQUIRE(fieldOutput != fieldRegion->candidateOutputs.end());
+    REQUIRE(fieldOutput->value.field);
+
+    const auto constantRegion = std::ranges::find(regions, constantHash, &ShaderRegion::id);
+    REQUIRE(constantRegion != regions.end());
+    const auto scalarOutput = std::ranges::find_if(constantRegion->candidateOutputs, [](const auto& output) {
+        return output.socket == "scalar";
+    });
+    REQUIRE(scalarOutput != constantRegion->candidateOutputs.end());
+    REQUIRE(scalarOutput->requiresImage);
 }
 
 TEST_CASE("reaction multiplier inputs accept both scalar and image values") {

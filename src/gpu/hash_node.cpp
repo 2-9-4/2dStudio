@@ -10,7 +10,7 @@ namespace {
 
 using node_support::parameter;
 
-enum class HashPositionMode : int { IntegerCoordinates, FloorPosition };
+enum class HashPositionMode : int { CanvasSpace, PixelSpace };
 
 HashPositionMode hashPositionMode(float persistedValue) {
     return static_cast<HashPositionMode>(std::clamp(static_cast<int>(persistedValue), 0, 1));
@@ -26,7 +26,8 @@ public:
              {"scalar", "Scalar", ValueType::AnyNumeric, SocketDirection::Output, false, true},
              {"vector", "Vector", ValueType::AnyVector, SocketDirection::Output, false, true}},
             {{"inputMode", "Input Handling", 0.0F, 0.0F, 1.0F,
-              ParameterDescriptor::Control::Enum, {"Integer Coordinates", "Floor Position"}},
+              ParameterDescriptor::Control::Enum,
+              {"Canvas Space", "Pixel Space"}},
              {"seed", "Seed", 0.0F, -1000000.0F, 1000000.0F},
              {"salt", "Salt", 0.0F, -1000000.0F, 1000000.0F}}};
         result.lowerable = true;
@@ -48,9 +49,10 @@ public:
         const auto seed = context.scalar("seed", "seed", 0.0F);
         const auto salt = context.scalar("salt", "salt", 0.0F);
         const auto mode = hashPositionMode(parameter(parameters_, "inputMode", 0.0F));
-        const auto positionExpression = mode == HashPositionMode::FloorPosition
-            ? "ivec2(floor(" + position.name + "))"
-            : "ivec2(" + position.name + ")";
+        const auto positionExpression = mode == HashPositionMode::CanvasSpace
+            ? "uvec2(floatBitsToUint(" + position.name + ".x),floatBitsToUint(" +
+                position.name + ".y))"
+            : "uvec2(ivec2(floor(" + position.name + ")))";
         const auto seedExpression = "uint(int(floor(" + seed.name + ")))";
         const auto saltExpression = "uint(int(floor(" + salt.name + ")))";
 
@@ -63,15 +65,15 @@ uint deterministicHash_mix(uint value){
     value=(value^(value>>13u))*0xc2b2ae35u;
     return value^(value>>16u);
 }
-uint deterministicHash_value(ivec2 position,uint seed,uint salt,uint stream){
-    uint value=uint(position.x)*0x8da6b343u;
-    value^=uint(position.y)*0xd8163841u;
+uint deterministicHash_value(uvec2 position,uint seed,uint salt,uint stream){
+    uint value=position.x*0x8da6b343u;
+    value^=position.y*0xd8163841u;
     value^=seed*0xcb1ab31fu;
     value^=salt*0x165667b1u;
     value^=stream*0x27d4eb2du;
     return deterministicHash_mix(value);
 }
-float deterministicHash_unit(ivec2 position,uint seed,uint salt,uint stream){
+float deterministicHash_unit(uvec2 position,uint seed,uint salt,uint stream){
     return float(deterministicHash_value(position,seed,salt,stream)>>8u)*(1.0/16777216.0);
 }
 )GLSL");

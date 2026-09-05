@@ -643,7 +643,7 @@ That property is what makes this fundamentally different from Math.
 
 ---
 
-# Primitive B — Pixel / Canvas Metrics
+# Primitive B — Pixel / Canvas Metrics - DONE
 
 ## Purpose
 
@@ -816,7 +816,7 @@ This primitive becomes ubiquitous and should be extremely lightweight.
 
 ---
 
-# Primitive F — Vector Math
+# Primitive F — Vector Math - DONE
 
 ## Inputs
 
@@ -863,7 +863,7 @@ Rotate uses radians and the application's +Y-down rotation convention.
 
 ---
 
-# Primitive G — Deterministic Hash
+# Primitive G — Deterministic Hash - DONE
 
 This is essential for procedural subgraphs.
 

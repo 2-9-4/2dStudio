@@ -103,17 +103,6 @@
     },
     {
       "from": {
-        "node": 49,
-        "socket": "sampled"
-      },
-      "id": 172,
-      "to": {
-        "node": 4,
-        "socket": "image"
-      }
-    },
-    {
-      "from": {
         "node": 44,
         "socket": "image"
       },
@@ -220,6 +209,28 @@
       "to": {
         "node": 49,
         "socket": "coordinates"
+      }
+    },
+    {
+      "from": {
+        "node": 91,
+        "socket": "scalar"
+      },
+      "id": 306,
+      "to": {
+        "node": 4,
+        "socket": "image"
+      }
+    },
+    {
+      "from": {
+        "node": 90,
+        "socket": "result"
+      },
+      "id": 310,
+      "to": {
+        "node": 91,
+        "socket": "position"
       }
     }
   ],
@@ -1025,10 +1036,24 @@
         "scalar": 46.400001525878906
       },
       "position": [
-        5800.0,
-        956.0
+        5810.0,
+        955.0
       ],
       "type": "vector_math",
+      "typeVersion": 1
+    },
+    {
+      "id": 91,
+      "parameters": {
+        "inputMode": 0.0,
+        "salt": 96000.0,
+        "seed": 695378.0
+      },
+      "position": [
+        6872.0,
+        516.0
+      ],
+      "type": "hash",
       "typeVersion": 1
     }
   ],
