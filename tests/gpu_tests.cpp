@@ -711,6 +711,30 @@ TEST_CASE("Resolution exposes render dimensions as semantic constants") {
     REQUIRE(std::get<float>(values[2]) == Catch::Approx(1.6F));
 }
 
+TEST_CASE("Deterministic Hash exposes typed outputs and fixed integer lowering") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* descriptor = registry.descriptor("hash");
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(descriptor->lowerable);
+    REQUIRE(descriptor->sockets.size() == 5);
+    REQUIRE(descriptor->sockets[0].type == ValueType::AnyVector);
+    REQUIRE(descriptor->sockets[1].type == ValueType::Float);
+    REQUIRE(descriptor->sockets[2].type == ValueType::Float);
+    REQUIRE(descriptor->sockets[3].type == ValueType::AnyNumeric);
+    REQUIRE(descriptor->sockets[4].type == ValueType::AnyVector);
+
+    auto node = registry.create("hash");
+    node->setParameters({{"inputMode", 1.0F}});
+    CapturingLoweringContext lowering(ShaderValueType::Scalar);
+    lowering.inputs = {{"position", {ShaderValueType::Vec2, "position"}},
+                       {"seed", {ShaderValueType::Scalar, "seed"}},
+                       {"salt", {ShaderValueType::Scalar, "salt"}}};
+    REQUIRE(node->lowerShader(lowering));
+    REQUIRE(std::ranges::find(lowering.trace, "helper:deterministicHash") != lowering.trace.end());
+    REQUIRE(lowering.emitted.name.find("vec2(") != std::string::npos);
+    REQUIRE(lowering.emitted.name.find("floor(position)") != std::string::npos);
+}
+
 TEST_CASE("reaction multiplier inputs accept both scalar and image values") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     const auto* descriptor = registry.descriptor("reaction_diffusion");

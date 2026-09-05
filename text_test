@@ -147,39 +147,6 @@
     },
     {
       "from": {
-        "node": 82,
-        "socket": "value"
-      },
-      "id": 275,
-      "to": {
-        "node": 71,
-        "socket": "b"
-      }
-    },
-    {
-      "from": {
-        "node": 84,
-        "socket": "coordinates"
-      },
-      "id": 276,
-      "to": {
-        "node": 71,
-        "socket": "a"
-      }
-    },
-    {
-      "from": {
-        "node": 71,
-        "socket": "result"
-      },
-      "id": 277,
-      "to": {
-        "node": 49,
-        "socket": "coordinates"
-      }
-    },
-    {
-      "from": {
         "node": 85,
         "socket": "image"
       },
@@ -202,17 +169,6 @@
     },
     {
       "from": {
-        "node": 88,
-        "socket": "result"
-      },
-      "id": 287,
-      "to": {
-        "node": 71,
-        "socket": "factor"
-      }
-    },
-    {
-      "from": {
         "node": 87,
         "socket": "image"
       },
@@ -220,6 +176,50 @@
       "to": {
         "node": 88,
         "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 84,
+        "socket": "coordinates"
+      },
+      "id": 291,
+      "to": {
+        "node": 90,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 82,
+        "socket": "value"
+      },
+      "id": 292,
+      "to": {
+        "node": 90,
+        "socket": "b"
+      }
+    },
+    {
+      "from": {
+        "node": 88,
+        "socket": "result"
+      },
+      "id": 293,
+      "to": {
+        "node": 90,
+        "socket": "scalar"
+      }
+    },
+    {
+      "from": {
+        "node": 90,
+        "socket": "result"
+      },
+      "id": 297,
+      "to": {
+        "node": 49,
+        "socket": "coordinates"
       }
     }
   ],
@@ -907,7 +907,7 @@
     {
       "id": 49,
       "parameters": {
-        "addressMode": 3.0,
+        "addressMode": 1.0,
         "sampling": 0.0
       },
       "position": [
@@ -915,19 +915,6 @@
         235.0
       ],
       "type": "texture_sample",
-      "typeVersion": 1
-    },
-    {
-      "id": 71,
-      "parameters": {
-        "factor": 0.009999990463256836,
-        "mode": 0.0
-      },
-      "position": [
-        5704.0,
-        1093.0
-      ],
-      "type": "mix",
       "typeVersion": 1
     },
     {
@@ -1029,6 +1016,19 @@
         1438.0
       ],
       "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 90,
+      "parameters": {
+        "operation": 20.0,
+        "scalar": 46.400001525878906
+      },
+      "position": [
+        5800.0,
+        956.0
+      ],
+      "type": "vector_math",
       "typeVersion": 1
     }
   ],

@@ -57,6 +57,11 @@ submodes, and the special nodes available inside simulation subgraphs.
   interpolation, distances, dot/cross products, and angle/component reductions. Vector Fields
   are semantically XY vectors stored in RG, never RGBA color math.
 
+- **Deterministic Hash** (`hash`) — Produces stable scalar and XY vector hashes in `[0,1)`
+  from a Vector Numeric position plus scalar Seed and optional Salt. Its fixed 32-bit integer
+  mixing algorithm is versioned with the node. Input Handling chooses integer truncation or
+  explicit floor, with the canonical use being `Hash(floor(position), seed)`.
+
 - **Threshold** (`threshold`) — Converts a value to 0 or 1 depending on whether it is at
   least the configured threshold.
 - **Select** (`select`) — Outputs `If True` when `Condition` is nonzero; otherwise outputs
