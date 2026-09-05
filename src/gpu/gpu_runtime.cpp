@@ -65,6 +65,22 @@ nlohmann::json withConnectedParameterOverrides(const NodeDescriptor& descriptor,
     return result;
 }
 
+void applyUnconnectedParameterInputs(const NodeDescriptor& descriptor,
+                                     const std::vector<std::string>& keys,
+                                     std::vector<Value>& inputs,
+                                     const nlohmann::json& parameters) {
+    for (std::size_t index = 0; index < keys.size() && index < inputs.size(); ++index) {
+        if (!std::holds_alternative<std::monostate>(inputs[index])) continue;
+        const auto found = std::ranges::find(descriptor.parameters, keys[index],
+                                             &ParameterDescriptor::key);
+        if (found == descriptor.parameters.end()) continue;
+        if (found->control != ParameterDescriptor::Control::Float &&
+            found->control != ParameterDescriptor::Control::Integer) continue;
+        inputs[index] = parameters.contains(found->key) && parameters[found->key].is_number()
+            ? parameters[found->key].get<float>() : found->defaultValue;
+    }
+}
+
 std::string simulationSignature(const SubgraphDefinition& definition) {
     std::string result = generateSimulationShader(definition, true);
     result.push_back('\0');
@@ -570,6 +586,8 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                                 inputs[inputIndex] = outputValue(graph_, registry_, values_,
                                                                  link->fromNode, link->fromSocket);
                         }
+                        applyUnconnectedParameterInputs(*fallbackDescriptor, keys, inputs,
+                                                        memberRecord->parameters);
                         fallbackInstance.setParameters(withConnectedParameterOverrides(
                             *fallbackDescriptor, keys, inputs, memberRecord->parameters));
                         auto& outputs = values_[member];
@@ -693,6 +711,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                 }
             }
         }
+        applyUnconnectedParameterInputs(desc, inputKeys, inputs, record->parameters);
         auto& outputs = values_[id];
         outputs.resize(outputCount);
         instance.setParameters(withConnectedParameterOverrides(

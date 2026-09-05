@@ -105,12 +105,18 @@ public:
 
     void evaluate(EvaluationContext& context, std::span<const Value> inputs,
                   std::span<Value> outputs) override {
-        const NumericInput phase = numericInput(inputs, 0, 0.0F);
-        const NumericInput frequency = numericInput(inputs, 1, 1.0F);
-        const NumericInput phaseOffset = numericInput(inputs, 2, 0.0F);
-        const NumericInput amplitude = numericInput(inputs, 3, 1.0F);
-        const NumericInput bias = numericInput(inputs, 4, 0.0F);
-        const NumericInput dutyCycle = numericInput(inputs, 5, 0.5F);
+        const NumericInput phase = procedural::numericParameterInput(
+            inputs, 0, parameters_, "phase", 0.0F);
+        const NumericInput frequency = procedural::numericParameterInput(
+            inputs, 1, parameters_, "frequency", 1.0F);
+        const NumericInput phaseOffset = procedural::numericParameterInput(
+            inputs, 2, parameters_, "phaseOffset", 0.0F);
+        const NumericInput amplitude = procedural::numericParameterInput(
+            inputs, 3, parameters_, "amplitude", 1.0F);
+        const NumericInput bias = procedural::numericParameterInput(
+            inputs, 4, parameters_, "bias", 0.0F);
+        const NumericInput dutyCycle = procedural::numericParameterInput(
+            inputs, 5, parameters_, "dutyCycle", 0.5F);
         const auto shape = waveformFrom(parameters_);
         const bool normalize = parameter(parameters_, "normalize01", 0.0F) > 0.5F;
         const bool outputIsField = phase.isField() || frequency.isField() || phaseOffset.isField() ||

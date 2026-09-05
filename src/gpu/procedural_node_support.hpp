@@ -23,7 +23,10 @@ struct NumericInput {
 struct VectorInput {
     ImageHandle field{};
     Vec2 constant{};
-    [[nodiscard]] bool isField() const noexcept { return static_cast<bool>(field); }
+    bool canvasCoordinates = false;
+    [[nodiscard]] bool isField() const noexcept {
+        return static_cast<bool>(field) || canvasCoordinates;
+    }
 };
 
 inline NumericInput numericInput(std::span<const Value> values, std::size_t index,
@@ -36,6 +39,15 @@ inline NumericInput numericInput(std::span<const Value> values, std::size_t inde
     return result;
 }
 
+// Parameter-backed Numeric sockets must use this helper. It makes the slider
+// value the unconnected input value instead of requiring every node author to
+// remember to read parameters_ separately.
+inline NumericInput numericParameterInput(std::span<const Value> values, std::size_t index,
+                                          const nlohmann::json& parameters,
+                                          const char* key, float fallback) {
+    return numericInput(values, index, node_support::parameter(parameters, key, fallback));
+}
+
 inline VectorInput vectorInput(std::span<const Value> values, std::size_t index,
                                Vec2 fallback = {}) {
     VectorInput result;
@@ -45,6 +57,15 @@ inline VectorInput vectorInput(std::span<const Value> values, std::size_t index,
     else if (const auto* value = std::get_if<Vec2>(&values[index])) result.constant = *value;
     // A scalar is valid Vector Numeric input and broadcasts to both components.
     else if (const auto* value = std::get_if<float>(&values[index])) result.constant = {*value, *value};
+    return result;
+}
+
+// Spatial coordinate sockets default to a generated canvas UV field. This is
+// represented explicitly, so it cannot accidentally sample an unbound/reused texture.
+inline VectorInput coordinateInput(std::span<const Value> values, std::size_t index) {
+    auto result = vectorInput(values, index);
+    if (index >= values.size() || std::holds_alternative<std::monostate>(values[index]))
+        result.canvasCoordinates = true;
     return result;
 }
 
@@ -71,9 +92,10 @@ inline void bindNumericInput(GLuint program, int textureUnit, const char* sample
 inline void bindVectorInput(GLuint program, int textureUnit, const char* samplerName,
                             const char* hasFieldName, const char* constantName,
                             const VectorInput& input) {
-    if (input.isField()) node_support::bindTexture(textureUnit, input.field.texture);
+    if (input.field) node_support::bindTexture(textureUnit, input.field.texture);
     node_support::uniform(program, samplerName, textureUnit);
-    node_support::uniform(program, hasFieldName, input.isField() ? 1 : 0);
+    node_support::uniform(program, hasFieldName,
+                          input.field ? 1 : (input.canvasCoordinates ? -1 : 0));
     glUniform2f(glGetUniformLocation(program, constantName), input.constant.x, input.constant.y);
 }
 
@@ -90,7 +112,8 @@ float proceduralScalar(sampler2D source, int hasField, float constantValue, vec2
     return hasField != 0 ? texture(source, uv).r : constantValue;
 }
 vec2 proceduralVector(sampler2D source, int hasField, vec2 constantValue, vec2 uv) {
-    return hasField != 0 ? texture(source, uv).rg : constantValue;
+    return hasField > 0 ? texture(source, uv).rg :
+           (hasField < 0 ? uv : constantValue);
 }
 )GLSL";
 

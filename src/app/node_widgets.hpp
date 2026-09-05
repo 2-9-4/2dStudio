@@ -3,6 +3,9 @@
 #include "reaction/core/graph.hpp"
 
 #include <array>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace reaction::node_widgets {
 
@@ -17,22 +20,34 @@ enum class PopupKind {
     MathOperation,
     MixMode,
     ConvolutionPreset,
+    ParameterEnum,
 };
 
 struct PopupState {
     PopupKind kind = PopupKind::None;
     NodeId node = 0;
     bool openRequested = false;
+    std::string parameterKey;
+    std::vector<std::string> enumOptions;
 
     void request(PopupKind requestedKind, NodeId requestedNode) {
         kind = requestedKind;
         node = requestedNode;
         openRequested = true;
     }
+
+    void requestEnum(NodeId requestedNode, std::string key,
+                     std::vector<std::string> options) {
+        request(PopupKind::ParameterEnum, requestedNode);
+        parameterKey = std::move(key);
+        enumOptions = std::move(options);
+    }
 };
 
 void renderMathOperationSelector(NodeRecord& node, PopupState& popup);
 void renderMixModeSelector(NodeRecord& node, PopupState& popup);
+void renderEnumSelector(const ParameterDescriptor& parameter, NodeRecord& node,
+                        PopupState& popup);
 bool renderConvolutionEditor(NodeRecord& node, PopupState& popup);
 bool renderImagePicker(NodeRecord& node);
 

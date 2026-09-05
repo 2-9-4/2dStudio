@@ -60,7 +60,7 @@ void main() {
     ivec2 size = imageSize(f1Image);
     if (any(greaterThanEqual(pixel, size))) return;
     vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
-    vec2 coordinates = hasCoordinates != 0 ? texture(coordinatesImage, uv).rg :
+    vec2 coordinates = hasCoordinates > 0 ? texture(coordinatesImage, uv).rg :
                        (hasCoordinates < 0 ? uv : coordinatesConstant);
     float frequency = proceduralScalar(frequencyImage, hasFrequency, frequencyConstant, uv);
     vec2 offset = proceduralVector(offsetImage, hasOffset, offsetConstant, uv);
@@ -186,8 +186,7 @@ public:
 
     void evaluate(EvaluationContext& context, std::span<const Value> inputs,
                   std::span<Value> outputs) override {
-        const bool coordinatesConnected = !inputs.empty() && !std::holds_alternative<std::monostate>(inputs[0]);
-        const VectorInput coordinates = procedural::vectorInput(inputs, 0);
+        const VectorInput coordinates = procedural::coordinateInput(inputs, 0);
         const NumericInput frequency = procedural::numericInput(inputs, 1, parameter(parameters_, "frequency", 5.0F));
         const VectorInput offset = procedural::vectorInput(inputs, 2,
             {parameter(parameters_, "offsetX", 0.0F), parameter(parameters_, "offsetY", 0.0F)});
@@ -195,7 +194,7 @@ public:
         const float seedValue = node_support::floatAt(inputs, 4, parameter(parameters_, "seed", 0.0F));
         const auto seed = static_cast<std::uint32_t>(static_cast<std::int32_t>(seedValue));
         const int metric = std::clamp(static_cast<int>(parameter(parameters_, "distanceMetric", 0.0F)), 0, 2);
-        const bool fieldOutput = !coordinatesConnected || coordinates.isField() || frequency.isField() ||
+        const bool fieldOutput = coordinates.isField() || frequency.isField() ||
                                  offset.isField() || jitter.isField();
         if (!fieldOutput) {
             const auto result = calculateWorley(coordinates.constant, frequency.constant, offset.constant,
@@ -221,7 +220,6 @@ public:
         procedural::bindNumericInput(program_, 1, "frequencyImage", "hasFrequency", "frequencyConstant", frequency);
         procedural::bindVectorInput(program_, 2, "offsetImage", "hasOffset", "offsetConstant", offset);
         procedural::bindNumericInput(program_, 3, "jitterImage", "hasJitter", "jitterConstant", jitter);
-        if (!coordinatesConnected) node_support::uniform(program_, "hasCoordinates", -1);
         glUniform1ui(glGetUniformLocation(program_, "seed"), seed);
         node_support::uniform(program_, "distanceMetric", metric);
         gpu.dispatch(program_, context.width, context.height);

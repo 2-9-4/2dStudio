@@ -493,6 +493,43 @@ TEST_CASE("reaction defaults use the sustained classic Gray-Scott region") {
     REQUIRE(defaultFor("autoReset") == Catch::Approx(0.0F));
 }
 
+TEST_CASE("procedural node descriptors expose safe controls and vector sockets") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+
+    const auto* sample = registry.descriptor("texture_sample");
+    REQUIRE(sample != nullptr);
+    REQUIRE(sample->sockets.size() == 4);
+    REQUIRE(sample->sockets[1].key == "coordinates");
+    REQUIRE(sample->sockets[1].type == ValueType::AnyVector);
+
+    for (const auto type : {"texture_sample", "repeat_fold", "worley_noise", "gradient", "wave"}) {
+        const auto* descriptor = registry.descriptor(type);
+        REQUIRE(descriptor != nullptr);
+        const auto parameter = std::ranges::find_if(descriptor->parameters, [](const auto& item) {
+            return item.control == ParameterDescriptor::Control::Enum;
+        });
+        REQUIRE(parameter != descriptor->parameters.end());
+        REQUIRE_FALSE(parameter->enumOptions.empty());
+        REQUIRE(parameter->maximum == Catch::Approx(
+            static_cast<float>(parameter->enumOptions.size() - 1)));
+    }
+
+    const auto* transform = registry.descriptor("transform_2d");
+    REQUIRE(transform != nullptr);
+    REQUIRE(std::ranges::find(transform->parameters, "rotation",
+                              &ParameterDescriptor::key) != transform->parameters.end());
+
+    const auto* fold = registry.descriptor("repeat_fold");
+    REQUIRE(fold != nullptr);
+    for (const auto key : {"value", "period", "offset", "foldCenter"})
+        REQUIRE(std::ranges::find(fold->parameters, key,
+                                  &ParameterDescriptor::key) != fold->parameters.end());
+
+    REQUIRE(registry.contains("vector"));
+    REQUIRE(registry.contains("combine_vector"));
+    REQUIRE(registry.contains("separate_vector"));
+}
+
 TEST_CASE("reaction multiplier inputs accept both scalar and image values") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     const auto* descriptor = registry.descriptor("reaction_diffusion");

@@ -93,15 +93,14 @@ public:
                   std::span<Value> outputs) override {
         // An omitted Coordinates socket denotes the canvas coordinate *field*,
         // not a constant vec2. This preserves the documented default behavior.
-        const bool coordinatesConnected = !inputs.empty() &&
-            !std::holds_alternative<std::monostate>(inputs[0]);
-        const VectorInput coordinates = vectorInput(inputs, 0, {});
+        const VectorInput coordinates = procedural::coordinateInput(inputs, 0);
         const VectorInput translation = vectorInput(inputs, 1, {});
-        const auto rotation = procedural::numericInput(inputs, 2, 0.0F);
+        const auto rotation = procedural::numericParameterInput(
+            inputs, 2, parameters_, "rotation", 0.0F);
         const VectorInput scale = vectorInput(inputs, 3, {1.0F, 1.0F});
         const VectorInput shear = vectorInput(inputs, 4, {});
         const VectorInput pivot = vectorInput(inputs, 5, {0.5F, 0.5F});
-        const bool outputIsField = !coordinatesConnected || coordinates.isField() ||
+        const bool outputIsField = coordinates.isField() ||
             translation.isField() || rotation.isField() || scale.isField() ||
             shear.isField() || pivot.isField();
 
@@ -126,10 +125,6 @@ public:
         bindVectorInput(program_, 5, "pivotImage", "hasPivot", "pivotConstant", pivot);
         // Override the unconnected-coordinate constant with canvas UV handling.
         // (The branch is written directly to keep the common helper simple.)
-        if (!coordinatesConnected) {
-            // A sentinel tells the shader to substitute uv below.
-            node_support::uniform(program_, "hasCoordinates", -1);
-        }
         gpu.dispatch(program_, context.width, context.height);
         outputs[0] = ImageHandle{texture_, context.width, context.height};
     }

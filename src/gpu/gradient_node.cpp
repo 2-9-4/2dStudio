@@ -90,16 +90,14 @@ public:
 
     void evaluate(EvaluationContext& context, std::span<const Value> inputs,
                   std::span<Value> outputs) override {
-        const auto coordinates = procedural::vectorInput(inputs, 0);
+        const auto coordinates = procedural::coordinateInput(inputs, 0);
         const auto center = procedural::vectorInput(inputs, 1, {0.5F, 0.5F});
         const auto angle = procedural::numericInput(inputs, 2, parameter(parameters_, "angle", 0.0F));
         const auto scale = procedural::numericInput(inputs, 3, parameter(parameters_, "scale", 1.0F));
         const auto offset = procedural::numericInput(inputs, 4, parameter(parameters_, "offset", 0.0F));
         const int mode = static_cast<int>(parameter(parameters_, "mode", 0.0F));
         const bool clampOutput = parameter(parameters_, "clamp", 0.0F) != 0.0F;
-        const bool hasConstantCoordinates = inputs.size() > 0 &&
-            (std::holds_alternative<Vec2>(inputs[0]) || std::holds_alternative<float>(inputs[0]));
-        if (hasConstantCoordinates && !coordinates.isField() && !center.isField() &&
+        if (!coordinates.isField() && !center.isField() &&
             !angle.isField() && !scale.isField() && !offset.isField()) {
             outputs[0] = gradientValue(mode, coordinates.constant, center.constant, angle.constant,
                 scale.constant, offset.constant, clampOutput);

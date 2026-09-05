@@ -597,7 +597,7 @@ These can become subgraphs later if your execution model expands beyond dense im
 
 The following small primitive set dramatically expands what editable subgraphs can represent.
 
-# Primitive A — Texture Sample / Sample Field
+# Primitive A — Texture Sample / Sample Field - DONE
 
 This is the previously specified Texture Sample node and should be considered a **compiler primitive**, not implemented as a subgraph.
 
@@ -718,6 +718,7 @@ Your existing Math node should gain these modes because many proposed subgraphs 
 ## Ternary
 
 * `Smoothstep`
+* `Multiply accumulate`
 
 Normal Float/Scalar-Field promotion applies.
 
@@ -779,7 +780,7 @@ Equality should either be exact or expose an explicit Epsilon parameter. I would
 
 ---
 
-# Primitive E — Vector Compose / Split
+# Primitive E — Vector Compose / Split - DONE
 
 ## Compose
 

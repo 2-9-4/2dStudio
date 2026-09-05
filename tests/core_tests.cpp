@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
 #include <filesystem>
+#include <stdexcept>
 
 namespace reaction {
 namespace {
@@ -81,6 +82,13 @@ TEST_CASE("graph compiles in dependency order") {
     REQUIRE(result.valid);
     REQUIRE(result.order == std::vector<NodeId>{source, math, output});
     REQUIRE(result.inferredOutputs.at(math) == ValueType::Image2D);
+}
+
+TEST_CASE("registry rejects incomplete enum metadata") {
+    NodeRegistry nodes;
+    REQUIRE_THROWS_AS(add(nodes, {"bad_enum", 1, "Bad Enum", "Test", {},
+        {{"mode", "Mode", 0.0F, 0.0F, 2.0F, ParameterDescriptor::Control::Enum,
+          {"Only one label"}}}}), std::invalid_argument);
 }
 
 TEST_CASE("cycles are rejected without mutating the graph") {

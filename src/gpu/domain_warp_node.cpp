@@ -64,16 +64,14 @@ public:
 
     void evaluate(EvaluationContext& context, std::span<const Value> inputs,
                   std::span<Value> outputs) override {
-        const auto coordinates = procedural::vectorInput(inputs, 0);
+        const auto coordinates = procedural::coordinateInput(inputs, 0);
         const auto xOffset = procedural::numericInput(inputs, 1, parameter(parameters_, "xOffset", 0.0F));
         const auto yOffset = procedural::numericInput(inputs, 2, parameter(parameters_, "yOffset", 0.0F));
         const auto strength = procedural::numericInput(inputs, 3, parameter(parameters_, "strength", 1.0F));
 
         // The omitted Coordinates input has a field default (canvas UV), while
         // an explicitly supplied Float2/Float has ordinary constant promotion.
-        const bool hasConstantCoordinates = inputs.size() > 0 &&
-            (std::holds_alternative<Vec2>(inputs[0]) || std::holds_alternative<float>(inputs[0]));
-        if (hasConstantCoordinates && !coordinates.isField() && !xOffset.isField() &&
+        if (!coordinates.isField() && !xOffset.isField() &&
             !yOffset.isField() && !strength.isField()) {
             outputs[0] = Vec2{coordinates.constant.x + xOffset.constant * strength.constant,
                               coordinates.constant.y + yOffset.constant * strength.constant};

@@ -17,12 +17,29 @@ constexpr const char* popupName(PopupKind kind) {
     case PopupKind::MathOperation: return "Math operation";
     case PopupKind::MixMode: return "Mix mode";
     case PopupKind::ConvolutionPreset: return "Convolution preset";
+    case PopupKind::ParameterEnum: return "Parameter enum";
     case PopupKind::None: return "";
     }
     return "";
 }
 
 } // namespace
+
+void renderEnumSelector(const ParameterDescriptor& parameter, NodeRecord& node,
+                        PopupState& popup) {
+    const int maximum = static_cast<int>(parameter.enumOptions.size()) - 1;
+    const int current = std::clamp(
+        static_cast<int>(node.parameters.value(parameter.key, parameter.defaultValue)),
+        0, std::max(maximum, 0));
+    ImGui::TextUnformatted(parameter.label.c_str());
+    ImGui::SameLine();
+    const char* preview = maximum >= 0
+        ? parameter.enumOptions[static_cast<std::size_t>(current)].c_str() : "Select";
+    ImGui::PushID(parameter.key.c_str());
+    if (ImGui::Button(preview, ImVec2(150, 0)))
+        popup.requestEnum(node.id, parameter.key, parameter.enumOptions);
+    ImGui::PopID();
+}
 
 void renderMathOperationSelector(NodeRecord& node, PopupState& popup) {
     const int operation = std::clamp(
@@ -153,6 +170,17 @@ bool renderPopup(PopupState& popup, GraphBody& graph) {
                 if (ImGui::Selectable(presetNames[static_cast<std::size_t>(preset)],
                                       preset == current)) {
                     convolution_presets::apply(node->parameters, preset);
+                    changed = true;
+                }
+            }
+        } else if (popup.kind == PopupKind::ParameterEnum) {
+            const int current = std::clamp(
+                static_cast<int>(node->parameters.value(popup.parameterKey, 0.0F)),
+                0, std::max(static_cast<int>(popup.enumOptions.size()) - 1, 0));
+            for (int index = 0; index < static_cast<int>(popup.enumOptions.size()); ++index) {
+                if (ImGui::Selectable(popup.enumOptions[static_cast<std::size_t>(index)].c_str(),
+                                      index == current)) {
+                    node->parameters[popup.parameterKey] = static_cast<float>(index);
                     changed = true;
                 }
             }

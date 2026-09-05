@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace reaction {
 
@@ -26,6 +27,35 @@ void NodeRegistry::add(NodeDescriptor descriptor, Factory factory) {
         throw std::invalid_argument("A node registration needs a type and factory");
     }
     addParameterInputSockets(descriptor);
+    std::unordered_set<std::string> parameterKeys;
+    for (const auto& parameter : descriptor.parameters) {
+        if (parameter.key.empty() || parameter.label.empty())
+            throw std::invalid_argument("Node '" + descriptor.type + "' has an unnamed parameter");
+        if (!parameterKeys.insert(parameter.key).second)
+            throw std::invalid_argument("Node '" + descriptor.type +
+                                        "' has duplicate parameter key '" + parameter.key + "'");
+        if (parameter.control == ParameterDescriptor::Control::Enum) {
+            const int expected = static_cast<int>(parameter.maximum - parameter.minimum) + 1;
+            if (parameter.minimum != 0.0F || parameter.enumOptions.empty() ||
+                static_cast<int>(parameter.enumOptions.size()) != expected) {
+                throw std::invalid_argument("Enum parameter '" + parameter.key + "' on node '" +
+                                            descriptor.type +
+                                            "' needs labels for every zero-based value");
+            }
+        }
+        if (parameter.control == ParameterDescriptor::Control::Float ||
+            parameter.control == ParameterDescriptor::Control::Integer) {
+            const auto socket = std::ranges::find_if(descriptor.sockets, [&](const auto& item) {
+                return item.direction == SocketDirection::Input && item.key == parameter.key;
+            });
+            if (socket == descriptor.sockets.end() ||
+                (socket->type != ValueType::Float && socket->type != ValueType::AnyNumeric)) {
+                throw std::invalid_argument("Numeric parameter '" + parameter.key + "' on node '" +
+                                            descriptor.type +
+                                            "' needs a Float or AnyNumeric input with the same key");
+            }
+        }
+    }
     const auto key = descriptor.type;
     if (!entries_.emplace(key, Entry{std::move(descriptor), std::move(factory)}).second) {
         throw std::invalid_argument("Duplicate node type: " + key);
@@ -57,4 +87,3 @@ std::vector<const NodeDescriptor*> NodeRegistry::descriptors() const {
 }
 
 } // namespace reaction
-

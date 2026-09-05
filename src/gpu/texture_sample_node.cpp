@@ -17,11 +17,10 @@ constexpr std::string_view kTextureSampleShader = R"GLSL(#version 430
 layout(local_size_x=16, local_size_y=16) in;
 layout(rgba16f, binding=0) writeonly uniform image2D outputImage;
 layout(binding=0) uniform sampler2D sourceImage;
-layout(binding=1) uniform sampler2D uImage;
-layout(binding=2) uniform sampler2D vImage;
-layout(binding=3) uniform sampler2D borderImage;
-uniform int hasSource, hasU, hasV, useDefaultU, useDefaultV, hasBorder, sampling, addressMode;
-uniform float uConstant, vConstant;
+layout(binding=1) uniform sampler2D coordinatesImage;
+layout(binding=2) uniform sampler2D borderImage;
+uniform int hasSource, hasCoordinates, hasBorder, sampling, addressMode;
+uniform vec2 coordinatesConstant;
 uniform vec4 borderConstant;
 
 vec2 mirrorRepeat(vec2 value) {
@@ -48,6 +47,11 @@ vec4 sampleLinear(vec2 coordinate, ivec2 size) {
     return mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
 }
 
+vec2 proceduralVector(sampler2D source, int hasField, vec2 constantValue, vec2 uv) {
+    return hasField > 0 ? texture(source, uv).rg :
+           (hasField < 0 ? uv : constantValue);
+}
+
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
     ivec2 outputSize = imageSize(outputImage);
@@ -55,11 +59,8 @@ void main() {
     vec2 outputUv = (vec2(pixel) + 0.5) / vec2(outputSize);
     if (hasSource == 0) { imageStore(outputImage, pixel, vec4(0.0)); return; }
 
-    // Unconnected coordinate sockets default to the canvas coordinate fields.
-    vec2 coordinate = vec2(hasU != 0 ? texture(uImage, outputUv).r :
-                           (useDefaultU != 0 ? outputUv.x : uConstant),
-                           hasV != 0 ? texture(vImage, outputUv).r :
-                           (useDefaultV != 0 ? outputUv.y : vConstant));
+    vec2 coordinate = proceduralVector(coordinatesImage, hasCoordinates,
+                                       coordinatesConstant, outputUv);
     bool outside = any(lessThan(coordinate, vec2(0.0))) ||
                    any(greaterThan(coordinate, vec2(1.0)));
     if (addressMode == 3 && outside) {
@@ -104,8 +105,7 @@ public:
     static NodeDescriptor describe() {
         return NodeDescriptor{"texture_sample", 1, "Texture Sample", "Coordinates",
             {{"source", "Source", ValueType::Image2D, SocketDirection::Input},
-             {"u", "U", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"v", "V", ValueType::AnyNumeric, SocketDirection::Input, true},
+             {"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Input, true},
              {"border", "Border Value", ValueType::AnyVector, SocketDirection::Input, true},
              {"sampled", "Sampled", ValueType::Image2D, SocketDirection::Output}},
             {{"sampling", "Sampling", 1.0F, 0.0F, 1.0F, ParameterDescriptor::Control::Enum,
@@ -126,18 +126,13 @@ public:
         if (!program_) program_ = gpu.compileCompute(kTextureSampleShader, "Texture Sample / compute");
 
         const auto source = imageAt(inputs, 0);
-        const auto u = procedural::numericInput(inputs, 1, 0.5F);
-        const auto v = procedural::numericInput(inputs, 2, 0.5F);
-        const auto border = borderInput(inputs, 3);
+        const auto coordinates = procedural::coordinateInput(inputs, 1);
+        const auto border = borderInput(inputs, 2);
         glUseProgram(program_);
         procedural::bindColorInput(program_, 0, "sourceImage", "hasSource", source);
-        procedural::bindNumericInput(program_, 1, "uImage", "hasU", "uConstant", u);
-        procedural::bindNumericInput(program_, 2, "vImage", "hasV", "vConstant", v);
-        const bool useDefaultU = inputs.size() <= 1 || std::holds_alternative<std::monostate>(inputs[1]);
-        const bool useDefaultV = inputs.size() <= 2 || std::holds_alternative<std::monostate>(inputs[2]);
-        uniform(program_, "useDefaultU", useDefaultU ? 1 : 0);
-        uniform(program_, "useDefaultV", useDefaultV ? 1 : 0);
-        procedural::bindColorInput(program_, 3, "borderImage", "hasBorder", border.image);
+        procedural::bindVectorInput(program_, 1, "coordinatesImage", "hasCoordinates",
+                                    "coordinatesConstant", coordinates);
+        procedural::bindColorInput(program_, 2, "borderImage", "hasBorder", border.image);
         const Vec2 borderValue = border.kind == BorderInput::Kind::Vector ? border.vector : Vec2{border.scalar, border.scalar};
         glUniform4f(glGetUniformLocation(program_, "borderConstant"), borderValue.x, borderValue.y,
                     border.kind == BorderInput::Kind::Scalar ? border.scalar : 0.0F, 0.0F);

@@ -80,7 +80,8 @@ public:
              {"angle", "Angle", ValueType::AnyNumeric, SocketDirection::Output},
              {"normalizedAngle", "Normalized Angle", ValueType::AnyNumeric, SocketDirection::Output},
              {"outputCoordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Output}},
-            {{"mode", "Mode", 0.0F, 0.0F, 1.0F, ParameterDescriptor::Control::Enum},
+            {{"mode", "Mode", 0.0F, 0.0F, 1.0F, ParameterDescriptor::Control::Enum,
+              {"Cartesian to Polar", "Polar to Cartesian"}},
              {"radiusScale", "Radius Scale", 1.0F, -10.0F, 10.0F},
              {"angleOffset", "Angle Offset", 0.0F, -20.0F, 20.0F}}};
     }
@@ -93,7 +94,7 @@ public:
     void evaluate(EvaluationContext& context, std::span<const Value> inputs,
                   std::span<Value> outputs) override {
         const int mode = static_cast<int>(parameter(parameters_, "mode", 0.0F));
-        const auto coordinates = procedural::vectorInput(inputs, 0);
+        const auto coordinates = procedural::coordinateInput(inputs, 0);
         const auto center = procedural::vectorInput(inputs, 1, {0.5F, 0.5F});
         const auto radiusScale = procedural::numericInput(inputs, 2, parameter(parameters_, "radiusScale", 1.0F));
         const auto angleOffset = procedural::numericInput(inputs, 3, parameter(parameters_, "angleOffset", 0.0F));

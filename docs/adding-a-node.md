@@ -39,6 +39,80 @@ private:
 
 Register the descriptor and factory in the node family's registration function. Socket keys and the node type are serialized API: never rename them without a type-version migration. A stateful node must set `NodeDescriptor::stateful`, own its persistent textures, and implement `reset`. It must not expose a graph-level feedback edge.
 
+## Use the descriptor as the source of truth
+
+Describe every editable constant as a `ParameterDescriptor`. Float and Integer parameters
+automatically acquire an optional input socket when the registry sees no socket with the same
+key. If you declare the socket yourself (for example because it is `AnyNumeric`), its key must
+exactly match the parameter key:
+
+```cpp
+{{"rotation", "Rotation", ValueType::AnyNumeric, SocketDirection::Input, true},
+ {"result", "Result", ValueType::AnyVector, SocketDirection::Output}},
+{{"rotation", "Rotation", 0.0F, -6.2831853F, 6.2831853F}}
+```
+
+The runtime supplies an unconnected Float/Integer parameter socket with the current slider
+value before calling `evaluate`. A connected value replaces it. Therefore evaluate the input
+slot normally; do not invent a second unrelated default or read a different key. Procedural
+nodes may use `procedural::numericParameterInput` to make the relationship explicit.
+
+Input indices count input sockets only, in descriptor order. Output sockets do not consume an
+input index. Keep the descriptor and evaluator beside each other and add a descriptor/runtime
+test when changing socket order. A safer procedural-node convention is:
+
+```cpp
+const auto rotation = procedural::numericParameterInput(
+    inputs, 2, parameters_, "rotation", 0.0F);
+```
+
+## Enum controls and popups
+
+Enums must provide their visible labels in the descriptor. The generic editor renders these
+through the same deferred popup mechanism as Math, after the node editor is suspended; never
+call `ImGui::BeginCombo`, `OpenPopup`, or `BeginPopup` directly while drawing a node.
+
+```cpp
+{"mode", "Mode", 0.0F, 0.0F, 2.0F, ParameterDescriptor::Control::Enum,
+ {"Euclidean", "Manhattan", "Chebyshev"}}
+```
+
+The stored value is the zero-based label index. The minimum should be `0`, the maximum should
+be `labels.size() - 1`, and evaluate should clamp before converting to its C++ enum. The generic
+path needs no node-specific widget code. Truly custom popup editors must request a popup through
+`node_widgets::PopupState` and render it in `node_widgets::renderPopup`.
+
+## Numeric, vector, and coordinate inputs
+
+Use `ValueType::AnyNumeric` for `Float | Scalar Field` sockets and `ValueType::AnyVector` for
+`Float2 | Vector Field` sockets. Per-pixel scalars use R; per-pixel vectors use RG; colors use
+RGBA. A coordinate transform or sampler takes one `AnyVector` Coordinates socket—not separate
+U and V sockets. `Combine Vector` constructs a Float2 or RG vector field, and `Separate Vector`
+splits one back into its numeric X and Y components.
+
+For a spatial node whose omitted Coordinates input means canvas coordinates, use the typed
+helper rather than an unbound sampler or a magic uniform value:
+
+```cpp
+const auto coordinates = procedural::coordinateInput(inputs, 0);
+procedural::bindVectorInput(program, 0, "coordinatesImage", "hasCoordinates",
+                            "coordinatesConstant", coordinates);
+```
+
+`coordinateInput` explicitly represents the canvas-UV default as a generated field.
+`bindVectorInput` sends `1` for a real texture, `0` for a constant Float2, and `-1` for canvas
+coordinates; `proceduralVector` handles those three states safely. Do not test “nonzero means
+texture,” because the canvas state is negative and must not sample an unbound or reused texture.
+
+## Before registering a node
+
+- Confirm every Float/Integer slider key matches the socket key consumed by evaluate.
+- Give every Enum a complete ordered label list and use the generic popup path.
+- Use one RG `AnyVector` socket for coordinates and `coordinateInput` for canvas defaults.
+- Initialize every output on every evaluation path, including missing required inputs.
+- Preserve Float/field promotion: constants return Float or Float2; any field input returns an image.
+- Compile the full application and exercise the node once with inputs disconnected and connected.
+
 ## Editable simulation subgraphs
 
 Subgraph instances use the node type `subgraph` and a stable `subgraphId`. Their node descriptor is derived from `SubgraphInterfaceItem` records rather than the static registry. Interface keys are serialized identities; labels can be edited safely. Float, integer, and boolean control metadata drives the corresponding node widget without type-specific UI code.
@@ -55,9 +129,10 @@ The simulation compiler is a planner/executor around the ordinary lowering seman
 
 Definitions returned by `builtInSubgraphs()` are source templates. Adding one to a project creates an editable definition in `Graph::subgraphs()`, serialized once at project level; any number of instances may reference that shared definition. Project format 3 stores each body as ordinary `nodes` and `links`, while the loader migrates older project definitions that used the format-2 expression representation.
 
-Node controls that open popups must request them through `node_widgets::PopupState` and
-render them through `node_widgets::renderPopup`. That function is called only while the
-node editor is suspended, so popup layout and hit testing remain in ImGui screen space.
+Node controls that open custom popups must request them through `node_widgets::PopupState` and
+render them through `node_widgets::renderPopup`. Generic Enum parameters already do this.
+That function is called only while the node editor is suspended, so popup layout and hit
+testing remain in ImGui screen space.
 
 Runtime-loaded shared libraries are intentionally outside the first milestone; this interface is the source-compatible SDK boundary from which a versioned plugin ABI can later be designed.
 

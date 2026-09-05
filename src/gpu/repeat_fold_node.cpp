@@ -85,7 +85,11 @@ public:
              {"foldCenter", "Fold Center", ValueType::AnyNumeric, SocketDirection::Input, true},
              {"value", "Value", ValueType::AnyNumeric, SocketDirection::Output}},
             {{"mode", "Mode", 0.0F, 0.0F, 3.0F, ParameterDescriptor::Control::Enum,
-              {"Repeat", "Mirror Repeat", "Fold Positive", "Fold Negative"}}}};
+              {"Repeat", "Mirror Repeat", "Fold Positive", "Fold Negative"}},
+             {"value", "Value", 0.0F, -100.0F, 100.0F},
+             {"period", "Period", 1.0F, -100.0F, 100.0F},
+             {"offset", "Offset", 0.0F, -100.0F, 100.0F},
+             {"foldCenter", "Fold Center", 0.0F, -100.0F, 100.0F}}};
     }
 
     const NodeDescriptor& descriptor() const override {
@@ -96,10 +100,14 @@ public:
     void evaluate(EvaluationContext& context, std::span<const Value> inputs,
                   std::span<Value> outputs) override {
         const auto mode = modeFrom(parameters_);
-        const NumericInput value = numericInput(inputs, 0, 0.0F);
-        const NumericInput period = numericInput(inputs, 1, 1.0F);
-        const NumericInput offset = numericInput(inputs, 2, 0.0F);
-        const NumericInput foldCenter = numericInput(inputs, 3, 0.0F);
+        const NumericInput value = procedural::numericParameterInput(
+            inputs, 0, parameters_, "value", 0.0F);
+        const NumericInput period = procedural::numericParameterInput(
+            inputs, 1, parameters_, "period", 1.0F);
+        const NumericInput offset = procedural::numericParameterInput(
+            inputs, 2, parameters_, "offset", 0.0F);
+        const NumericInput foldCenter = procedural::numericParameterInput(
+            inputs, 3, parameters_, "foldCenter", 0.0F);
         const bool outputIsField = value.isField() || foldCenter.isField() ||
             ((mode == RepeatFoldMode::Repeat || mode == RepeatFoldMode::MirrorRepeat) &&
              (period.isField() || offset.isField()));
