@@ -622,7 +622,7 @@ class ColorRampNode final : public TextureNode {
 public:
     static NodeDescriptor describe(){auto result=NodeDescriptor{"color_ramp",1,"Color Ramp","Color",
         {{"value","Value",ValueType::AnyNumeric,SocketDirection::Input,true},{"image","Image",ValueType::Image2D,SocketDirection::Output}},
-        {{"value","Value",0.5F,0,1},{"low","Low",.02F,0,1},{"high","High",.4F,0,1},
+        {{"value","Value",0.5F,0,1},{"low","Low threshold",.02F,0,1},{"high","High threshold",.4F,0,1},
          {"r0","Start R",.015F,0,1},{"g0","Start G",.01F,0,1},{"b0","Start B",.04F,0,1},
          {"r1","End R",1,0,1},{"g1","End G",.35F,0,1},{"b1","End B",.08F,0,1}}};result.lowerable=true;return result;}
     const NodeDescriptor& descriptor()const override{static const auto value=describe();return value;}

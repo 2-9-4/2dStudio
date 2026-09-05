@@ -138,6 +138,48 @@ bool renderParameterRow(NodeId nodeId, const NodeDescriptor& descriptor,
     return changed;
 }
 
+bool renderColorRampColors(NodeId nodeId, NodeRecord& node,
+                           const std::unordered_set<std::string>& connectedInputs) {
+    const auto isConnected = [&](std::string_view key) {
+        return connectedInputs.contains(std::to_string(nodeId) + "\x1f" + std::string(key));
+    };
+    const bool lowConnected = isConnected("r0") || isConnected("g0") || isConnected("b0");
+    const bool highConnected = isConnected("r1") || isConnected("g1") || isConnected("b1");
+
+    std::array<float, 3> low{
+        node.parameters.value("r0", .015F), node.parameters.value("g0", .01F),
+        node.parameters.value("b0", .04F)};
+    std::array<float, 3> high{
+        node.parameters.value("r1", 1.0F), node.parameters.value("g1", .35F),
+        node.parameters.value("b1", .08F)};
+
+    bool changed = false;
+    const auto renderColor = [&](const char* label, std::array<float, 3>& color, bool connected) {
+        if (connected) ImGui::BeginDisabled();
+        ImGui::SetNextItemWidth(150);
+        const bool colorChanged = ImGui::ColorEdit3(
+            label, color.data(), ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs);
+        if (connected) ImGui::EndDisabled();
+        if (connected && ImGui::IsItemHovered())
+            ImGui::SetTooltip("A connected input overrides this color");
+        return colorChanged;
+    };
+
+    if (renderColor("Low color", low, lowConnected)) {
+        node.parameters["r0"] = low[0];
+        node.parameters["g0"] = low[1];
+        node.parameters["b0"] = low[2];
+        changed = true;
+    }
+    if (renderColor("High color", high, highConnected)) {
+        node.parameters["r1"] = high[0];
+        node.parameters["g1"] = high[1];
+        node.parameters["b1"] = high[2];
+        changed = true;
+    }
+    return changed;
+}
+
 ImVec4 contributorColor(NodeId id) {
     const float hue = std::fmod(static_cast<float>(id) * 0.61803398875F, 1.0F);
     return ImColor::HSV(hue, 0.55F, 0.95F);
@@ -733,6 +775,13 @@ void Application::renderGraph() {
                     renderSocketPin(node.id, *descriptor, socketIndex, pins);
             }
             for (const auto& property : descriptor->parameters) {
+                if (node.type == "color_ramp" &&
+                    (property.key == "r0" || property.key == "g0" || property.key == "b0" ||
+                     property.key == "r1" || property.key == "g1" || property.key == "b1")) {
+                    if (property.key == "r0" && renderColorRampColors(node.id, node, connectedInputs))
+                        dirty_ = true;
+                    continue;
+                }
                 const bool connected = connectedInputs.contains(
                     std::to_string(node.id) + "\x1f" + property.key);
                 if (renderParameterRow(node.id, *descriptor, property, node, nodePopup_, pins, connected))
@@ -1230,6 +1279,14 @@ void Application::renderSubgraphEditor() {
                     renderSocketPin(node.id, *descriptor, socketIndex, pins);
             }
             for (const auto& property : descriptor->parameters) {
+                if (node.type == "color_ramp" &&
+                    (property.key == "r0" || property.key == "g0" || property.key == "b0" ||
+                     property.key == "r1" || property.key == "g1" || property.key == "b1")) {
+                    if (property.key == "r0" && renderColorRampColors(node.id, node, connectedInputs)) {
+                        changed = true; executionChanged = true;
+                    }
+                    continue;
+                }
                 const bool connected = connectedInputs.contains(
                     std::to_string(node.id) + "\x1f" + property.key);
                 if (renderParameterRow(node.id, *descriptor, property, node, nodePopup_, pins, connected)) {
