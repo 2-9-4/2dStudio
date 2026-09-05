@@ -725,6 +725,35 @@ TEST_CASE("auto-layout leaves nodes in disjoint components on distinct rows") {
     REQUIRE(body.findNode(b)->position.x > body.findNode(a)->position.x);
 }
 
+TEST_CASE("auto-layout snaps a single-consumer chain behind its consumer through a merge") {
+    GraphBody body;
+    const auto s1 = body.addNode("float", {0, 0});
+    const auto s2 = body.addNode("float", {0, 1000});
+    const auto relay = body.addNode("math", {500, 0});
+    const auto merge = body.addNode("math", {900, 500});
+    body.addLink(s1, "value", relay, "a");
+    body.addLink(relay, "result", merge, "a");
+    body.addLink(s2, "value", merge, "b");
+    layoutGraph(body);
+    const auto* relayNode = body.findNode(relay);
+    const auto* mergeNode = body.findNode(merge);
+    REQUIRE(relayNode->position.y == mergeNode->position.y);
+}
+
+TEST_CASE("auto-layout leaves a source feeding a merge on its own lane") {
+    GraphBody body;
+    const auto s1 = body.addNode("float", {0, 0});
+    const auto s2 = body.addNode("float", {0, 1000});
+    const auto m = body.addNode("math", {500, 0});
+    body.addLink(s1, "value", m, "a");
+    body.addLink(s2, "value", m, "b");
+    layoutGraph(body);
+    const float first = body.findNode(s1)->position.y;
+    const float second = body.findNode(s2)->position.y;
+    REQUIRE(first != second);
+    REQUIRE(body.findNode(m)->position.y == (first + second) / 2.0F);
+}
+
 TEST_CASE("auto-layout layers nodes fed by several links from one source") {
     GraphBody body;
     const auto s = body.addNode("float", {0, 0});
