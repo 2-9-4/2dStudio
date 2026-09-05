@@ -154,6 +154,8 @@ Application::Application(std::filesystem::path startupProject) {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     editorWindow_ = glfwCreateWindow(1280, 800, "Reaction Studio — Nodes", nullptr, nullptr);
     if (!editorWindow_) throw std::runtime_error("OpenGL 4.3 is required");
+    glfwSetWindowUserPointer(editorWindow_, this);
+    glfwSetWindowCloseCallback(editorWindow_, &Application::editorWindowCloseCallback);
     glfwMakeContextCurrent(editorWindow_);
     glfwSwapInterval(0);
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) {
@@ -311,11 +313,11 @@ void Application::loadProject(const std::filesystem::path& path) {
                       : "Loaded " + currentPath_.filename().string());
 }
 
-void Application::saveProjectDialog(bool forceDialog) {
+bool Application::saveProjectDialog(bool forceDialog) {
     if (forceDialog || currentPath_.empty()) {
         auto selected = pfd::save_file("Save Reaction project", "artwork.reaction.json",
                                        {"Reaction project", "*.reaction.json"}).result();
-        if (selected.empty()) return;
+        if (selected.empty()) return false;
         currentPath_ = std::move(selected);
     }
     try {
@@ -331,11 +333,15 @@ void Application::saveProjectDialog(bool forceDialog) {
         recoveryPromptDismissed_ = false;
         dirty_ = false;
         setStatus("Saved " + currentPath_.filename().string());
-    } catch (const std::exception& error) { setStatus(error.what(), true); }
+        return true;
+    } catch (const std::exception& error) {
+        setStatus(error.what(), true);
+        return false;
+    }
 }
 
 void Application::updateRecoverySidecar() {
-    if (currentPath_.empty()) return;
+    if (closeApproved_ || currentPath_.empty()) return;
     const auto snapshot = serializeProject(graph_).dump();
     if (snapshot == recoverySnapshot_) return;
     try {
@@ -344,6 +350,32 @@ void Application::updateRecoverySidecar() {
     } catch (const std::exception& error) {
         setStatus(std::string("Recovery save failed: ") + error.what(), true);
     }
+}
+
+void Application::discardRecoverySidecar() {
+    if (currentPath_.empty()) return;
+    std::error_code error;
+    std::filesystem::remove(recoveryPath(currentPath_), error);
+    if (error) setStatus(std::string("Could not remove recovery copy: ") + error.message(), true);
+    recoveryCandidate_.clear();
+    recoveryPromptDismissed_ = false;
+}
+
+void Application::requestEditorClose() {
+    if (closeApproved_) return;
+    glfwSetWindowShouldClose(editorWindow_, GLFW_FALSE);
+    if (dirty_) {
+        closeConfirmationOpen_ = true;
+        return;
+    }
+    discardRecoverySidecar();
+    closeApproved_ = true;
+    glfwSetWindowShouldClose(editorWindow_, GLFW_TRUE);
+}
+
+void Application::editorWindowCloseCallback(GLFWwindow* window) {
+    auto* application = static_cast<Application*>(glfwGetWindowUserPointer(window));
+    if (application) application->requestEditorClose();
 }
 
 void Application::exportFrameDialog() {
@@ -676,6 +708,14 @@ void Application::renderGraph() {
     for (auto& node : graph_.nodes()) {
         NodeDescriptor descriptorStorage;
         const auto* descriptor = resolveDescriptor(graph_, node, registry_, descriptorStorage);
+        const auto fusion = runtime_->fusionInfo(node.id);
+        const bool selectedFusedRegion = shaderInspectorOpen_ && selectedShaderRegion_ != 0 &&
+            fusion && fusion->region == selectedShaderRegion_;
+        if (selectedFusedRegion) {
+            ed::PushStyleColor(ed::StyleColor_NodeBorder, ImVec4(.3F, .82F, 1.0F, 1.0F));
+            ed::PushStyleColor(ed::StyleColor_NodeBg, ImVec4(.06F, .14F, .19F, 1.0F));
+            ed::PushStyleVar(ed::StyleVar_NodeBorderWidth, 4.0F);
+        }
         ed::BeginNode(ed::NodeId(nodeUiId(node.id)));
         ImGui::PushID(static_cast<int>(node.id));
         if (!descriptor) {
@@ -724,7 +764,6 @@ void Application::renderGraph() {
                     dirty_ = true;
                 }
             }
-            const auto fusion = runtime_->fusionInfo(node.id);
             if (fusion) {
                 if (fusion->compileFailed)
                     ImGui::TextColored(ImVec4(1.0F, .45F, .25F, 1.0F),
@@ -788,6 +827,10 @@ void Application::renderGraph() {
         }
         ImGui::PopID();
         ed::EndNode();
+        if (selectedFusedRegion) {
+            ed::PopStyleVar();
+            ed::PopStyleColor(2);
+        }
         if (!positioned_[node.id]) {
             ed::SetNodePosition(ed::NodeId(nodeUiId(node.id)), ImVec2(node.position.x, node.position.y));
             positioned_[node.id] = true;
@@ -912,10 +955,17 @@ void Application::renderGraph() {
 void Application::renderShaderInspector() {
     if (!shaderInspectorOpen_) {
         runtime_->setIntermediatePreview(std::nullopt);
+        shaderInspectorNeedsFocus_ = true;
         return;
     }
     auto shaders = runtime_->generatedShaders();
     ImGui::SetNextWindowSize(ImVec2(980, 680), ImGuiCond_FirstUseEver);
+    if (shaderInspectorNeedsFocus_) {
+        // Focus once when opened. Re-focusing every frame clears an active widget
+        // while a selectable row is being clicked.
+        ImGui::SetNextWindowFocus();
+        shaderInspectorNeedsFocus_ = false;
+    }
     if (!ImGui::Begin("Shader Inspector", &shaderInspectorOpen_)) {
         ImGui::End();
         return;
@@ -933,14 +983,29 @@ void Application::renderShaderInspector() {
         std::ranges::find(shaders, selectedShaderRegion_, &GeneratedShaderInfo::id) == shaders.end())
         selectedShaderRegion_ = shaders.front().id;
 
-    ImGui::BeginChild("regions", ImVec2(210, 0), true);
+    ImGui::BeginChild("regions", ImVec2(285, 0), true);
     for (const auto& shader : shaders) {
-        std::string label = "Region #" + std::to_string(shader.id) + " · " +
-                            std::to_string(shader.nodes.size()) + " node" +
-                            (shader.nodes.size() == 1 ? "" : "s");
+        std::string label = shader.evaluated ? "RAN  " : "CACHED  ";
+        label += "Region #" + std::to_string(shader.id) + " · " +
+                 std::to_string(shader.nodes.size()) + " node" +
+                 (shader.nodes.size() == 1 ? "" : "s") + " · ";
+        char duration[32];
+        std::snprintf(duration, sizeof(duration), "%.3f ms", shader.gpuMilliseconds);
+        label += duration;
         if (shader.mode == GeneratedExecutionMode::LegacyFallback) label += " ⚠";
-        if (ImGui::Selectable(label.c_str(), selectedShaderRegion_ == shader.id))
+        // Keep the interactive ID and hit target entirely independent of live
+        // text. Fast regions can update their duration between mouse-down/up.
+        ImGui::PushID(std::to_string(shader.id).c_str());
+        if (ImGui::Selectable("##region", selectedShaderRegion_ == shader.id,
+                              0, ImVec2(0, ImGui::GetTextLineHeightWithSpacing())))
             selectedShaderRegion_ = shader.id;
+        const ImVec2 rowMin = ImGui::GetItemRectMin();
+        const ImVec2 padding = ImGui::GetStyle().FramePadding;
+        const ImVec2 textPosition{rowMin.x + padding.x, rowMin.y + padding.y};
+        const ImU32 textColor = ImGui::GetColorU32(shader.evaluated
+            ? ImVec4(.35F, .9F, .5F, 1) : ImVec4(.45F, .75F, 1.0F, 1));
+        ImGui::GetWindowDrawList()->AddText(textPosition, textColor, label.c_str());
+        ImGui::PopID();
     }
     ImGui::EndChild();
     ImGui::SameLine();
@@ -952,9 +1017,17 @@ void Application::renderShaderInspector() {
         ImGui::End();
         return;
     }
-    ImGui::Text("Region #%llu · tail node #%llu · %.3f ms",
+    ImGui::Text("Region #%llu · tail node #%llu",
         static_cast<unsigned long long>(selected->id),
-        static_cast<unsigned long long>(selected->tail), selected->gpuMilliseconds);
+        static_cast<unsigned long long>(selected->tail));
+    if (selected->evaluated)
+        ImGui::TextColored(ImVec4(.35F, .9F, .5F, 1),
+                           "RAN THIS FRAME · GPU %.3f ms", selected->gpuMilliseconds);
+    else
+        ImGui::TextColored(ImVec4(.45F, .75F, 1.0F, 1),
+                           "CACHED · last GPU dispatch %.3f ms", selected->gpuMilliseconds);
+    ImGui::TextDisabled("Cached regions reuse their prior output until an input, parameter, or time changes.");
+    ImGui::TextDisabled("Selected region nodes are outlined in cyan on the canvas.");
     if (!selected->diagnostic.empty())
         ImGui::TextColored(ImVec4(1, .35F, .25F, 1), "Compile failed — legacy fallback active");
     else if (selected->mode == GeneratedExecutionMode::Generated)
@@ -1297,6 +1370,43 @@ void Application::renderEditor() {
     ImGui::NewFrame();
     handleShortcuts();
 
+    // This is deliberately a regular top-level window instead of an ImGui popup.
+    // A GLFW close request can arrive while another modal (such as recovery) is
+    // active, in which case a nested popup may not be presented to the user.
+    // Rendering it last below guarantees that the close decision remains visible.
+    const auto renderCloseConfirmation = [&] {
+        if (!closeConfirmationOpen_) return;
+        const auto displaySize = ImGui::GetIO().DisplaySize;
+        ImGui::SetNextWindowPos(ImVec2(displaySize.x * 0.5F, displaySize.y * 0.5F),
+                                ImGuiCond_Always, ImVec2(0.5F, 0.5F));
+        ImGui::SetNextWindowFocus();
+        ImGui::Begin("Save changes before closing?###close_confirmation", nullptr,
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse |
+                     ImGuiWindowFlags_NoSavedSettings);
+        ImGui::TextWrapped("This project has unsaved changes. Save them before closing?");
+        ImGui::Spacing();
+        if (ImGui::Button("Save and Quit", ImVec2(130, 0))) {
+            if (saveProjectDialog(false)) {
+                discardRecoverySidecar();
+                closeConfirmationOpen_ = false;
+                closeApproved_ = true;
+                glfwSetWindowShouldClose(editorWindow_, GLFW_TRUE);
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Discard Changes", ImVec2(140, 0))) {
+            discardRecoverySidecar();
+            closeConfirmationOpen_ = false;
+            closeApproved_ = true;
+            glfwSetWindowShouldClose(editorWindow_, GLFW_TRUE);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(80, 0))) {
+            closeConfirmationOpen_ = false;
+        }
+        ImGui::End();
+    };
+
     if (!recoveryCandidate_.empty() && !recoveryPromptDismissed_)
         ImGui::OpenPopup("Recover project changes?");
     if (ImGui::BeginPopupModal("Recover project changes?", nullptr,
@@ -1369,7 +1479,7 @@ void Application::renderEditor() {
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y - ImGui::GetFrameHeight()));
     ImGui::Begin("Workspace", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                  ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
-                 ImGuiWindowFlags_NoScrollWithMouse);
+                 ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoBringToFrontOnFocus);
     if (ImGui::Button(playing_ ? "Pause" : "Play")) playing_ = !playing_;
     ImGui::SameLine(); if (ImGui::Button("Reset")) { runtime_->reset(); elapsed_ = 0; }
     ImGui::SameLine(); if (ImGui::Button("Auto-Layout")) layoutRequested_ = true;
@@ -1410,6 +1520,7 @@ void Application::renderEditor() {
         setStatus("Generated shader regions active");
     }
     renderShaderInspector();
+    renderCloseConfirmation();
 
     ImGui::Render();
     int widthPixels = 0, heightPixels = 0; glfwGetFramebufferSize(editorWindow_, &widthPixels, &heightPixels);
@@ -1457,6 +1568,7 @@ int Application::run() {
         const double spent = std::chrono::duration<double>(Clock::now() - frameStart).count();
         if (spent < target) std::this_thread::sleep_for(std::chrono::duration<double>(target - spent));
     }
+    if (closeApproved_) discardRecoverySidecar();
     return 0;
 }
 

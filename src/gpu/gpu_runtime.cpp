@@ -724,7 +724,8 @@ std::vector<GeneratedShaderInfo> GraphRuntime::generatedShaders() const {
             !fusion_->enabled ? GeneratedExecutionMode::ForcedLegacy :
             region.program && !region.runtimeFallback ? GeneratedExecutionMode::Generated :
                              GeneratedExecutionMode::LegacyFallback,
-            region.diagnostic, region.errorLine, region.milliseconds});
+            region.diagnostic, region.errorLine, region.milliseconds,
+            evaluated_.contains(region.region.nodes.back())});
     }
     if (!fusion_->planningDiagnostic.empty()) {
         GeneratedShaderInfo failure;

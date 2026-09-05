@@ -25,8 +25,11 @@ private:
     void newProject();
     void loadProject(const std::filesystem::path& path);
     void loadProjectDialog();
-    void saveProjectDialog(bool forceDialog);
+    bool saveProjectDialog(bool forceDialog);
     void updateRecoverySidecar();
+    void requestEditorClose();
+    void discardRecoverySidecar();
+    static void editorWindowCloseCallback(GLFWwindow* window);
     void exportFrameDialog();
     void startRecordingDialog();
     void stopRecording(bool reportStatus = true);
@@ -66,6 +69,8 @@ private:
     std::string recoverySnapshot_;
     std::filesystem::path recoveryCandidate_;
     bool recoveryPromptDismissed_ = false;
+    bool closeConfirmationOpen_ = false;
+    bool closeApproved_ = false;
     std::unordered_map<NodeId, bool> positioned_;
     bool playing_ = true;
     bool dirty_ = false;
@@ -85,6 +90,7 @@ private:
     bool fitSubgraphRequested_ = false;
     NodeId editingSubgraphInstance_ = 0;
     bool shaderInspectorOpen_ = false;
+    bool shaderInspectorNeedsFocus_ = true;
     bool executeFusedShaders_ = true;
     std::uint64_t selectedShaderRegion_ = 0;
     std::string reportedShaderError_;

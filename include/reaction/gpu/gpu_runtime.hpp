@@ -59,6 +59,9 @@ struct GeneratedShaderInfo {
     std::string diagnostic;
     std::size_t errorLine = 0;
     double gpuMilliseconds = 0.0;
+    // True only when this region was dispatched (or fell back) in the latest evaluation.
+    // Otherwise its prior outputs are being reused.
+    bool evaluated = false;
 };
 
 struct NodeFusionInfo {

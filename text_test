@@ -472,8 +472,8 @@
         "outMin": 0.3499999940395355
       },
       "position": [
-        2290.0,
-        136.0
+        2344.0,
+        485.0
       ],
       "type": "math",
       "typeVersion": 1
@@ -532,7 +532,7 @@
           1.0,
           1.0,
           0.0,
-          0.0,
+          0.2800000011920929,
           0.0,
           1.0,
           0.0,
@@ -540,8 +540,8 @@
         ],
         "kernelSize": 5,
         "normalize": 0.0,
-        "operation": 2.0,
-        "preset": "Dilation"
+        "operation": 0.0,
+        "preset": "Custom"
       },
       "position": [
         5879.0,
@@ -634,8 +634,8 @@
       "id": 39,
       "parameters": {},
       "position": [
-        2885.0,
-        27.0
+        2935.0,
+        68.0
       ],
       "type": "perlin",
       "typeVersion": 1
@@ -923,7 +923,7 @@
   ],
   "project": {
     "height": 1920,
-    "targetFps": 240,
+    "targetFps": 42,
     "width": 1080
   },
   "subgraphs": [
