@@ -416,9 +416,9 @@ TEST_CASE("constant-only lowering stays semantic and fusion off plans solo regio
 TEST_CASE("every fully lowerable built-in executes as a solo generated region") {
     HiddenContext window;
     NodeRegistry registry; registerBuiltInNodes(registry);
-    const std::array<const char*, 9> independent = {
+    const std::array<const char*, 10> independent = {
         "float", "math", "mix", "threshold", "select", "compare",
-        "color_ramp", "perlin", "coordinates"};
+        "color_ramp", "perlin", "coordinates", "bit_test"};
     for (const auto* type : independent) {
         INFO(type);
         Graph graph; graph.settings = {4, 4, 60};
@@ -432,7 +432,8 @@ TEST_CASE("every fully lowerable built-in executes as a solo generated region") 
         REQUIRE(runtime.fusionInfo(node)->mode == GeneratedExecutionMode::Generated);
         if (std::string_view(type) == "float" || std::string_view(type) == "math" ||
             std::string_view(type) == "mix" || std::string_view(type) == "threshold" ||
-            std::string_view(type) == "select" || std::string_view(type) == "compare")
+            std::string_view(type) == "select" || std::string_view(type) == "compare" ||
+            std::string_view(type) == "bit_test")
             REQUIRE(std::holds_alternative<float>(runtime.values().at(node).front()));
     }
 
@@ -744,6 +745,60 @@ TEST_CASE("Table maps promoted indices through editable addressed values") {
     REQUIRE(normalized.helpers.front().find("index*float(2-1)") != std::string::npos);
     REQUIRE(normalized.helpers.front().find("round(position)") != std::string::npos);
     REQUIRE(node->shaderVariantKey(node->parameters()) != linearVariant);
+}
+
+TEST_CASE("Bit Test safely queries Float-backed masks for constants and fields") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* descriptor = registry.descriptor("bit_test");
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(descriptor->lowerable);
+    REQUIRE(descriptor->sockets.size() == 3);
+    REQUIRE(descriptor->sockets[0].key == "mask");
+    REQUIRE(descriptor->sockets[0].type == ValueType::Float);
+    REQUIRE(descriptor->sockets[1].key == "bit");
+    REQUIRE(descriptor->sockets[1].type == ValueType::AnyNumeric);
+    REQUIRE(descriptor->sockets[2].type == ValueType::AnyNumeric);
+
+    auto node = registry.create("bit_test");
+    CapturingLoweringContext lowering(ShaderValueType::Scalar);
+    lowering.inputs = {{"mask", {ShaderValueType::Scalar, "mask"}},
+                       {"bit", {ShaderValueType::Scalar, "bit"}}};
+    REQUIRE(node->lowerShader(lowering));
+    REQUIRE(lowering.emitted.name == "integerMaskTest(mask,bit)");
+    REQUIRE(lowering.helpers.size() == 1);
+    REQUIRE(lowering.helpers.front().find("round(value)") != std::string::npos);
+    REQUIRE(lowering.helpers.front().find("index<0.0||index>23.0") != std::string::npos);
+    REQUIRE(lowering.helpers.front().find("bits>>uint(index)") != std::string::npos);
+
+    HiddenContext context;
+    Graph graph; graph.settings = {4, 1, 60};
+    const auto coordinates = graph.addNode("coordinates");
+    const auto separate = graph.addNode("separate_vector");
+    const auto scale = graph.addNode("math");
+    const auto floor = graph.addNode("math");
+    const auto bitTest = graph.addNode("bit_test");
+    graph.findNode(scale)->parameters = {{"operation", 2.0F}, {"b", 8.0F}};
+    graph.findNode(floor)->parameters = {{"operation", 12.0F}};
+    graph.findNode(bitTest)->parameters = {{"mask", 10.0F}};
+    graph.addLink(coordinates, "coordinates", separate, "value");
+    graph.addLink(separate, "x", scale, "a");
+    graph.addLink(scale, "result", floor, "a");
+    graph.addLink(floor, "result", bitTest, "bit");
+    REQUIRE(graph.compile(registry).valid);
+
+    GpuRuntime gpu;
+    GraphRuntime runtime(graph, registry, gpu);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    const auto fused = readImage(std::get<ImageHandle>(runtime.values().at(bitTest).front()));
+    REQUIRE(fused[0] == Catch::Approx(1.0F));
+    REQUIRE(fused[4] == Catch::Approx(1.0F));
+    REQUIRE(fused[8] == Catch::Approx(0.0F));
+    REQUIRE(fused[12] == Catch::Approx(0.0F));
+
+    runtime.setFusionEnabled(false);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    const auto solo = readImage(std::get<ImageHandle>(runtime.values().at(bitTest).front()));
+    REQUIRE(solo == fused);
 }
 
 TEST_CASE("Deterministic Hash exposes typed outputs and fixed integer lowering") {

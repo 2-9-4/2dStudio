@@ -33,6 +33,11 @@ submodes, and the special nodes available inside simulation subgraphs.
 
 ### Math and logic
 
+- **Bit Test / Integer Mask** (`bit_test`) — Tests whether a nonnegative, Float-backed integer
+  **Mask** has the selected integer **Bit** enabled. **Bit** is Numeric, so a scalar field is
+  tested per pixel and produces a scalar field of exact `0` or `1`. Inputs are rounded; invalid
+  values are safe and masks support independently addressable bits `0..23`.
+
 - **Table** (`table`) — Maps a Numeric **Index** through an editable scalar table. **Sampling**
   selects nearest or linear interpolation; **Address** selects clamp, repeat, or mirror;
   **Index Units** selects direct table positions or normalized 0–1 positions. Its output follows
@@ -156,5 +161,5 @@ These nodes are scoped to a simulation body and are not ordinary root-graph node
   B expressions and publishes them as the next simulation state and output channels.
 
 The editable simulation canvas also permits these ordinary registered nodes: **Float**,
-**Math**, **Threshold**, **Select**, **Canvas Coordinates**, and **Laplacian**. Nested
+**Math**, **Bit Test / Integer Mask**, **Threshold**, **Select**, **Canvas Coordinates**, and **Laplacian**. Nested
 subgraphs and arbitrary pipeline subgraphs are not currently supported.

@@ -512,6 +512,7 @@ const NodeDescriptor* resolveDescriptor(const Graph& graph, const NodeRecord& no
 
 bool isSubgraphBodyNodeType(std::string_view type) {
     return type == "float" || type == "vector" || type == "math" || type == "vector_math" ||
+           type == "bit_test" ||
            type == "threshold" || type == "select" || type == "coordinates" ||
            type == "laplacian" || type == "subgraph_input" || type == "subgraph_output" ||
            type == "simulation_previous_state" ||

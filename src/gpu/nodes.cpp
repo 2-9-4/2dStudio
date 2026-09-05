@@ -465,6 +465,7 @@ void registerBuiltInNodes(NodeRegistry& registry) {
     registerCompareNode(registry);
     registerHashNode(registry);
     registerTableNode(registry);
+    registerBitTestNode(registry);
     addNode<PerlinNode>(registry); addNode<CoordinatesNode>(registry);
     addNode<MathNode>(registry); addNode<VectorMathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<SelectNode>(registry); addNode<InvertNode>(registry); addNode<ColorRampNode>(registry);
     registerConvolutionNode(registry); addNode<LaplacianNode>(registry);

@@ -1,5 +1,6 @@
 @docs/adding-a-node.md
 @docs/conventions.md
+@docs/nodes.md
 
 The built-in-node guide describes GPU lowering, parameter serialization, and editor controls.
 

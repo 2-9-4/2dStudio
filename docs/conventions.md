@@ -85,4 +85,12 @@ to that node; it is never silently broadcast as a fake texture. Concrete boundar
 of a region specialization. The runtime re-lowers when a live value changes between constant,
 vector, field, and empty, while the generated-source cache reuses prior specializations.
 
+## Float-backed integer data
+
+Graph values are floats. Discrete lookup inputs that are not already integer controls use
+`round` before their integer conversion. The **Bit Test / Integer Mask** node likewise rounds
+its Mask and Bit inputs, rejects NaN and infinities, and supports mask bits `0..23`: IEEE-754
+single-precision values represent every integer through `2^24` exactly. It clamps a negative
+mask to zero and returns zero for an invalid bit index before shifting.
+
 ---
