@@ -3,10 +3,12 @@
 ## Core data types
 
 * **Float** — one scalar value for the entire graph/frame.
-* **Float2** — one XY pair for the entire graph/frame.
+* **Float2 or Vector** — one XY pair for the entire graph/frame.
 * **Scalar Field** — one meaningful scalar per pixel.
 * **Vector Field** — XY per pixel, stored in RG.
 * **Color Image** — RGBA per pixel.
+
+NOT USED YET
 * **Point Set** — unordered collection of 2D points with optional scalar/vector attributes. This is a proposed new graph type required by scatter/packing nodes.
 * **Particle Buffer** — persistent collection of particles containing at minimum position, velocity, age, lifetime, and ID. Proposed new graph/state type.
 * **Histogram** — fixed-size array of scalar bin counts. Proposed auxiliary type for analysis nodes.

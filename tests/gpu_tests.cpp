@@ -1209,4 +1209,72 @@ TEST_CASE("text_test fusion matches legacy", "[.][text-test]") {
     REQUIRE(differing == 0);
 }
 
+TEST_CASE("compare scalar output matches exact and epsilon semantics") {
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    auto compare = registry.create("compare");
+    EvaluationContext context;
+    context.width = 32;
+    context.height = 32;
+
+    const auto run = [&](float mode, float a, float b, float c, float epsilon) {
+        compare->setParameters({{"mode", mode}, {"epsilon", epsilon}});
+        std::vector<Value> inputs{Value{a}, Value{b}, Value{c}};
+        std::vector<Value> outputs{Value{std::monostate{}}};
+        compare->evaluate(context, inputs, outputs);
+        return std::get<float>(outputs[0]);
+    };
+
+    REQUIRE(run(0.0F, 3.0F, 5.0F, 0.0F, 1e-4F) == 1.0F);
+    REQUIRE(run(0.0F, 5.0F, 5.0F, 0.0F, 1e-4F) == 0.0F);
+    REQUIRE(run(1.0F, 5.0F, 5.0F, 0.0F, 1e-4F) == 1.0F);
+    REQUIRE(run(1.0F, 6.0F, 5.0F, 0.0F, 1e-4F) == 0.0F);
+    REQUIRE(run(2.0F, 5.0F, 3.0F, 0.0F, 1e-4F) == 1.0F);
+    REQUIRE(run(2.0F, 3.0F, 5.0F, 0.0F, 1e-4F) == 0.0F);
+    REQUIRE(run(3.0F, 5.0F, 5.0F, 0.0F, 1e-4F) == 1.0F);
+    REQUIRE(run(3.0F, 4.0F, 5.0F, 0.0F, 1e-4F) == 0.0F);
+
+    REQUIRE(run(4.0F, 1.0F, 1.0F + 1e-3F, 0.0F, 1e-2F) == 1.0F);
+    REQUIRE(run(4.0F, 1.0F, 1.0F + 1e-1F, 0.0F, 1e-2F) == 0.0F);
+    REQUIRE(run(5.0F, 1.0F, 1.0F + 1e-1F, 0.0F, 1e-2F) == 1.0F);
+
+    REQUIRE(run(6.0F, 4.0F, 3.0F, 5.0F, 1e-4F) == 1.0F);
+    REQUIRE(run(6.0F, 2.0F, 3.0F, 5.0F, 1e-4F) == 0.0F);
+    REQUIRE(run(7.0F, 4.0F, 3.0F, 5.0F, 1e-4F) == 1.0F);
+    REQUIRE(run(7.0F, 3.0F, 3.0F, 5.0F, 1e-4F) == 0.0F);
+
+    REQUIRE(run(8.0F, 1.0F, 1.0F, 0.0F, 1e-4F) == 1.0F);
+    REQUIRE(run(8.0F, 1.0F, 0.0F, 0.0F, 1e-4F) == 0.0F);
+    REQUIRE(run(9.0F, 0.0F, 1.0F, 0.0F, 1e-4F) == 1.0F);
+    REQUIRE(run(9.0F, 0.0F, 0.0F, 0.0F, 1e-4F) == 0.0F);
+    REQUIRE(run(10.0F, 1.0F, 0.0F, 0.0F, 1e-4F) == 1.0F);
+    REQUIRE(run(10.0F, 0.0F, 0.0F, 0.0F, 1e-4F) == 0.0F);
+    REQUIRE(run(11.0F, 1.0F, 0.0F, 0.0F, 1e-4F) == 0.0F);
+    REQUIRE(run(11.0F, 0.0F, 7.0F, 0.0F, 1e-4F) == 1.0F);
+}
+
+TEST_CASE("compare lowers all modes to scalar truth comparisons") {
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    const std::array<const char*, 12> shaders = {
+        "float(sa<sb)", "float(sa<=sb)", "float(sa>sb)", "float(sa>=sb)",
+        "float(abs(sa-sb)<=p_epsilon)", "float(abs(sa-sb)>p_epsilon)",
+        "float(sb<=sa&&sa<=sc)", "float(sb<sa&&sa<sc)",
+        "float((abs(sa)>p_epsilon)&&(abs(sb)>p_epsilon))",
+        "float((abs(sa)>p_epsilon)||(abs(sb)>p_epsilon))",
+        "float(((abs(sa)>p_epsilon))!=((abs(sb)>p_epsilon)))",
+        "float(!((abs(sa)>p_epsilon)))"};
+    for (int mode = 0; mode < 12; ++mode) {
+        auto compare = registry.create("compare");
+        compare->setParameters({{"mode", static_cast<float>(mode)},
+                                {"epsilon", 1e-4F}});
+        CapturingLoweringContext lowering(ShaderValueType::Scalar);
+        lowering.inputs = {{"a", {ShaderValueType::Scalar, "sa"}},
+                           {"b", {ShaderValueType::Scalar, "sb"}},
+                           {"c", {ShaderValueType::Scalar, "sc"}}};
+        REQUIRE(compare->lowerShader(lowering));
+        REQUIRE(lowering.emitted.name == shaders[static_cast<std::size_t>(mode)]);
+    }
+}
+
 } // namespace reaction

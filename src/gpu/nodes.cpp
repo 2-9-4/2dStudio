@@ -749,6 +749,7 @@ void registerBuiltInNodes(NodeRegistry& registry) {
     registerRepeatFoldNode(registry);
     registerWaveNode(registry);
     registerWorleyNoiseNode(registry);
+    registerCompareNode(registry);
     addNode<PerlinNode>(registry); addNode<CoordinatesNode>(registry);
     addNode<MathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<SelectNode>(registry); addNode<InvertNode>(registry); addNode<ColorRampNode>(registry);
     registerConvolutionNode(registry); addNode<LaplacianNode>(registry);

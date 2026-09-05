@@ -169,17 +169,6 @@
     },
     {
       "from": {
-        "node": 61,
-        "socket": "featurePosition"
-      },
-      "id": 212,
-      "to": {
-        "node": 71,
-        "socket": "b"
-      }
-    },
-    {
-      "from": {
         "node": 68,
         "socket": "coordinates"
       },
@@ -216,43 +205,32 @@
         "node": 79,
         "socket": "image"
       },
-      "id": 263,
+      "id": 272,
       "to": {
-        "node": 81,
-        "socket": "source"
+        "node": 82,
+        "socket": "x"
       }
     },
     {
       "from": {
-        "node": 61,
-        "socket": "featurePosition"
+        "node": 83,
+        "socket": "image"
       },
-      "id": 264,
+      "id": 274,
       "to": {
-        "node": 81,
-        "socket": "coordinates"
+        "node": 82,
+        "socket": "y"
       }
     },
     {
       "from": {
-        "node": 81,
-        "socket": "sampled"
+        "node": 82,
+        "socket": "value"
       },
-      "id": 266,
-      "to": {
-        "node": 80,
-        "socket": "a"
-      }
-    },
-    {
-      "from": {
-        "node": 80,
-        "socket": "result"
-      },
-      "id": 267,
+      "id": 275,
       "to": {
         "node": 71,
-        "socket": "factor"
+        "socket": "b"
       }
     }
   ],
@@ -1040,8 +1018,8 @@
         "rotation": 0.0
       },
       "position": [
-        5769.0,
-        1286.0
+        5752.0,
+        1287.0
       ],
       "type": "transform_2d",
       "typeVersion": 1
@@ -1073,7 +1051,7 @@
     {
       "id": 71,
       "parameters": {
-        "factor": 0.1979999989271164,
+        "factor": 0.009999990463256836,
         "mode": 0.0
       },
       "position": [
@@ -1091,36 +1069,36 @@
         "speed": 1.5759999752044678
       },
       "position": [
-        3036.0,
-        1219.0
+        3799.0,
+        1259.0
       ],
       "type": "perlin",
       "typeVersion": 1
     },
     {
-      "id": 80,
-      "parameters": {
-        "b": 0.1599999964237213,
-        "operation": 2
-      },
+      "id": 82,
+      "parameters": {},
       "position": [
-        4536.0,
-        1357.0
+        4406.0,
+        1393.0
       ],
-      "type": "math",
+      "type": "combine_vector",
       "typeVersion": 1
     },
     {
-      "id": 81,
+      "id": 83,
       "parameters": {
-        "addressMode": 1.0,
-        "sampling": 1.0
+        "octaves": 8.0,
+        "persistence": 0.5860000252723694,
+        "scale": 3.648200035095215,
+        "seed": 5437.0,
+        "speed": 1.840000033378601
       },
       "position": [
-        3814.0,
-        1285.0
+        3744.0,
+        1580.0
       ],
-      "type": "texture_sample",
+      "type": "perlin",
       "typeVersion": 1
     }
   ],

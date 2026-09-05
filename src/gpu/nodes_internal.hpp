@@ -14,6 +14,7 @@ void registerPolarCoordinatesNodes(NodeRegistry& registry);
 void registerRepeatFoldNode(NodeRegistry& registry);
 void registerWaveNode(NodeRegistry& registry);
 void registerWorleyNoiseNode(NodeRegistry& registry);
+void registerCompareNode(NodeRegistry& registry);
 // Procedural node families live in focused translation units.  Keep their
 // registration functions here and call them from registerBuiltInNodes so each
 // family can evolve without turning nodes.cpp into another shared hotspot.
