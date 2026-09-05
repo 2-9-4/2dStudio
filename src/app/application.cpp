@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <functional>
 #include <cctype>
 #include <cerrno>
 #include <csignal>
@@ -254,6 +255,64 @@ bool renderColorRampPickerPopup(GraphLike& graph) {
     }
     ImGui::EndPopup();
     return changed;
+}
+
+// Renders the node box the same way in the root graph and in every editable
+// subgraph body: descriptor title, pin column, parameter rows, per-node editor
+// widgets in the middle column, then output pins in their own trailing column.
+// Structural differences between the two canvases belong here so the two paths
+// cannot drift apart. Root-only runtime inspection (fusion state, previews, GPU
+// timing) is supplied through `columnExtras`, which reports whether its buttons
+// mutated the graph.
+bool renderNodeBody(NodeRecord& node, const NodeDescriptor& descriptor,
+                    std::unordered_map<std::uintptr_t, PinTarget>& pins,
+                    const std::unordered_set<std::string>& connectedInputs,
+                    node_widgets::PopupState& popup,
+                    const std::function<bool()>& columnExtras) {
+    bool changeReported = false;
+    ImGui::TextUnformatted(descriptor.displayName.c_str());
+    ImGui::Separator();
+    ImGui::BeginGroup();
+    for (std::size_t socketIndex = 0; socketIndex < descriptor.sockets.size(); ++socketIndex) {
+        const auto& socket = descriptor.sockets[socketIndex];
+        if (socket.direction != SocketDirection::Input) continue;
+        const bool isParameter = std::ranges::any_of(descriptor.parameters,
+            [&](const ParameterDescriptor& parameter) { return parameter.key == socket.key; });
+        if (!isParameter)
+            renderSocketPin(node.id, descriptor, socketIndex, pins);
+    }
+    for (const auto& property : descriptor.parameters) {
+        if (node.type == "color_ramp" &&
+            (property.key == "r0" || property.key == "g0" || property.key == "b0" ||
+             property.key == "r1" || property.key == "g1" || property.key == "b1")) {
+            if (property.key == "r0" && renderColorRampColors(node.id, node, connectedInputs))
+                changeReported = true;
+            continue;
+        }
+        const bool connected = connectedInputs.contains(
+            std::to_string(node.id) + "\x1f" + property.key);
+        if (renderParameterRow(node.id, descriptor, property, node, popup, pins, connected))
+            changeReported = true;
+    }
+    ImGui::EndGroup();
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    if (node.type == "convolution" && node_widgets::renderConvolutionEditor(node, popup))
+        changeReported = true;
+    if (node.type == "table" && node_widgets::renderTableEditor(node))
+        changeReported = true;
+    if (node.type == "image" && node_widgets::renderImagePicker(node))
+        changeReported = true;
+    if (columnExtras && columnExtras()) changeReported = true;
+    ImGui::EndGroup();
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    for (std::size_t socketIndex = 0; socketIndex < descriptor.sockets.size(); ++socketIndex) {
+        if (descriptor.sockets[socketIndex].direction == SocketDirection::Output)
+            renderSocketPin(node.id, descriptor, socketIndex, pins);
+    }
+    ImGui::EndGroup();
+    return changeReported;
 }
 
 ImVec4 contributorColor(NodeId id) {
@@ -876,124 +935,90 @@ void Application::renderGraph() {
         ImGui::PushID(static_cast<int>(node.id));
         if (!descriptor) {
             ImGui::TextColored(ImVec4(1, .35F, .35F, 1), "Missing: %s", node.type.c_str());
-        } else {
-            ImGui::TextUnformatted(descriptor->displayName.c_str());
-            ImGui::Separator();
-            ImGui::BeginGroup();
-            for (std::size_t socketIndex = 0; socketIndex < descriptor->sockets.size(); ++socketIndex) {
-                const auto& socket = descriptor->sockets[socketIndex];
-                if (socket.direction != SocketDirection::Input) continue;
-                const bool isParameter = std::ranges::any_of(descriptor->parameters,
-                    [&](const ParameterDescriptor& parameter) { return parameter.key == socket.key; });
-                if (!isParameter)
-                    renderSocketPin(node.id, *descriptor, socketIndex, pins);
-            }
-            for (const auto& property : descriptor->parameters) {
-                if (node.type == "color_ramp" &&
-                    (property.key == "r0" || property.key == "g0" || property.key == "b0" ||
-                     property.key == "r1" || property.key == "g1" || property.key == "b1")) {
-                    if (property.key == "r0" && renderColorRampColors(node.id, node, connectedInputs))
-                        dirty_ = true;
-                    continue;
+        } else if (renderNodeBody(node, *descriptor, pins, connectedInputs, nodePopup_,
+            [&]() -> bool {
+                bool extrasChanged = false;
+                if (descriptor->stateful && ImGui::Button("Reset Simulation")) {
+                    runtime_->resetNode(node.id);
+                    setStatus("Reset simulation node");
                 }
-                const bool connected = connectedInputs.contains(
-                    std::to_string(node.id) + "\x1f" + property.key);
-                if (renderParameterRow(node.id, *descriptor, property, node, nodePopup_, pins, connected))
-                    dirty_ = true;
-            }
-            ImGui::EndGroup();
-            ImGui::SameLine();
-            ImGui::BeginGroup();
-            if (node.type == "convolution" &&
-                node_widgets::renderConvolutionEditor(node, nodePopup_)) dirty_ = true;
-            if (node.type == "table" && node_widgets::renderTableEditor(node)) dirty_ = true;
-            if (node.type == "image" && node_widgets::renderImagePicker(node)) dirty_ = true;
-            if (descriptor->stateful && ImGui::Button("Reset Simulation")) {
-                runtime_->resetNode(node.id);
-                setStatus("Reset simulation node");
-            }
-            if (node.type == "subgraph") {
-                ImGui::TextDisabled("Select + Tab to enter");
-                const auto* definition = resolveSubgraph(graph_, node.subgraphId);
-                if (definition && definition->immutable) {
-                    if (ImGui::Button("Duplicate as Editable")) duplicateSubgraph(node);
-                    ImGui::TextDisabled("Built-in (read-only)");
-                }
-            }
-            if (node.type == "output") {
-                const bool active = graph_.activeOutput == node.id;
-                if (active) ImGui::TextColored(ImVec4(.35F, .9F, .45F, 1), "Active preview output");
-                else if (ImGui::Button("Use for Preview")) {
-                    graph_.activeOutput = node.id;
-                    dirty_ = true;
-                }
-            }
-            if (fusion) {
-                if (fusion->compileFailed)
-                    ImGui::TextColored(ImVec4(1.0F, .45F, .25F, 1.0F),
-                                       "Type or generated shader error");
-                else if (fusion->mode == GeneratedExecutionMode::LegacyFallback)
-                    ImGui::TextColored(ImVec4(1.0F, .65F, .25F, 1.0F),
-                                       "Input unavailable");
-                else if (fusion->nodeCount == 1)
-                    ImGui::TextColored(ImVec4(.45F, .8F, 1.0F, 1.0F), "Generated shader");
-                else if (fusion->interior)
-                    ImGui::TextColored(ImVec4(.45F, .8F, 1.0F, 1.0F), "Fused → node #%llu",
-                        static_cast<unsigned long long>(fusion->tail));
-                else
-                    ImGui::TextColored(ImVec4(.45F, .8F, 1.0F, 1.0F),
-                                       "Fused region · %zu Math nodes", fusion->nodeCount);
-                if (fusion->mode == GeneratedExecutionMode::Generated && fusion->interior &&
-                    !fusion->materialized) {
-                    ImGui::TextDisabled("Intermediate texture elided");
-                    if (shaderInspectorOpen_ && ImGui::Button("Preview Intermediate"))
-                        runtime_->setIntermediatePreview(node.id);
-                } else if (runtime_->intermediatePreview() == node.id &&
-                           ImGui::Button("Stop Intermediate Preview")) {
-                    runtime_->setIntermediatePreview(std::nullopt);
-                }
-            }
-            const auto values = runtime_->values().find(node.id);
-            if (values != runtime_->values().end() && !values->second.empty()) {
-                if (node.type == "float_preview") {
-                    if (const auto* value = std::get_if<float>(&values->second.front())) {
-                        ImGui::Text("Live value: %.6g", *value);
+                if (node.type == "subgraph") {
+                    ImGui::TextDisabled("Select + Tab to enter");
+                    const auto* definition = resolveSubgraph(graph_, node.subgraphId);
+                    if (definition && definition->immutable) {
+                        if (ImGui::Button("Duplicate as Editable")) duplicateSubgraph(node);
+                        ImGui::TextDisabled("Built-in (read-only)");
                     }
-                } else if (const auto* image = std::get_if<ImageHandle>(&values->second.front()); image && *image) {
-                    constexpr float maximumPreviewSide = 150.0F;
-                    const float projectAspect = static_cast<float>(graph_.settings.width) /
-                                                static_cast<float>(graph_.settings.height);
-                    const ImVec2 previewSize = projectAspect >= 1.0F
-                        ? ImVec2(maximumPreviewSide, maximumPreviewSide / projectAspect)
-                        : ImVec2(maximumPreviewSide * projectAspect, maximumPreviewSide);
-                    ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<std::intptr_t>(image->texture)),
-                                 previewSize, ImVec2(0, 1), ImVec2(1, 0));
-                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-                        createIntermediatePreviewWindow(node.id);
-                    ImGui::TextDisabled("Double-click for Intermediate Preview");
                 }
-            }
-            const NodeId timingNode = fusion && fusion->mode == GeneratedExecutionMode::Generated
-                ? fusion->tail : node.id;
-            if (const auto timing = runtime_->gpuMilliseconds().find(timingNode);
-                timing != runtime_->gpuMilliseconds().end()) {
-                const bool evaluated = runtime_->wasEvaluated(timingNode);
-                if (fusion && fusion->mode == GeneratedExecutionMode::Generated)
-                    ImGui::TextDisabled(evaluated ? "Group GPU %.3f ms"
-                                                  : "Group GPU %.3f ms (cached)",
-                                        timing->second);
-                else
-                    ImGui::TextDisabled(evaluated ? "GPU %.3f ms" : "GPU %.3f ms (cached)",
-                                        timing->second);
-            }
-            ImGui::EndGroup();
-            ImGui::SameLine();
-            ImGui::BeginGroup();
-            for (std::size_t socketIndex = 0; socketIndex < descriptor->sockets.size(); ++socketIndex) {
-                if (descriptor->sockets[socketIndex].direction == SocketDirection::Output)
-                    renderSocketPin(node.id, *descriptor, socketIndex, pins);
-            }
-            ImGui::EndGroup();
+                if (node.type == "output") {
+                    const bool active = graph_.activeOutput == node.id;
+                    if (active) ImGui::TextColored(ImVec4(.35F, .9F, .45F, 1), "Active preview output");
+                    else if (ImGui::Button("Use for Preview")) {
+                        graph_.activeOutput = node.id;
+                        extrasChanged = true;
+                    }
+                }
+                if (fusion) {
+                    if (fusion->compileFailed)
+                        ImGui::TextColored(ImVec4(1.0F, .45F, .25F, 1.0F),
+                                           "Type or generated shader error");
+                    else if (fusion->mode == GeneratedExecutionMode::LegacyFallback)
+                        ImGui::TextColored(ImVec4(1.0F, .65F, .25F, 1.0F),
+                                           "Input unavailable");
+                    else if (fusion->nodeCount == 1)
+                        ImGui::TextColored(ImVec4(.45F, .8F, 1.0F, 1.0F), "Generated shader");
+                    else if (fusion->interior)
+                        ImGui::TextColored(ImVec4(.45F, .8F, 1.0F, 1.0F), "Fused → node #%llu",
+                            static_cast<unsigned long long>(fusion->tail));
+                    else
+                        ImGui::TextColored(ImVec4(.45F, .8F, 1.0F, 1.0F),
+                                           "Fused region · %zu Math nodes", fusion->nodeCount);
+                    if (fusion->mode == GeneratedExecutionMode::Generated && fusion->interior &&
+                        !fusion->materialized) {
+                        ImGui::TextDisabled("Intermediate texture elided");
+                        if (shaderInspectorOpen_ && ImGui::Button("Preview Intermediate"))
+                            runtime_->setIntermediatePreview(node.id);
+                    } else if (runtime_->intermediatePreview() == node.id &&
+                               ImGui::Button("Stop Intermediate Preview")) {
+                        runtime_->setIntermediatePreview(std::nullopt);
+                    }
+                }
+                const auto values = runtime_->values().find(node.id);
+                if (values != runtime_->values().end() && !values->second.empty()) {
+                    if (node.type == "float_preview") {
+                        if (const auto* value = std::get_if<float>(&values->second.front())) {
+                            ImGui::Text("Live value: %.6g", *value);
+                        }
+                    } else if (const auto* image = std::get_if<ImageHandle>(&values->second.front()); image && *image) {
+                        constexpr float maximumPreviewSide = 150.0F;
+                        const float projectAspect = static_cast<float>(graph_.settings.width) /
+                                                    static_cast<float>(graph_.settings.height);
+                        const ImVec2 previewSize = projectAspect >= 1.0F
+                            ? ImVec2(maximumPreviewSide, maximumPreviewSide / projectAspect)
+                            : ImVec2(maximumPreviewSide * projectAspect, maximumPreviewSide);
+                        ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<std::intptr_t>(image->texture)),
+                                     previewSize, ImVec2(0, 1), ImVec2(1, 0));
+                        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                            createIntermediatePreviewWindow(node.id);
+                        ImGui::TextDisabled("Double-click for Intermediate Preview");
+                    }
+                }
+                const NodeId timingNode = fusion && fusion->mode == GeneratedExecutionMode::Generated
+                    ? fusion->tail : node.id;
+                if (const auto timing = runtime_->gpuMilliseconds().find(timingNode);
+                    timing != runtime_->gpuMilliseconds().end()) {
+                    const bool evaluated = runtime_->wasEvaluated(timingNode);
+                    if (fusion && fusion->mode == GeneratedExecutionMode::Generated)
+                        ImGui::TextDisabled(evaluated ? "Group GPU %.3f ms"
+                                                      : "Group GPU %.3f ms (cached)",
+                                            timing->second);
+                    else
+                        ImGui::TextDisabled(evaluated ? "GPU %.3f ms" : "GPU %.3f ms (cached)",
+                                            timing->second);
+                }
+                return extrasChanged;
+            })) {
+            dirty_ = true;
         }
         ImGui::PopID();
         ed::EndNode();
@@ -1315,6 +1340,20 @@ void Application::renderSubgraphEditor() {
         positionedSubgraph_.clear();
     }
 
+    // A legacy project may wire Previous Simulation State's removed a/b sockets
+    // directly. Self-heal the flag once the user reconnects through a Channel
+    // Split, and keep the cue in the breadcrumb so node boxes stay identical to
+    // the root graph.
+    bool legacyStateWiring = false;
+    for (auto& node : body.nodes()) {
+        if (node.needsAttention && node.type == "simulation_previous_state" &&
+            std::ranges::none_of(body.links(), [&](const LinkRecord& link) {
+                return link.fromNode == node.id &&
+                       (link.fromSocket == "a" || link.fromSocket == "b");
+            })) node.needsAttention = false;
+        legacyStateWiring = legacyStateWiring || node.needsAttention;
+    }
+
     if (ImGui::Button("← Root")) { leaveSubgraph(); return; }
     ImGui::SameLine();
     ImGui::Text("Root / %s", definition->name.c_str());
@@ -1322,6 +1361,11 @@ void Application::renderSubgraphEditor() {
     ImGui::TextDisabled("Tab: return");
     ImGui::SameLine();
     if (ImGui::Button("Subgraph Settings…")) ImGui::OpenPopup("Subgraph Settings");
+    if (legacyStateWiring) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1, .35F, .35F, 1),
+            "Reconnect Previous Simulation State via Channel Split");
+    }
     if (ImGui::BeginPopupModal("Subgraph Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         char name[128]{};
         std::snprintf(name, sizeof(name), "%s", definition->name.c_str());
@@ -1373,11 +1417,6 @@ void Application::renderSubgraphEditor() {
     for (const auto& link : body.links())
         connectedInputs.insert(std::to_string(link.toNode) + "\x1f" + link.toSocket);
     for (auto& node : body.nodes()) {
-        if (node.needsAttention && node.type == "simulation_previous_state" &&
-            std::ranges::none_of(body.links(), [&](const LinkRecord& link) {
-                return link.fromNode == node.id &&
-                       (link.fromSocket == "a" || link.fromSocket == "b");
-            })) node.needsAttention = false;
         NodeDescriptor descriptorStorage;
         const auto* descriptor = resolveSubgraphBodyDescriptor(*definition, node, registry_,
                                                                descriptorStorage);
@@ -1385,52 +1424,9 @@ void Application::renderSubgraphEditor() {
         ImGui::PushID(static_cast<int>(node.id));
         if (!descriptor) {
             ImGui::TextColored(ImVec4(1, .35F, .35F, 1), "Missing: %s", node.type.c_str());
-        } else {
-            ImGui::TextUnformatted(node.label.empty() ? descriptor->displayName.c_str()
-                                                       : node.label.c_str());
-            if (!node.label.empty() && node.label != descriptor->displayName)
-                ImGui::TextDisabled("%s", descriptor->displayName.c_str());
-            if (node.needsAttention)
-                ImGui::TextColored(ImVec4(1, .35F, .35F, 1),
-                    "Needs update: reconnect via Channel Split");
-            ImGui::Separator();
-            ImGui::BeginGroup();
-            for (std::size_t socketIndex = 0; socketIndex < descriptor->sockets.size(); ++socketIndex) {
-                const auto& socket = descriptor->sockets[socketIndex];
-                if (socket.direction != SocketDirection::Input) continue;
-                const bool isParameter = std::ranges::any_of(descriptor->parameters,
-                    [&](const ParameterDescriptor& parameter) { return parameter.key == socket.key; });
-                if (!isParameter)
-                    renderSocketPin(node.id, *descriptor, socketIndex, pins);
-            }
-            for (const auto& property : descriptor->parameters) {
-                if (node.type == "color_ramp" &&
-                    (property.key == "r0" || property.key == "g0" || property.key == "b0" ||
-                     property.key == "r1" || property.key == "g1" || property.key == "b1")) {
-                    if (property.key == "r0" && renderColorRampColors(node.id, node, connectedInputs)) {
-                        changed = true; executionChanged = true;
-                    }
-                    continue;
-                }
-                const bool connected = connectedInputs.contains(
-                    std::to_string(node.id) + "\x1f" + property.key);
-                if (renderParameterRow(node.id, *descriptor, property, node, nodePopup_, pins, connected)) {
-                    changed = true; executionChanged = true;
-                }
-            }
-            ImGui::EndGroup();
-            ImGui::SameLine();
-            ImGui::BeginGroup();
-            if (node.type == "convolution" &&
-                node_widgets::renderConvolutionEditor(node, nodePopup_)) {
-                changed = true;
-                executionChanged = true;
-            }
-            for (std::size_t socketIndex = 0; socketIndex < descriptor->sockets.size(); ++socketIndex) {
-                if (descriptor->sockets[socketIndex].direction == SocketDirection::Output)
-                    renderSocketPin(node.id, *descriptor, socketIndex, pins);
-            }
-            ImGui::EndGroup();
+        } else if (renderNodeBody(node, *descriptor, pins, connectedInputs, nodePopup_, {})) {
+            changed = true;
+            executionChanged = true;
         }
         ImGui::PopID();
         ed::EndNode();

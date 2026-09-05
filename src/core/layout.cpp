@@ -176,11 +176,10 @@ void layoutGraph(GraphBody& body, const std::unordered_map<NodeId, Vec2>* nodeSi
 
     // Vertical position: lay out each connected component independently and
     // stack the components vertically, so unrelated branches never interleave.
-    // Within a component, sources get a fresh row, junctions average their
-    // inputs so a genuine merge lands halfway between its source lines, and a
-    // right-to-left pass then snaps any node with a single consumer onto that
-    // consumer's line so chains hug their consumer through downstream merges.
-    // Each layer is compacted so nodes never overlap their lane neighbors.
+    // Within a component, a node with a single consumer follows its longest
+    // input line (keeping sequential nodes horizontally aligned), while
+    // junctions average their inputs so a genuine merge lands halfway between
+    // its source lines. Sources get a fresh row, then each layer is compacted.
     std::unordered_map<NodeId, int> componentOf;
     std::vector<std::vector<NodeId>> components;
     for (const auto& node : body.nodes()) {
@@ -252,37 +251,6 @@ void layoutGraph(GraphBody& body, const std::unordered_map<NodeId, Vec2>* nodeSi
                     target = sum / static_cast<float>(predecessors[id].size());
                 }
                 desired.emplace_back(target, id);
-            }
-            std::stable_sort(desired.begin(), desired.end(),
-                             [](const auto& a, const auto& b) { return a.first < b.first; });
-            float cursor = std::numeric_limits<float>::lowest();
-            for (const auto& [target, id] : desired) {
-                const float height = size[id].y;
-                float top = target - height * 0.5F;
-                if (top < cursor + kRowGap) top = cursor + kRowGap;
-                centerY[id] = top + height * 0.5F;
-                cursor = top + height;
-                compTop = std::min(compTop, top);
-                compBottom = std::max(compBottom, top + height);
-            }
-        }
-        // Right-to-left pass: a non-source node with exactly one consumer sits
-        // immediately behind that consumer (same row), so a chain hugs its
-        // consumer even through a merge downstream. Sources keep their anchor
-        // row so a true merge stays readable between its distinct source lanes.
-        for (int l = maxLayer; l >= minLayer; --l) {
-            std::vector<NodeId> ids;
-            for (const auto id : byLayer[l])
-                if (componentOf[id] == compId) ids.push_back(id);
-            if (ids.empty()) continue;
-            std::vector<std::pair<float, NodeId>> desired;
-            desired.reserve(ids.size());
-            for (const auto id : ids) {
-                if (!predecessors[id].empty() && successors[id].size() == 1) {
-                    desired.emplace_back(centerY[successors[id].front()], id);
-                } else {
-                    desired.emplace_back(centerY[id], id);
-                }
             }
             std::stable_sort(desired.begin(), desired.end(),
                              [](const auto& a, const auto& b) { return a.first < b.first; });

@@ -127,7 +127,9 @@ Subgraph instances use the node type `subgraph` and a stable `subgraphId`. Their
 
 `SubgraphDefinition::body` is a `GraphBody`, the same node-and-link storage used by the root `Graph`. It contains normal `NodeRecord` and `LinkRecord` values and uses the same `addNode`, `removeNode`, `addLink`, and `removeLink` behavior. IDs are local to the body and remain stable when nodes are inserted, removed, or reordered. Links identify descriptor socket keys rather than array positions, and adding a link to an occupied input replaces the previous link.
 
-Editable simulation bodies support the registered Float, Math, Bit Test / Integer Mask, Threshold, Select, Canvas Coordinates, and Laplacian node types. `resolveSubgraphBodyDescriptor` returns their canonical registry descriptors, so their names, pins, parameters, widgets, and validation rules do not diverge from the root editor. The subgraph canvas renders these records with the normal node-editor interactions: background-menu creation, pin-to-pin linking, replacement links, selection, deletion, movement, panning, and zooming.
+Editable simulation bodies support the registered Float, Math, Bit Test / Integer Mask, Threshold, Select, Canvas Coordinates, Laplacian, Table, and Convolution node types. `resolveSubgraphBodyDescriptor` returns their canonical registry descriptors, so their names, pins, parameters, widgets, and validation rules do not diverge from the root editor.
+
+Both canvases render the node box through the same `renderNodeBody` helper in `src/app/application.cpp`, so a node looks identical in the root graph and inside a subgraph: the descriptor title, pin columns, parameter rows, and per-node widget editors (Convolution kernel, Table values, Image picker, Color Ramp swatches) are one code path. Each canvas supplies the same shared editor utilities and only the root graph adds runtime inspection in the middle column — fusion status, live value/image previews, GPU timing, Reset Simulation, and the subgraph/output instance actions — because those are keyed to root-graph state that the simulation body does not own. `NodeRecord::label` is not a canvas title anywhere: it only labels generated-shader instructions in the Shader Inspector (and the Shader IR), matching root rendering. The subgraph canvas renders its records with the normal node-editor interactions: background-menu creation, pin-to-pin linking, replacement links, selection, deletion, movement, panning, and zooming.
 
 Only nodes that cross or define the simulation boundary need specialized descriptors: subgraph inputs and outputs and Initial/Previous/Next Simulation State. They are offered only in the simulation-subgraph add menu because they depend on the subgraph interface or its private RG16F feedback state. The body itself remains acyclic; Previous Simulation State is the controlled feedback boundary rather than a graph-level feedback edge.
 
@@ -138,6 +140,13 @@ the simulation form. The subgraph canvas must render the same custom editor, whi
 that cannot lower in a simulation must be removed from its contextual descriptor and rejected by
 validation for existing project data. Convolution is the reference case: its kernel editor is
 available in a simulation body, but its native multi-pass `iterations` control is not.
+
+Root-only runtime inspection that lives inside the node box (fusion state, live previews, GPU
+timing, Reset Simulation) has no subgraph equivalent and is not reproduced there; node IDs in a
+subgraph body are local to the body and would collide with root-graph runtime maps. The legacy
+`needsAttention` migration cue for directly wired Previous Simulation State `a`/`b` links is a
+subgraph breadcrumb notice, not a node-body line, so migrated nodes keep their guidance without
+differing from the root node box.
 
 The simulation compiler is a planner/executor around the ordinary lowering semantics, not a replacement for them. Root shader fusion consumes acyclic image values once; a simulation additionally owns an initialization phase, an iterative RG16F ping-pong state, a controlled Previous-to-Next feedback boundary, neighborhood sampling, and exported state channels. Those responsibilities remain simulation-specific even while both paths share typed node lowering.
 
