@@ -33,6 +33,14 @@ submodes, and the special nodes available inside simulation subgraphs.
 
 ### Math and logic
 
+- **Table** (`table`) — Maps a Numeric **Index** through an editable scalar table. **Sampling**
+  selects nearest or linear interpolation; **Address** selects clamp, repeat, or mirror;
+  **Index Units** selects direct table positions or normalized 0–1 positions. Its output follows
+  the Index promotion rule: a Float Index produces a Float and a Scalar Field produces a Scalar
+  Field. Direct indices use `round(Index)` for nearest sampling. Normalized indices first use
+  `Index * (N - 1)`. Tables currently contain 1–64 values and are emitted as specialized shader
+  constants.
+
 - **Math** (`math`) — Applies one numeric operation to up to three scalar or image-valued
   inputs. Its operation submodes are:
 

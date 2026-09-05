@@ -129,6 +129,44 @@ bool renderImagePicker(NodeRecord& node) {
     return true;
 }
 
+bool renderTableEditor(NodeRecord& node) {
+    constexpr std::size_t maximumValues = 64;
+    auto values = node.parameters.value("values", nlohmann::json::array());
+    if (!values.is_array()) values = nlohmann::json::array();
+    if (values.empty()) values.push_back(0.0F);
+    while (values.size() > maximumValues) values.erase(values.end() - 1);
+
+    bool changed = false;
+    ImGui::TextUnformatted("Values");
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu / %zu", values.size(), maximumValues);
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        float value = values[index].is_number() ? values[index].get<float>() : 0.0F;
+        ImGui::PushID(static_cast<int>(index));
+        ImGui::SetNextItemWidth(105);
+        if (ImGui::DragFloat("##value", &value, 0.01F, 0.0F, 0.0F, "%.6g")) {
+            values[index] = value;
+            changed = true;
+        }
+        ImGui::SameLine();
+        ImGui::Text("%zu", index);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Remove") && values.size() > 1) {
+            values.erase(values.begin() + static_cast<nlohmann::json::difference_type>(index));
+            changed = true;
+            ImGui::PopID();
+            break;
+        }
+        ImGui::PopID();
+    }
+    if (values.size() < maximumValues && ImGui::Button("Add value")) {
+        values.push_back(values.back());
+        changed = true;
+    }
+    if (changed || !node.parameters.contains("values")) node.parameters["values"] = std::move(values);
+    return changed;
+}
+
 bool renderPopup(PopupState& popup, GraphBody& graph) {
     if (popup.kind == PopupKind::None) return false;
     const char* name = popupName(popup.kind);

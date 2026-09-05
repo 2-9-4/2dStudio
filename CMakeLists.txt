@@ -83,6 +83,7 @@ if(REACTION_BUILD_APP)
         src/gpu/texture_sample_node.cpp
         src/gpu/compare_node.cpp
         src/gpu/hash_node.cpp
+        src/gpu/table_node.cpp
         # Keep new node families as separate files; append their sources here.
         # Shared procedural helpers are header-only in procedural_node_support.hpp.
         )

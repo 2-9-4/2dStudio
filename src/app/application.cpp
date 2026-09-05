@@ -906,6 +906,7 @@ void Application::renderGraph() {
             ImGui::BeginGroup();
             if (node.type == "convolution" &&
                 node_widgets::renderConvolutionEditor(node, nodePopup_)) dirty_ = true;
+            if (node.type == "table" && node_widgets::renderTableEditor(node)) dirty_ = true;
             if (node.type == "image" && node_widgets::renderImagePicker(node)) dirty_ = true;
             if (descriptor->stateful && ImGui::Button("Reset Simulation")) {
                 runtime_->resetNode(node.id);

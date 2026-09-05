@@ -81,8 +81,9 @@ public:
         trace.push_back("parameter:" + std::string(key));
         return {ShaderValueType::Scalar, "p_" + std::string(key)};
     }
-    std::string helper(std::string_view name, std::string) override {
+    std::string helper(std::string_view name, std::string source) override {
         trace.push_back("helper:" + std::string(name));
+        helpers.emplace_back(std::move(source));
         return std::string(name);
     }
     ShaderValue emit(std::string expression, std::string_view socket = {}) override {
@@ -94,6 +95,7 @@ public:
 
     std::unordered_map<std::string, ShaderValue> inputs;
     std::vector<std::string> trace;
+    std::vector<std::string> helpers;
     ShaderValue emitted;
 
 private:
@@ -709,6 +711,39 @@ TEST_CASE("Resolution exposes render dimensions as semantic constants") {
     REQUIRE(std::get<Vec2>(values[1]).x == Catch::Approx(1.0F / 800.0F));
     REQUIRE(std::get<Vec2>(values[1]).y == Catch::Approx(1.0F / 500.0F));
     REQUIRE(std::get<float>(values[2]) == Catch::Approx(1.6F));
+}
+
+TEST_CASE("Table maps promoted indices through editable addressed values") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* descriptor = registry.descriptor("table");
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(descriptor->lowerable);
+    REQUIRE(descriptor->sockets[0].type == ValueType::AnyNumeric);
+    REQUIRE(descriptor->sockets[1].type == ValueType::AnyNumeric);
+
+    auto node = registry.create("table");
+    node->setParameters({{"values", {0.0F, 10.0F, 20.0F}}, {"sampling", 1.0F},
+                         {"address", 1.0F}, {"indexUnits", 0.0F}});
+    CapturingLoweringContext lowering(ShaderValueType::Scalar);
+    lowering.inputs = {{"index", {ShaderValueType::Scalar, "index"}}};
+    REQUIRE(node->lowerShader(lowering));
+    REQUIRE(std::ranges::find(lowering.trace, "input:index") != lowering.trace.end());
+    REQUIRE(lowering.emitted.name == "tableLookup(index)");
+    REQUIRE(lowering.helpers.size() == 1);
+    REQUIRE(lowering.helpers.front().find("float values[3]=float[3](0.0,10.0,20.0)") !=
+            std::string::npos);
+    REQUIRE(lowering.helpers.front().find("int m=value%3") != std::string::npos);
+    REQUIRE(lowering.helpers.front().find("floor(position)") != std::string::npos);
+    const auto linearVariant = node->shaderVariantKey(node->parameters());
+
+    node->setParameters({{"values", {1.0F, 2.0F}}, {"sampling", 0.0F},
+                         {"address", 2.0F}, {"indexUnits", 1.0F}});
+    CapturingLoweringContext normalized(ShaderValueType::Scalar);
+    normalized.inputs = {{"index", {ShaderValueType::Scalar, "index"}}};
+    REQUIRE(node->lowerShader(normalized));
+    REQUIRE(normalized.helpers.front().find("index*float(2-1)") != std::string::npos);
+    REQUIRE(normalized.helpers.front().find("round(position)") != std::string::npos);
+    REQUIRE(node->shaderVariantKey(node->parameters()) != linearVariant);
 }
 
 TEST_CASE("Deterministic Hash exposes typed outputs and fixed integer lowering") {

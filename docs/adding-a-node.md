@@ -84,6 +84,12 @@ be `labels.size() - 1`, and evaluate should clamp before converting to its C++ e
 path needs no node-specific widget code. Truly custom popup editors must request a popup through
 `node_widgets::PopupState` and render it in `node_widgets::renderPopup`.
 
+Array-valued node data is serialized directly in the node parameter JSON rather than as a
+`ParameterDescriptor`; the descriptor currently models scalar controls only. Render a focused
+node-specific editor in `node_widgets` and sanitize its stored JSON in the node implementation.
+Generated lowering has scalar and image graph inputs but no shader-owned parameter-texture
+resource, so bounded arrays are currently specialized as GLSL constants.
+
 ## Numeric, vector, and coordinate inputs
 
 Use `ValueType::AnyNumeric` for `Float | Scalar Field` sockets and `ValueType::AnyVector` for
