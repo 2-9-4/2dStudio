@@ -138,6 +138,14 @@ bool renderParameterRow(NodeId nodeId, const NodeDescriptor& descriptor,
     return changed;
 }
 
+struct ColorRampPickerState {
+    NodeId nodeId = 0;
+    bool highColor = false;
+    bool openRequested = false;
+};
+
+ColorRampPickerState colorRampPicker;
+
 bool renderColorRampColors(NodeId nodeId, NodeRecord& node,
                            const std::unordered_set<std::string>& connectedInputs) {
     const auto isConnected = [&](std::string_view key) {
@@ -156,13 +164,17 @@ bool renderColorRampColors(NodeId nodeId, NodeRecord& node,
     bool changed = false;
     const auto renderColor = [&](const char* label, std::array<float, 3>& color, bool connected) {
         if (connected) ImGui::BeginDisabled();
-        ImGui::SetNextItemWidth(150);
-        const bool colorChanged = ImGui::ColorEdit3(
-            label, color.data(), ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs);
+        ImGui::TextUnformatted(label);
+        ImGui::SameLine();
+        ImGui::PushID(label);
+        if (ImGui::ColorButton("##swatch", ImVec4(color[0], color[1], color[2], 1.0F),
+                               ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoDragDrop,
+                               ImVec2(72.0F, 20.0F))) {
+            colorRampPicker = {nodeId, label[0] == 'H', true};
+        }
+        ImGui::PopID();
         if (connected) ImGui::EndDisabled();
-        if (connected && ImGui::IsItemHovered())
-            ImGui::SetTooltip("A connected input overrides this color");
-        return colorChanged;
+        return false;
     };
 
     if (renderColor("Low color", low, lowConnected)) {
@@ -177,6 +189,36 @@ bool renderColorRampColors(NodeId nodeId, NodeRecord& node,
         node.parameters["b1"] = high[2];
         changed = true;
     }
+    return changed;
+}
+
+template <typename GraphLike>
+bool renderColorRampPickerPopup(GraphLike& graph) {
+    if (colorRampPicker.openRequested) {
+        ImGui::OpenPopup("Color ramp color picker");
+        colorRampPicker.openRequested = false;
+    }
+    if (!ImGui::BeginPopup("Color ramp color picker")) return false;
+
+    bool changed = false;
+    if (auto* node = graph.findNode(colorRampPicker.nodeId); node && node->type == "color_ramp") {
+        const char* prefix = colorRampPicker.highColor ? "High" : "Low";
+        std::array<float, 3> color{
+            node->parameters.value(colorRampPicker.highColor ? "r1" : "r0", colorRampPicker.highColor ? 1.0F : .015F),
+            node->parameters.value(colorRampPicker.highColor ? "g1" : "g0", colorRampPicker.highColor ? .35F : .01F),
+            node->parameters.value(colorRampPicker.highColor ? "b1" : "b0", colorRampPicker.highColor ? .08F : .04F)};
+        ImGui::Text("%s color", prefix);
+        if (ImGui::ColorPicker3("##picker", color.data(),
+                                ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoInputs)) {
+            node->parameters[colorRampPicker.highColor ? "r1" : "r0"] = color[0];
+            node->parameters[colorRampPicker.highColor ? "g1" : "g0"] = color[1];
+            node->parameters[colorRampPicker.highColor ? "b1" : "b0"] = color[2];
+            changed = true;
+        }
+    } else {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
     return changed;
 }
 
@@ -252,6 +294,12 @@ Application::~Application() {
         if (previewVertexArray_) glDeleteVertexArrays(1, &previewVertexArray_);
         glfwDestroyWindow(previewWindow_);
     }
+    if (intermediatePreviewWindow_) {
+        glfwMakeContextCurrent(intermediatePreviewWindow_);
+        if (intermediatePreviewVertexArray_)
+            glDeleteVertexArrays(1, &intermediatePreviewVertexArray_);
+        glfwDestroyWindow(intermediatePreviewWindow_);
+    }
     if (editorWindow_) glfwDestroyWindow(editorWindow_);
     glfwTerminate();
 }
@@ -275,9 +323,36 @@ void Application::createPreviewWindow() {
     glfwMakeContextCurrent(editorWindow_);
 }
 
+void Application::createIntermediatePreviewWindow(NodeId nodeId) {
+    intermediatePreviewNode_ = nodeId;
+    if (intermediatePreviewWindow_) {
+        glfwFocusWindow(intermediatePreviewWindow_);
+        return;
+    }
+
+    constexpr int maximumSize = 900;
+    const double aspect = static_cast<double>(graph_.settings.width) /
+                          static_cast<double>(graph_.settings.height);
+    const int width = aspect >= 1.0 ? maximumSize :
+        std::max(1, static_cast<int>(std::lround(maximumSize * aspect)));
+    const int height = aspect >= 1.0 ?
+        std::max(1, static_cast<int>(std::lround(maximumSize / aspect))) : maximumSize;
+    intermediatePreviewWindow_ = glfwCreateWindow(width, height,
+        "Reaction Studio — Intermediate Preview", nullptr, editorWindow_);
+    if (!intermediatePreviewWindow_)
+        throw std::runtime_error("Unable to create intermediate preview window");
+    glfwMakeContextCurrent(intermediatePreviewWindow_);
+    glfwSwapInterval(0);
+    updatePreviewAspectRatio();
+    glGenVertexArrays(1, &intermediatePreviewVertexArray_);
+    glfwMakeContextCurrent(editorWindow_);
+}
+
 void Application::updatePreviewAspectRatio() {
     if (previewWindow_ && graph_.settings.width > 0 && graph_.settings.height > 0)
         glfwSetWindowAspectRatio(previewWindow_, graph_.settings.width, graph_.settings.height);
+    if (intermediatePreviewWindow_ && graph_.settings.width > 0 && graph_.settings.height > 0)
+        glfwSetWindowAspectRatio(intermediatePreviewWindow_, graph_.settings.width, graph_.settings.height);
 }
 
 void Application::newProject() {
@@ -848,8 +923,17 @@ void Application::renderGraph() {
                         ImGui::Text("Live value: %.6g", *value);
                     }
                 } else if (const auto* image = std::get_if<ImageHandle>(&values->second.front()); image && *image) {
+                    constexpr float maximumPreviewSide = 150.0F;
+                    const float projectAspect = static_cast<float>(graph_.settings.width) /
+                                                static_cast<float>(graph_.settings.height);
+                    const ImVec2 previewSize = projectAspect >= 1.0F
+                        ? ImVec2(maximumPreviewSide, maximumPreviewSide / projectAspect)
+                        : ImVec2(maximumPreviewSide * projectAspect, maximumPreviewSide);
                     ImGui::Image(reinterpret_cast<ImTextureID>(static_cast<std::intptr_t>(image->texture)),
-                                 ImVec2(150, 100), ImVec2(0, 1), ImVec2(1, 0));
+                                 previewSize, ImVec2(0, 1), ImVec2(1, 0));
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                        createIntermediatePreviewWindow(node.id);
+                    ImGui::TextDisabled("Double-click for Intermediate Preview");
                 }
             }
             const NodeId timingNode = fusion && fusion->mode == GeneratedExecutionMode::Generated
@@ -939,6 +1023,7 @@ void Application::renderGraph() {
 
     static ImVec2 addNodeCanvasPosition{};
     ed::Suspend();
+    if (renderColorRampPickerPopup(graph_)) dirty_ = true;
     if (node_widgets::renderPopup(nodePopup_, graph_)) dirty_ = true;
     if (ed::ShowBackgroundContextMenu()) {
         addNodeCanvasPosition = ed::ScreenToCanvas(ImGui::GetMousePos());
@@ -1378,6 +1463,10 @@ void Application::renderSubgraphEditor() {
 
     static ImVec2 addNodeCanvasPosition{};
     ed::Suspend();
+    if (renderColorRampPickerPopup(body)) {
+        changed = true;
+        executionChanged = true;
+    }
     if (node_widgets::renderPopup(nodePopup_, body)) {
         changed = true; executionChanged = true;
     }
@@ -1604,6 +1693,33 @@ void Application::renderPreview() {
     glfwSwapBuffers(previewWindow_);
 }
 
+void Application::renderIntermediatePreview() {
+    if (!intermediatePreviewWindow_) return;
+    if (glfwWindowShouldClose(intermediatePreviewWindow_)) {
+        glfwMakeContextCurrent(intermediatePreviewWindow_);
+        if (intermediatePreviewVertexArray_)
+            glDeleteVertexArrays(1, &intermediatePreviewVertexArray_);
+        intermediatePreviewVertexArray_ = 0;
+        glfwDestroyWindow(intermediatePreviewWindow_);
+        intermediatePreviewWindow_ = nullptr;
+        intermediatePreviewNode_ = 0;
+        glfwMakeContextCurrent(editorWindow_);
+        return;
+    }
+
+    const auto values = runtime_->values().find(intermediatePreviewNode_);
+    if (values == runtime_->values().end() || values->second.empty()) return;
+    const auto* image = std::get_if<ImageHandle>(&values->second.front());
+    if (!image || !*image) return;
+
+    glfwMakeContextCurrent(intermediatePreviewWindow_);
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(intermediatePreviewWindow_, &width, &height);
+    gpu_->drawFullscreen(image->texture, intermediatePreviewVertexArray_, width, height);
+    glfwSwapBuffers(intermediatePreviewWindow_);
+    glfwMakeContextCurrent(editorWindow_);
+}
+
 int Application::run() {
     using Clock = std::chrono::steady_clock;
     auto previous = Clock::now();
@@ -1620,6 +1736,7 @@ int Application::run() {
         recordFrame();
         renderEditor();
         renderPreview();
+        renderIntermediatePreview();
         fpsAccumulator += delta; ++fpsFrames;
         if (fpsAccumulator >= .5) { displayedFps_ = static_cast<double>(fpsFrames) / fpsAccumulator; fpsAccumulator = 0; fpsFrames = 0; }
         const double spent = std::chrono::duration<double>(Clock::now() - frameStart).count();

@@ -22,6 +22,7 @@ public:
 
 private:
     void createPreviewWindow();
+    void createIntermediatePreviewWindow(NodeId nodeId);
     void newProject();
     void loadProject(const std::filesystem::path& path);
     void loadProjectDialog();
@@ -43,6 +44,7 @@ private:
     void autoLayoutBody(GraphBody& body, std::unordered_map<NodeId, bool>& positioned);
     void duplicateSubgraph(NodeRecord& node);
     void renderPreview();
+    void renderIntermediatePreview();
     void handleShortcuts();
     void copySelectedNodes();
     void pasteNodes();
@@ -51,6 +53,9 @@ private:
     GLFWwindow* editorWindow_ = nullptr;
     GLFWwindow* previewWindow_ = nullptr;
     std::uint32_t previewVertexArray_ = 0;
+    GLFWwindow* intermediatePreviewWindow_ = nullptr;
+    std::uint32_t intermediatePreviewVertexArray_ = 0;
+    NodeId intermediatePreviewNode_ = 0;
     int recordingPipe_ = -1;
     int recordingProcess_ = -1;
     std::filesystem::path recordingPath_;
