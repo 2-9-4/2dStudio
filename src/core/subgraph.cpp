@@ -1,4 +1,5 @@
 #include "reaction/core/graph.hpp"
+#include "reaction/core/vector_math.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -499,6 +500,10 @@ NodeDescriptor describeSubgraph(const SubgraphDefinition& definition) {
 
 const NodeDescriptor* resolveDescriptor(const Graph& graph, const NodeRecord& node,
                                         const NodeRegistry& registry, NodeDescriptor& storage) {
+    if (node.type == "vector_math") {
+        storage = vectorMathDescriptor(vectorMathOperation(node.parameters.value("operation", 0.0F)));
+        return &storage;
+    }
     if (node.type != "subgraph") return registry.descriptor(node.type);
     const auto* definition = resolveSubgraph(graph, node.subgraphId);
     if (!definition) return nullptr;

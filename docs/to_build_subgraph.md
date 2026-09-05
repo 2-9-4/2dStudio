@@ -670,6 +670,8 @@ None.
 * `Float`
 * `width/height`.
 
+
+We already have a "canvas coordinates" node that outputs seperate x and y channels. Merge those into 1 vector output, and give it a normalization on/off checkbox(so it goes from 0 to 1 instead of pixels). Fix the default reaction diffusion subgraph by replacing the work it currently does with our new vector math node.Do not worry  about fixing existing files, we can just break those
 **Pixel Coordinates**
 
 * `Vector Field`
@@ -688,7 +690,7 @@ followed by Texture Sample.
 
 ---
 
-# Primitive C — Extended Math operations
+# Primitive C — Extended Math operations - DONE
 
 Your existing Math node should gain these modes because many proposed subgraphs otherwise need dedicated nodes solely for elementary mathematics.
 
@@ -732,7 +734,7 @@ Unsafe operations use documented epsilon behavior.
 
 ---
 
-# Primitive D — Compare / Logic
+# Primitive D — Compare / Logic - DONE
 
 Threshold alone becomes awkward once graphs start implementing algorithms.
 

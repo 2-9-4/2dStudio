@@ -1,5 +1,6 @@
 #include "reaction/gpu/gpu_runtime.hpp"
 #include "reaction/core/math.hpp"
+#include "reaction/core/vector_math.hpp"
 #include "reaction/gpu/shader_ir.hpp"
 #include "nodes_internal.hpp"
 #include "node_support.hpp"
@@ -113,6 +114,66 @@ public:
         }
         const auto type = promotedShaderType(operands);
         (void)context.emitTyped(mathGlslExpression(operation, operands, remap, type), type);
+        return true;
+    }
+};
+
+class VectorMathNode final : public ParameterNode {
+public:
+    static NodeDescriptor describe() { return vectorMathDescriptor(VectorMathOperation::Add); }
+    const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
+    std::string shaderVariantKey(const nlohmann::json& parameters) const override {
+        return "operation=" + std::to_string(static_cast<int>(
+            vectorMathOperation(parameter(parameters, "operation", 0.0F))));
+    }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto operation = vectorMathOperation(parameter(parameters_, "operation", 0.0F));
+        const auto a = context.vector("a", "a", 0.0F);
+        const auto b = [&] { return context.vector("b", "b", 0.0F); };
+        const auto scalar = [&] { return context.scalar("scalar", "scalar", 0.0F).name; };
+        const auto min = [&] { return context.scalar("min", "min", 0.0F).name; };
+        const auto max = [&] { return context.scalar("max", "max", 1.0F).name; };
+        const auto safeNormalize = [&](const std::string& value) {
+            return "(" + value + "/max(length(" + value + "),1e-8))";
+        };
+        std::string expression;
+        ShaderValueType type = ShaderValueType::Vec2;
+        switch (operation) {
+        case VectorMathOperation::Add: expression = a.name + "+" + b().name; break;
+        case VectorMathOperation::Subtract: expression = a.name + "-" + b().name; break;
+        case VectorMathOperation::MultiplyComponents: expression = a.name + "*" + b().name; break;
+        case VectorMathOperation::DivideComponents: { const auto divisor = b(); expression = a.name + "/(mix(vec2(1.0),sign(" + divisor.name + "),step(vec2(1e-6),abs(" + divisor.name + ")))*max(abs(" + divisor.name + "),vec2(1e-6)))"; break; }
+        case VectorMathOperation::Scale: expression = a.name + "*" + scalar(); break;
+        case VectorMathOperation::Negate: expression = "-" + a.name; break;
+        case VectorMathOperation::Absolute: expression = "abs(" + a.name + ")"; break;
+        case VectorMathOperation::Minimum: expression = "min(" + a.name + "," + b().name + ")"; break;
+        case VectorMathOperation::Maximum: expression = "max(" + a.name + "," + b().name + ")"; break;
+        case VectorMathOperation::Clamp: expression = "clamp(" + a.name + ",vec2(" + min() + "),vec2(" + max() + "))"; break;
+        case VectorMathOperation::Normalize: expression = "(" + a.name + "*(step(1e-8,length(" + a.name + "))/max(length(" + a.name + "),1e-8)))"; break;
+        case VectorMathOperation::SetLength: expression = safeNormalize(a.name) + "*" + scalar() + "*step(1e-8,length(" + a.name + "))"; break;
+        case VectorMathOperation::ClampLength: expression = safeNormalize(a.name) + "*clamp(length(" + a.name + ")," + min() + "," + max() + ")*step(1e-8,length(" + a.name + "))"; break;
+        case VectorMathOperation::LimitLength: expression = safeNormalize(a.name) + "*min(length(" + a.name + ")," + scalar() + ")*step(1e-8,length(" + a.name + "))"; break;
+        case VectorMathOperation::Rotate: { const auto angle = scalar(); expression = "mat2(cos(" + angle + "),sin(" + angle + "),-sin(" + angle + "),cos(" + angle + "))*" + a.name; break; }
+        case VectorMathOperation::PerpendicularClockwise: expression = "vec2(-" + a.name + ".y," + a.name + ".x)"; break;
+        case VectorMathOperation::PerpendicularCounterClockwise: expression = "vec2(" + a.name + ".y,-" + a.name + ".x)"; break;
+        case VectorMathOperation::Reflect: { const auto normal = b(); expression = a.name + "-2.0*dot(" + a.name + "," + normal.name + "/max(length(" + normal.name + "),1e-8))*" + normal.name + "/max(length(" + normal.name + "),1e-8)*step(1e-8,length(" + normal.name + "))"; break; }
+        case VectorMathOperation::Project: { const auto axis = b(); expression = axis.name + "*dot(" + a.name + "," + axis.name + ")/max(dot(" + axis.name + "," + axis.name + "),1e-8)"; break; }
+        case VectorMathOperation::Reject: { const auto axis = b(); expression = a.name + "-" + axis.name + "*dot(" + a.name + "," + axis.name + ")/max(dot(" + axis.name + "," + axis.name + "),1e-8)"; break; }
+        case VectorMathOperation::Mix: expression = "mix(" + a.name + "," + b().name + "," + scalar() + ")"; break;
+        case VectorMathOperation::Length: expression = "length(" + a.name + ")"; type = ShaderValueType::Scalar; break;
+        case VectorMathOperation::LengthSquared: expression = "dot(" + a.name + "," + a.name + ")"; type = ShaderValueType::Scalar; break;
+        case VectorMathOperation::Distance: expression = "distance(" + a.name + "," + b().name + ")"; type = ShaderValueType::Scalar; break;
+        case VectorMathOperation::DistanceSquared: { const auto d = "(" + a.name + "-" + b().name + ")"; expression = "dot(" + d + "," + d + ")"; type = ShaderValueType::Scalar; break; }
+        case VectorMathOperation::Dot: expression = "dot(" + a.name + "," + b().name + ")"; type = ShaderValueType::Scalar; break;
+        case VectorMathOperation::Cross: expression = a.name + ".x*" + b().name + ".y-" + a.name + ".y*" + b().name + ".x"; type = ShaderValueType::Scalar; break;
+        case VectorMathOperation::Angle: expression = "atan(" + a.name + ".y," + a.name + ".x)"; type = ShaderValueType::Scalar; break;
+        case VectorMathOperation::AngleBetween: { const auto other = b(); expression = "(step(1e-8,length(" + a.name + "))*step(1e-8,length(" + other.name + "))*atan(" + a.name + ".x*" + other.name + ".y-" + a.name + ".y*" + other.name + ".x,dot(" + a.name + "," + other.name + ")))"; type = ShaderValueType::Scalar; break; }
+        case VectorMathOperation::MinimumComponent: expression = "min(" + a.name + ".x," + a.name + ".y)"; type = ShaderValueType::Scalar; break;
+        case VectorMathOperation::MaximumComponent: expression = "max(" + a.name + ".x," + a.name + ".y)"; type = ShaderValueType::Scalar; break;
+        case VectorMathOperation::SumComponents: expression = a.name + ".x+" + a.name + ".y"; type = ShaderValueType::Scalar; break;
+        case VectorMathOperation::ProductComponents: expression = a.name + ".x*" + a.name + ".y"; type = ShaderValueType::Scalar; break;
+        }
+        (void)context.emitTyped(std::move(expression), type, "result");
         return true;
     }
 };
@@ -392,7 +453,7 @@ void registerBuiltInNodes(NodeRegistry& registry) {
     registerWorleyNoiseNode(registry);
     registerCompareNode(registry);
     addNode<PerlinNode>(registry); addNode<CoordinatesNode>(registry);
-    addNode<MathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<SelectNode>(registry); addNode<InvertNode>(registry); addNode<ColorRampNode>(registry);
+    addNode<MathNode>(registry); addNode<VectorMathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<SelectNode>(registry); addNode<InvertNode>(registry); addNode<ColorRampNode>(registry);
     registerConvolutionNode(registry); addNode<LaplacianNode>(registry);
     addNode<ReactionNode>(registry); addNode<OutputNode>(registry);
 }

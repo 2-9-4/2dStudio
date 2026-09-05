@@ -28,6 +28,9 @@ struct SocketDescriptor {
     ValueType type = ValueType::Float;
     SocketDirection direction = SocketDirection::Input;
     bool optional = false;
+    // Prevent the legacy Numeric/Vector convenience bridge for sockets whose
+    // semantics require a real scalar or 2D vector value.
+    bool strictType = false;
     // Sampling accessors require a real field on this input. Constants are a
     // typed lowering error instead of being silently broadcast.
     bool requiresImage = false;

@@ -3,6 +3,7 @@
 #include "convolution_presets.hpp"
 #include "node_widgets.hpp"
 #include "reaction/core/math.hpp"
+#include "reaction/core/vector_math.hpp"
 
 #ifndef REACTION_NODE_SEARCH_HEADLESS
 #include <imgui.h>
@@ -55,6 +56,11 @@ void addAliases(std::vector<AddNodeEntry>& entries, const NodeDescriptor& descri
     if (descriptor.type == "math") {
         for (std::size_t index = 0; index < kMathOperationNames.size(); ++index)
             addAlias(kMathOperationNames[index], "operation", static_cast<int>(index));
+    } else if (descriptor.type == "vector_math") {
+        for (int index = 0; index <= static_cast<int>(VectorMathOperation::ProductComponents);
+             ++index) {
+            addAlias(vectorMathOperationName(static_cast<VectorMathOperation>(index)), "operation", index);
+        }
     } else if (descriptor.type == "mix") {
         const auto& names = node_widgets::mixModeNames();
         for (std::size_t index = 0; index < names.size(); ++index)

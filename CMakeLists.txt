@@ -16,6 +16,7 @@ add_library(reaction_core
     src/core/graph.cpp
     src/core/layout.cpp
     src/core/math.cpp
+    src/core/vector_math.cpp
     src/core/persistence.cpp
     src/core/registry.cpp
     src/core/subgraph.cpp)

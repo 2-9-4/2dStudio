@@ -1,5 +1,6 @@
 #include "reaction/core/layout.hpp"
 #include "reaction/core/persistence.hpp"
+#include "reaction/core/vector_math.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -169,6 +170,45 @@ TEST_CASE("Vec2 is confined to AnyVector paths and excluded from numeric math") 
     const auto math = numericGraph.addNode("math");
     numericGraph.addLink(numericState, "state", math, "a");
     REQUIRE_FALSE(numericGraph.compile(nodes).valid);
+}
+
+TEST_CASE("Vector Math descriptors expose only active semantic sockets") {
+    const auto normalize = vectorMathDescriptor(VectorMathOperation::Normalize);
+    REQUIRE(normalize.sockets.size() == 2);
+    REQUIRE(normalize.sockets[0].key == "a");
+    REQUIRE(normalize.sockets[0].type == ValueType::AnyVector);
+    REQUIRE(normalize.sockets[1].key == "result");
+    REQUIRE(normalize.sockets[1].type == ValueType::AnyVector);
+
+    const auto dot = vectorMathDescriptor(VectorMathOperation::Dot);
+    REQUIRE(dot.sockets.size() == 3);
+    REQUIRE(dot.sockets[0].key == "a");
+    REQUIRE(dot.sockets[1].key == "b");
+    REQUIRE(dot.sockets[2].type == ValueType::AnyNumeric);
+
+    const auto scale = vectorMathDescriptor(VectorMathOperation::Scale);
+    REQUIRE(scale.sockets.size() == 3);
+    REQUIRE(scale.sockets[0].type == ValueType::AnyVector);
+    REQUIRE(scale.sockets[1].key == "scalar");
+    REQUIRE(scale.sockets[1].type == ValueType::AnyNumeric);
+    REQUIRE(scale.sockets[2].type == ValueType::AnyVector);
+
+}
+
+TEST_CASE("Vector Math scalar results do not feed vector-only operations") {
+    auto nodes = registry();
+    add(nodes, {"vec2_source", 1, "Vec2", "Test",
+        {{"value", "Value", ValueType::Vec2, SocketDirection::Output}}, {}});
+
+    Graph graph;
+    const auto source = graph.addNode("vec2_source");
+    const auto dot = graph.addNode("vector_math");
+    graph.findNode(dot)->parameters["operation"] = static_cast<float>(VectorMathOperation::Dot);
+    const auto laplacian = graph.addNode("laplacian");
+    graph.addLink(source, "value", dot, "a");
+    graph.addLink(source, "value", dot, "b");
+    graph.addLink(dot, "result", laplacian, "value");
+    REQUIRE_FALSE(graph.compile(nodes).valid);
 }
 
 TEST_CASE("project JSON round trips graph state") {

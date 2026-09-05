@@ -94,6 +94,38 @@ std::ptrdiff_t inputSocketIndex(const NodeDescriptor& descriptor, std::string_vi
     return -1;
 }
 
+bool compatible(const SocketDescriptor& from, const SocketDescriptor& to) {
+    if (!areSocketTypesCompatible(from.type, to.type)) return false;
+    if (!(from.strictType || to.strictType)) return true;
+    return !(isNumericType(from.type) && to.type == ValueType::AnyVector) &&
+           !(from.type == ValueType::AnyVector && isNumericType(to.type));
+}
+
+// Operation-dependent nodes can remove an input or change their result category.
+// Keep their stored graph links in sync with that live descriptor rather than
+// retaining invisible links that would make the graph invalid.
+bool pruneInactiveLinks(Graph& graph, const NodeRegistry& registry) {
+    const auto before = graph.links().size();
+    std::erase_if(graph.links(), [&](const LinkRecord& link) {
+        const auto* from = graph.findNode(link.fromNode);
+        const auto* to = graph.findNode(link.toNode);
+        if (!from || !to) return true;
+        NodeDescriptor fromStorage, toStorage;
+        const auto* fromDescriptor = resolveDescriptor(graph, *from, registry, fromStorage);
+        const auto* toDescriptor = resolveDescriptor(graph, *to, registry, toStorage);
+        if (!fromDescriptor || !toDescriptor) return true;
+        const auto output = std::ranges::find_if(fromDescriptor->sockets, [&](const auto& socket) {
+                return socket.key == link.fromSocket && socket.direction == SocketDirection::Output;
+            });
+        const auto input = std::ranges::find_if(toDescriptor->sockets, [&](const auto& socket) {
+                return socket.key == link.toSocket && socket.direction == SocketDirection::Input;
+            });
+        return output == fromDescriptor->sockets.end() || input == toDescriptor->sockets.end() ||
+            !compatible(*output, *input);
+    });
+    return graph.links().size() != before;
+}
+
 bool renderParameterRow(NodeId nodeId, const NodeDescriptor& descriptor,
                         const ParameterDescriptor& property, NodeRecord& node,
                         node_widgets::PopupState& popup,
@@ -1028,7 +1060,12 @@ void Application::renderGraph() {
     static ImVec2 addNodeCanvasPosition{};
     ed::Suspend();
     if (renderColorRampPickerPopup(graph_)) dirty_ = true;
-    if (node_widgets::renderPopup(nodePopup_, graph_)) dirty_ = true;
+    if (node_widgets::renderPopup(nodePopup_, graph_)) {
+        if (pruneInactiveLinks(graph_, registry_))
+            setStatus("Removed links incompatible with the selected operation");
+        dirty_ = true;
+        rebuildRuntime();
+    }
     if (ed::ShowBackgroundContextMenu()) {
         addNodeCanvasPosition = ed::ScreenToCanvas(ImGui::GetMousePos());
         ImGui::OpenPopup("Add node");

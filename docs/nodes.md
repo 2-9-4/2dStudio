@@ -47,6 +47,14 @@ submodes, and the special nodes available inside simulation subgraphs.
   - **Clamp** — Restricts A to the range B–C.
   - **Remap** — Remaps A from `Input Min`–`Input Max` to `Output Min`–`Output Max`.
 
+- **Vector Math** (`vector_math`) — Performs explicit 2D vector operations on a Vector or
+  Vector Field. The active operation determines which sockets are visible: for example,
+  **Normalize** exposes `A → Result` as Vector Numeric, **Dot** exposes `A`, `B → Result`
+  with a Numeric result, and **Scale** exposes `A`, `Scalar → Result`. It includes component
+  arithmetic, normalize/length controls, rotation and perpendiculars, reflect/project/reject,
+  interpolation, distances, dot/cross products, and angle/component reductions. Vector Fields
+  are semantically XY vectors stored in RG, never RGBA color math.
+
 - **Threshold** (`threshold`) — Converts a value to 0 or 1 depending on whether it is at
   least the configured threshold.
 - **Select** (`select`) — Outputs `If True` when `Condition` is nonzero; otherwise outputs
