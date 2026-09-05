@@ -133,6 +133,12 @@ Only nodes that cross or define the simulation boundary need specialized descrip
 
 The simulation backend follows the body links and fuses the reachable nodes into an initialization shader and one update shader. It prunes interface declarations separately for those two endpoints, shares direct previous-state Laplacian neighborhoods with identical scale expressions as vector values, and emits output conversion stores only for the first or externally connected outputs. Runtime signatures are based on generated source and output mappings, so layout, labels, and unreachable nodes do not reset live state. To make another ordinary registered node available in simulation subgraphs, reuse its existing `NodeDescriptor`, add it to the permitted subgraph node types and add matching shader lowering. Do not create a second node record, socket vocabulary, or editor widget for the simulation form.
 
+If a node has a root-only native escape hatch or a custom editor, account for that explicitly in
+the simulation form. The subgraph canvas must render the same custom editor, while parameters
+that cannot lower in a simulation must be removed from its contextual descriptor and rejected by
+validation for existing project data. Convolution is the reference case: its kernel editor is
+available in a simulation body, but its native multi-pass `iterations` control is not.
+
 The simulation compiler is a planner/executor around the ordinary lowering semantics, not a replacement for them. Root shader fusion consumes acyclic image values once; a simulation additionally owns an initialization phase, an iterative RG16F ping-pong state, a controlled Previous-to-Next feedback boundary, neighborhood sampling, and exported state channels. Those responsibilities remain simulation-specific even while both paths share typed node lowering.
 
 Definitions returned by `builtInSubgraphs()` are source templates. Adding one to a project creates an editable definition in `Graph::subgraphs()`, serialized once at project level; any number of instances may reference that shared definition. Project format 3 stores each body as ordinary `nodes` and `links`, while the loader migrates older project definitions that used the format-2 expression representation.

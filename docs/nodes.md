@@ -160,6 +160,8 @@ These nodes are scoped to a simulation body and are not ordinary root-graph node
 - **Next Simulation State** (`simulation_next_state`) — Combines the updated Chemical A and
   B expressions and publishes them as the next simulation state and output channels.
 
-The editable simulation canvas also permits these ordinary registered nodes: **Float**,
-**Math**, **Bit Test / Integer Mask**, **Threshold**, **Select**, **Canvas Coordinates**, and **Laplacian**. Nested
+The editable simulation canvas also permits lowerable ordinary registered nodes, including
+**Float**, **Math**, **Bit Test / Integer Mask**, **Threshold**, **Select**, **Canvas Coordinates**,
+**Laplacian**, and **Convolution**. Convolution exposes its preset/kernel editor there but is
+single-pass only; its root-graph multi-pass **Iterations** control is unavailable. Nested
 subgraphs and arbitrary pipeline subgraphs are not currently supported.

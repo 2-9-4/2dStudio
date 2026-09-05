@@ -1421,6 +1421,11 @@ void Application::renderSubgraphEditor() {
             ImGui::EndGroup();
             ImGui::SameLine();
             ImGui::BeginGroup();
+            if (node.type == "convolution" &&
+                node_widgets::renderConvolutionEditor(node, nodePopup_)) {
+                changed = true;
+                executionChanged = true;
+            }
             for (std::size_t socketIndex = 0; socketIndex < descriptor->sockets.size(); ++socketIndex) {
                 if (descriptor->sockets[socketIndex].direction == SocketDirection::Output)
                     renderSocketPin(node.id, *descriptor, socketIndex, pins);

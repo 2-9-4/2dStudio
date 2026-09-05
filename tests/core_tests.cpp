@@ -369,6 +369,36 @@ TEST_CASE("subgraph labels may change without changing serialized socket keys") 
     REQUIRE(descriptor.sockets.front().label == "Painted Feed");
 }
 
+TEST_CASE("simulation convolution exposes only its single-pass form") {
+    auto nodes = registry();
+    NodeDescriptor convolutionDescriptor{"convolution", 1, "Convolution", "Filter",
+        {{"image", "Image", ValueType::Image2D, SocketDirection::Input},
+         {"image", "Image", ValueType::Image2D, SocketDirection::Output}},
+        {{"iterations", "Iterations", 1.0F, 1.0F, 32.0F}}};
+    convolutionDescriptor.lowerable = true;
+    add(nodes, std::move(convolutionDescriptor));
+    auto definition = builtInSubgraphs().front();
+    const auto convolution = definition.body.addNode("convolution");
+    const auto* node = definition.body.findNode(convolution);
+    REQUIRE(node != nullptr);
+
+    NodeDescriptor descriptor;
+    const auto* resolved = resolveSubgraphBodyDescriptor(definition, *node, nodes, descriptor);
+    REQUIRE(resolved != nullptr);
+    REQUIRE(std::ranges::find(resolved->parameters, "iterations",
+                              &ParameterDescriptor::key) == resolved->parameters.end());
+    REQUIRE(std::ranges::none_of(resolved->sockets, [](const SocketDescriptor& socket) {
+        return socket.direction == SocketDirection::Input && socket.key == "iterations";
+    }));
+
+    definition.body.findNode(convolution)->parameters["iterations"] = 2.0F;
+    const auto errors = validateSubgraph(definition, nodes);
+    REQUIRE(std::ranges::any_of(errors, [](const std::string& error) {
+        return error.find("Convolution") != std::string::npos &&
+               error.find("one iteration") != std::string::npos;
+    }));
+}
+
 TEST_CASE("subgraph validation catches ranges cycles endpoints and nesting") {
     auto definition = builtInSubgraphs().front();
     definition.interface[3].minimum = 1.0F;

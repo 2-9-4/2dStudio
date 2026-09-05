@@ -347,6 +347,13 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
         } else {
             descriptors.emplace(node.id, *resolved);
         }
+        // Simulation bodies are lowered into one update shader. Convolution's
+        // multi-pass mode uses a native ping-pong texture and cannot participate
+        // in that shader, so reject legacy/manual values before runtime.
+        if (node.type == "convolution" && node.parameters.is_object() &&
+            node.parameters.value("iterations", 1.0F) > 1.0F) {
+            errors.push_back("Convolution in a simulation subgraph supports one iteration only");
+        }
     }
 
     if (definition.execution == SubgraphExecution::Simulation) {
@@ -537,8 +544,21 @@ const NodeDescriptor* resolveSubgraphBodyDescriptor(const SubgraphDefinition& de
         return &storage;
     }
     const auto* descriptor = registry.descriptor(node.type);
-    return descriptor && (descriptor->lowerable || isSubgraphBodyNodeType(node.type))
-        ? descriptor : nullptr;
+    if (!descriptor || (!descriptor->lowerable && !isSubgraphBodyNodeType(node.type)))
+        return nullptr;
+    if (node.type != "convolution") return descriptor;
+
+    // The root node exposes a native multi-pass escape hatch. A simulation
+    // subgraph has no native execution path, so present only its lowerable
+    // single-pass form and do not offer an unusable parameter/input pin.
+    storage = *descriptor;
+    std::erase_if(storage.parameters, [](const ParameterDescriptor& parameter) {
+        return parameter.key == "iterations";
+    });
+    std::erase_if(storage.sockets, [](const SocketDescriptor& socket) {
+        return socket.direction == SocketDirection::Input && socket.key == "iterations";
+    });
+    return &storage;
 }
 
 std::vector<std::string> validateSubgraph(const SubgraphDefinition& definition,
