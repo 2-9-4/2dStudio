@@ -19,24 +19,6 @@ const SocketDescriptor* socket(const NodeDescriptor& descriptor, std::string_vie
     return found == descriptor.sockets.end() ? nullptr : &*found;
 }
 
-bool compatible(ValueType from, ValueType to) {
-    if (from == to) return true;
-    if ((from == ValueType::AnyNumeric && to == ValueType::AnyVector) ||
-        (from == ValueType::AnyVector && to == ValueType::AnyNumeric)) return true;
-    const auto numeric = [](ValueType type) {
-        return type == ValueType::Float || type == ValueType::Image2D ||
-               type == ValueType::AnyNumeric;
-    };
-    const auto vector = [](ValueType type) {
-        return type == ValueType::Float || type == ValueType::Vec2 ||
-               type == ValueType::Image2D || type == ValueType::AnyVector;
-    };
-    return ((from == ValueType::AnyNumeric || to == ValueType::AnyNumeric) &&
-            numeric(from) && numeric(to)) ||
-           ((from == ValueType::AnyVector || to == ValueType::AnyVector) &&
-            vector(from) && vector(to));
-}
-
 const SubgraphInterfaceItem* interfaceItem(const SubgraphDefinition& definition,
                                             const NodeRecord& node) {
     if (!node.parameters.is_object()) return nullptr;
@@ -422,7 +404,7 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
             errors.push_back("Subgraph link " + std::to_string(linkRecord.id) + " names an unknown socket");
             continue;
         }
-        if (!compatible(output->type, inputSocket->type))
+        if (!areSocketTypesCompatible(output->type, inputSocket->type))
             errors.push_back("Subgraph link " + std::to_string(linkRecord.id) + " has incompatible socket types");
         const auto actualType = bodyValueType(linkRecord.fromNode, linkRecord.fromSocket);
         if ((inputSocket->type == ValueType::Vec2 && actualType != ValueType::Vec2) ||

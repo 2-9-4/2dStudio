@@ -723,6 +723,14 @@ template <typename T> void addNode(NodeRegistry& registry) {
 
 void registerBuiltInNodes(NodeRegistry& registry) {
     registerInputNodes(registry);
+    registerTextureSampleNode(registry);
+    registerTransform2DNode(registry);
+    registerDomainWarpNodes(registry);
+    registerGradientNodes(registry);
+    registerPolarCoordinatesNodes(registry);
+    registerRepeatFoldNode(registry);
+    registerWaveNode(registry);
+    registerWorleyNoiseNode(registry);
     addNode<PerlinNode>(registry); addNode<CoordinatesNode>(registry);
     addNode<MathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<SelectNode>(registry); addNode<InvertNode>(registry); addNode<ColorRampNode>(registry);
     registerConvolutionNode(registry); addNode<LaplacianNode>(registry);

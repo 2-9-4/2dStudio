@@ -116,6 +116,30 @@ bool renderParameterRow(NodeId nodeId, const NodeDescriptor& descriptor,
         bool enabled = node.parameters.value(property.key, property.defaultValue) > 0.5F;
         changed = ImGui::Checkbox(label, &enabled);
         if (changed) node.parameters[property.key] = enabled ? 1.0F : 0.0F;
+    } else if (property.control == ParameterDescriptor::Control::Enum) {
+        int value = std::clamp(static_cast<int>(node.parameters.value(property.key,
+                                                                       property.defaultValue)),
+                               static_cast<int>(property.minimum),
+                               static_cast<int>(property.maximum));
+        if (!property.enumOptions.empty()) {
+            const auto preview = property.enumOptions[static_cast<std::size_t>(
+                std::clamp(value, 0, static_cast<int>(property.enumOptions.size()) - 1))];
+            if (ImGui::BeginCombo(label, preview.c_str())) {
+                for (int index = 0; index < static_cast<int>(property.enumOptions.size()); ++index) {
+                    const bool selected = index == value;
+                    if (ImGui::Selectable(property.enumOptions[static_cast<std::size_t>(index)].c_str(), selected)) {
+                        value = index;
+                        changed = true;
+                    }
+                    if (selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+        } else {
+            changed = ImGui::SliderInt(label, &value, static_cast<int>(property.minimum),
+                                       static_cast<int>(property.maximum));
+        }
+        if (changed) node.parameters[property.key] = static_cast<float>(value);
     } else if (property.control == ParameterDescriptor::Control::Integer ||
                property.key == "iterations" || property.key == "octaves" || property.key == "seed") {
         int integer = static_cast<int>(node.parameters.value(property.key, property.defaultValue));

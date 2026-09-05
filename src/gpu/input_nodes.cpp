@@ -131,6 +131,42 @@ public:
     }
 };
 
+class VectorNode final : public ParameterNode {
+public:
+    static NodeDescriptor describe() {
+        return {"vector", 1, "Vector", "Input",
+            {{"value", "Vector", ValueType::Vec2, SocketDirection::Output}},
+            {{"x", "X", 0.0F, -10.0F, 10.0F},
+             {"y", "Y", 0.0F, -10.0F, 10.0F}}};
+    }
+    const NodeDescriptor& descriptor() const override {
+        static const auto value = describe(); return value;
+    }
+    void evaluate(EvaluationContext&, std::span<const Value> inputs, std::span<Value> outputs) override {
+        outputs[0] = Vec2{floatAt(inputs, 0, parameter(parameters_, "x", 0.0F)),
+                          floatAt(inputs, 1, parameter(parameters_, "y", 0.0F))};
+    }
+};
+
+class CombineVectorNode final : public ParameterNode {
+public:
+    static NodeDescriptor describe() {
+        return {"combine_vector", 1, "Combine Vector", "Utility",
+            {{"x", "X", ValueType::Float, SocketDirection::Input, true},
+             {"y", "Y", ValueType::Float, SocketDirection::Input, true},
+             {"value", "Vector", ValueType::Vec2, SocketDirection::Output}},
+            {{"x", "X", 0.0F, -10.0F, 10.0F},
+             {"y", "Y", 0.0F, -10.0F, 10.0F}}};
+    }
+    const NodeDescriptor& descriptor() const override {
+        static const auto value = describe(); return value;
+    }
+    void evaluate(EvaluationContext&, std::span<const Value> inputs, std::span<Value> outputs) override {
+        outputs[0] = Vec2{floatAt(inputs, 0, parameter(parameters_, "x", 0.0F)),
+                          floatAt(inputs, 1, parameter(parameters_, "y", 0.0F))};
+    }
+};
+
 class TimeNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() {
@@ -172,6 +208,8 @@ template <typename T> void addNode(NodeRegistry& registry) {
 void registerInputNodes(NodeRegistry& registry) {
     addNode<ImageNode>(registry);
     addNode<FloatNode>(registry);
+    addNode<VectorNode>(registry);
+    addNode<CombineVectorNode>(registry);
     addNode<TimeNode>(registry);
     addNode<FloatPreviewNode>(registry);
 }

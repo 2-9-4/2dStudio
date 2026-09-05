@@ -38,4 +38,29 @@ inline std::string toString(ValueType type) {
     return "unknown";
 }
 
+// Image2D is the GPU storage type for every per-pixel value. A socket's
+// contract gives it meaning: Numeric image data is a scalar field (R), Vector
+// Numeric image data is a vector field (RG), and color data uses RGBA. Keeping
+// storage separate from the graph type permits Float/Vec2 broadcasting.
+[[nodiscard]] constexpr bool isNumericType(ValueType type) noexcept {
+    return type == ValueType::Float || type == ValueType::Image2D ||
+           type == ValueType::AnyNumeric;
+}
+
+[[nodiscard]] constexpr bool isVectorNumericType(ValueType type) noexcept {
+    return type == ValueType::Float || type == ValueType::Vec2 ||
+           type == ValueType::Image2D || type == ValueType::AnyVector;
+}
+
+[[nodiscard]] constexpr bool areSocketTypesCompatible(ValueType from,
+                                                       ValueType to) noexcept {
+    if (from == to) return true;
+    if ((from == ValueType::AnyNumeric && to == ValueType::AnyVector) ||
+        (from == ValueType::AnyVector && to == ValueType::AnyNumeric)) return true;
+    return ((from == ValueType::AnyNumeric || to == ValueType::AnyNumeric) &&
+            isNumericType(from) && isNumericType(to)) ||
+           ((from == ValueType::AnyVector || to == ValueType::AnyVector) &&
+            isVectorNumericType(from) && isVectorNumericType(to));
+}
+
 } // namespace reaction

@@ -16,24 +16,6 @@ const SocketDescriptor* socket(const NodeDescriptor& node, std::string_view key,
     return it == node.sockets.end() ? nullptr : &*it;
 }
 
-bool compatible(ValueType from, ValueType to) {
-    if (from == to) return true;
-    if ((from == ValueType::AnyNumeric && to == ValueType::AnyVector) ||
-        (from == ValueType::AnyVector && to == ValueType::AnyNumeric)) return true;
-    const auto numeric = [](ValueType type) {
-        return type == ValueType::Float || type == ValueType::Image2D ||
-               type == ValueType::AnyNumeric;
-    };
-    const auto vector = [](ValueType type) {
-        return type == ValueType::Float || type == ValueType::Vec2 ||
-               type == ValueType::Image2D || type == ValueType::AnyVector;
-    };
-    return ((from == ValueType::AnyNumeric || to == ValueType::AnyNumeric) &&
-            numeric(from) && numeric(to)) ||
-           ((from == ValueType::AnyVector || to == ValueType::AnyVector) &&
-            vector(from) && vector(to));
-}
-
 } // namespace
 
 NodeId GraphBody::addNode(std::string type, Vec2 position) {
@@ -159,7 +141,7 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
             result.errors.push_back("Link " + std::to_string(link.id) + " names an unknown socket");
             continue;
         }
-        if (!compatible(output->type, input->type)) {
+        if (!areSocketTypesCompatible(output->type, input->type)) {
             result.errors.push_back("Link " + std::to_string(link.id) + " has incompatible socket types");
             continue;
         }

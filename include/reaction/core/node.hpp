@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <unordered_map>
 #include <vector>
 
@@ -37,6 +38,18 @@ struct ParameterDescriptor {
     float minimum = 0.0F;
     float maximum = 1.0F;
     Control control = Control::Float;
+    std::vector<std::string> enumOptions;
+
+    ParameterDescriptor() = default;
+    ParameterDescriptor(std::string keyValue, std::string labelValue, float defaultValue,
+                        float minimum, float maximum, Control control = Control::Float)
+        : key(std::move(keyValue)), label(std::move(labelValue)), defaultValue(defaultValue),
+          minimum(minimum), maximum(maximum), control(control) {}
+    ParameterDescriptor(std::string keyValue, std::string labelValue, float defaultValue,
+                        float minimum, float maximum, Control control,
+                        std::vector<std::string> options)
+        : key(std::move(keyValue)), label(std::move(labelValue)), defaultValue(defaultValue),
+          minimum(minimum), maximum(maximum), control(control), enumOptions(std::move(options)) {}
 };
 
 struct NodeDescriptor {
