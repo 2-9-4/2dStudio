@@ -137,13 +137,28 @@ mask to zero and returns zero for an invalid bit index before shifting.
 - Forward placement: a node with exactly one consumer follows its longest dedicated input
   line; a junction averages its inputs' rows; sources spread symmetrically; then each column
   is compacted by a cursor over target-sorted nodes.
-- Snap pass: any node feeding a single consumer moves onto that consumer's row when that row
-  is free in the node's own column (overlap-checked against every node in the column, same
-  component only, `kRowGap` effective spacing). Chains thus hug their downstream node.
-- Hard limit: two single-consumer nodes in the same column can never both sit on their shared
-  consumer's row; only relocating one to its own column (and only if that row is free there)
-  fixes it. Dense graphs necessarily leave such merges one row off. Do not try to force this
-  with an iterative solver — relaxation versions diverge or regress already-aligned junctions.
+- Snap pass: every node feeding a single consumer is moved to the row *closest* to its
+  consumer where it fits in its own column. Columns are processed **right-to-left** so a
+  chain's rows settle before their feeders align to them (left-to-left feeds chase a row that
+  later snaps away). Rows are not a fixed 200px grid — siblings that
+  target the same consumer share the row band, so small nodes tuck directly against one
+  another (half `kRowGap` breath) and a second source lands at its consumer's row plus one
+  box, not a whole row away. Node sizes come from the caller (the editor passes measured
+  sizes), so small source icons pack tightly and shrink the total layout height.
+- The layout is order-seeded from the current positions, so `autoLayoutBody` (and anyone
+  calling `layoutGraph`) should run it a few passes to reach the stable fixed point.
+- Hard limit: a column has only so much vertical room per consumer band. Once the consumer's
+  row plus the tight-pack neighbor slots are taken (typically two small sources per consumer),
+  additional same-column sources land a whole row away and stay there unless relocated.
+  Relocation trades that for an edge routed through other boxes, so it is only done for the
+  non-source/source competition, never for source/source pairs. Do not try to force reachable
+  extra density with an iterative solver — relaxation versions diverge or regress
+  already-aligned junctions.
 
 The auto-layout test contract lives in `tests/core_tests.cpp` (cases around lines 688-760):
 chain collinearity, merge-at-average, disjoint components, single-consumer-through-merge snap.
+
+To measure layout quality run `build/layout_probe text_test --iterations 4 [--height 40]`:
+it reports exact / packed (within one row band) / far offenders per iteration and dumps the
+node grid with `--dump`. The single-consumer pack is judged with measured node heights; pass
+`--height` to simulate small sources the way the editor measures them.

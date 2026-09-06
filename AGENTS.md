@@ -15,10 +15,12 @@ values, GPU timing, Reset Simulation, subgraph/output instance actions) stays in
 middle column because subgraph body IDs are body-local and would collide with root runtime maps.
 `NodeRecord::label` is shader-source naming, not a canvas title.
 
-Auto-layout lives in `src/core/layout.cpp` (forward pass + single-consumer snap pass, plus a
-source relocation rule for competing merge inputs); see the Auto-layout section of
-`docs/conventions.md` for the contract and its hard limits. A `layoutGraph` change is not done
-until `./reaction_core_tests "auto-layout*"` passes and the offenders list of
-`single-consumer total=` in the text_test probe showed no regressions.
+Auto-layout lives in `src/core/layout.cpp` (forward pass + nearest-row single-consumer snap
+pass that packs same-consumer siblings into one row band, plus a source relocation rule for
+competing merge inputs); see the Auto-layout section of `docs/conventions.md` for the contract
+and its hard limits. A `layoutGraph` change is not done until
+`./reaction_core_tests "auto-layout*"` passes and `build/layout_probe text_test --iterations 4`
+shows no regression in exact/packed vs far offenders. Layout is order-seeded from current
+positions, so evaluate after several passes.
 
 update [AGENTS.md](AGENTS.md) and associated files with whatever required more reading to accomplish your task. REPORT ANY FOOTGUNS/EERGONOMIC ISSUES THAT CAUSED BUGS TO THE USER FOR LATER FIXING

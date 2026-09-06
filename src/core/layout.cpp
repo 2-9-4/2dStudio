@@ -285,29 +285,71 @@ void layoutGraph(GraphBody& body, const std::unordered_map<NodeId, Vec2>* nodeSi
         stackOffset += (compBottom - compTop) + kRowGap * 2.0F;
     }
 
-    // Snap pass: a node that feeds exactly one consumer moves onto that
-    // consumer's row when the row is free in the node's own column, so chains
-    // hug their downstream node instead of drifting onto a fresh row.
-    for (int l = minLayer; l <= maxLayer; ++l) {
+    // Snap pass: a node that feeds exactly one consumer is moved to the row
+    // closest to its consumer's row where it fits in its column. Columns are
+    // processed right-to-left so a chain's rows settle before their feeders
+    // align to them; a node snapped to the left of a later-settled consumer
+    // would otherwise chase a row that never stays put. Rows are not a fixed
+    // grid: siblings that target the same consumer may share the row band, so
+    // a small node tucks directly against its sibling instead of drifting a
+    // full row away.
+    for (int li = maxLayer - minLayer, l = maxLayer; li >= 0; --li, --l) {
+        std::vector<std::pair<float, NodeId>> order;
+        order.reserve(byLayer[l].size());
         for (const auto id : byLayer[l]) {
             if (successors[id].size() != 1) continue;
             const auto succ = successors[id].front();
             if (layer[succ] == l) continue;
-            const float targetRow = centerY[succ];
-            bool free = true;
+            order.emplace_back(std::fabs(centerY[id] - centerY[succ]), id);
+        }
+        std::stable_sort(order.begin(), order.end(),
+                         [](const auto& a, const auto& b) { return a.first < b.first; });
+        for (const auto& [_, id] : order) {
+            const auto succ = successors[id].front();
+            const float target = centerY[succ];
+            const float half = size[id].y * 0.5F;
+            std::vector<std::pair<float, float>> zones;
             for (const auto other : byLayer[l]) {
                 if (other == id) continue;
                 if (componentOf[other] != componentOf[id]) continue;
                 const float otherTop = centerY[other] - size[other].y * 0.5F;
                 const float otherBottom = otherTop + size[other].y;
-                const float idTop = targetRow - size[id].y * 0.5F;
-                const float idBottom = idTop + size[id].y;
-                if (idTop < otherBottom + kRowGap && idBottom > otherTop - kRowGap) {
-                    free = false;
-                    break;
+                bool tightSibling = successors[other].size() == 1 &&
+                                    successors[other].front() == succ &&
+                                    std::min(size[other].y, size[id].y) < kDefaultHeight;
+                const float air = (tightSibling ? 0.5F : 1.0F) * kRowGap;
+                zones.emplace_back(otherTop - air, otherBottom + air);
+            }
+            std::sort(zones.begin(), zones.end());
+            std::vector<std::pair<float, float>> merged;
+            for (const auto& [start, end] : zones) {
+                if (merged.empty() || start > merged.back().second) {
+                    merged.emplace_back(start, end);
+                } else {
+                    merged.back().second = std::max(merged.back().second, end);
                 }
             }
-            if (free) centerY[id] = targetRow;
+            float best = centerY[id];
+            float bestDistance = std::fabs(centerY[id] - target);
+            const auto considerGap = [&](float gapStart, float gapEnd) {
+                if (gapEnd - gapStart < size[id].y) return;
+                const float candidate = std::clamp(target, gapStart + half, gapEnd - half);
+                const float distance = std::fabs(candidate - target);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = candidate;
+                }
+            };
+            constexpr float kInfinity =
+                std::numeric_limits<float>::max() * 0.25F;
+            float prevEnd = -kInfinity;
+            for (const auto& [start, end] : merged) {
+                considerGap(prevEnd, start);
+                prevEnd = end;
+            }
+            considerGap(prevEnd, kInfinity);
+
+            centerY[id] = best;
         }
     }
 

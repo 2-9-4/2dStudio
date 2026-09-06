@@ -1134,7 +1134,10 @@ void Application::autoLayoutBody(GraphBody& body, std::unordered_map<NodeId, boo
         const auto size = ed::GetNodeSize(ed::NodeId(nodeUiId(node.id)));
         if (size.x > 1.0F && size.y > 1.0F) sizes[node.id] = {size.x, size.y};
     }
-    layoutGraph(body, &sizes);
+    // Layout is order-seeded from the current canvas positions, so a few
+    // passes converge to the stable fixed point instead of stopping at the
+    // first (possibly overlapping) arrangement.
+    for (int pass = 0; pass < 4; ++pass) layoutGraph(body, &sizes);
     for (const auto& node : body.nodes()) positioned[node.id] = false;
     dirty_ = true;
 }
