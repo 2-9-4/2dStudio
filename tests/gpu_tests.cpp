@@ -292,6 +292,43 @@ TEST_CASE("shared scalar node lowering follows one contract") {
     REQUIRE(scalar.expressions[2].find('?') != std::string::npos);
 }
 
+TEST_CASE("simulation information nodes lower to per-dispatch uniforms") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    SubgraphDefinition definition;
+    definition.id = "test.simulation.info";
+    definition.name = "Simulation Info";
+    definition.execution = SubgraphExecution::Simulation;
+    definition.stateSlots = {{"state", "State", ValueType::ScalarField}};
+    const auto addNode = [&](std::string type) {
+        return definition.body.addNode(std::move(type));
+    };
+    const auto initial = addNode("simulation_initial_state");
+    const auto iteration = addNode("simulation_iteration_info");
+    const auto step = addNode("simulation_step_info");
+    const auto add = addNode("math");
+    const auto next = addNode("simulation_next_state");
+    definition.body.findNode(initial)->parameters = {{"slot", 0.0F}};
+    definition.body.findNode(next)->parameters = {{"slot", 0.0F}};
+    definition.body.findNode(add)->parameters = {{"operation", 0.0F}};
+    definition.body.addLink(iteration, "normalizedIteration", add, "a");
+    definition.body.addLink(step, "deltaTime", add, "b");
+    definition.body.addLink(add, "result", next, "value");
+
+    NodeDescriptor iterationDescriptor;
+    const auto* iterationResolved = resolveSubgraphBodyDescriptor(
+        definition, *definition.body.findNode(iteration), registry, iterationDescriptor);
+    REQUIRE(iterationResolved != nullptr);
+    REQUIRE(iterationResolved->displayName == "Simulation Iteration Info");
+    REQUIRE(iterationResolved->sockets.size() == 5);
+
+    const auto update = generateSimulationShader(definition, false);
+    REQUIRE(update.find("uniform float simulationIterationIndex;") != std::string::npos);
+    REQUIRE(update.find("uniform float simulationIterationCount;") != std::string::npos);
+    REQUIRE(update.find("uniform float simulationDeltaTime;") != std::string::npos);
+    REQUIRE(update.find("uniform float simulationStep;") != std::string::npos);
+    REQUIRE(update.find("max(simulationIterationCount-1.0,1.0)") != std::string::npos);
+}
+
 TEST_CASE("central widening emits canonical channels and keeps constants uniform-backed") {
     REQUIRE(convertShaderValue({ShaderValueType::Scalar, "s"}, ShaderValueType::Vec2) ==
             "vec2(s)");

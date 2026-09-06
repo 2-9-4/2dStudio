@@ -42,4 +42,8 @@ Simulation lowering is recursive and its frame stack is a `std::vector`. Never r
 to `frames_.back()` across a recursive `lower`/`input` call: pushing a child frame may reallocate the
 vector and invalidate that reference. Copy the current `NodeRecord*` and any needed values first.
 
+Simulation iteration and step-information nodes are intrinsic simulation-body nodes. Their values
+are dispatch uniforms declared only when reachable; bind them for initialization as well as every
+update dispatch, and advance simulation time/step once per outer step rather than per iteration.
+
 update [AGENTS.md](AGENTS.md) and associated files with whatever required more reading to accomplish your task. REPORT ANY FOOTGUNS/EERGONOMIC ISSUES THAT CAUSED BUGS TO THE USER FOR LATER FIXING

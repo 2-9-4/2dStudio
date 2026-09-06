@@ -83,6 +83,24 @@ const NodeDescriptor* intrinsicDescriptor(const SubgraphDefinition& definition,
                     {"b", "Chemical B", ValueType::ScalarField, SocketDirection::Output}}, {}};
         return &storage;
     }
+    if (node.type == "simulation_iteration_info") {
+        storage = {"simulation_iteration_info", 1, "Simulation Iteration Info", "Simulation",
+                   {{"iterationIndex", "Iteration Index", ValueType::Float, SocketDirection::Output},
+                    {"iterationCount", "Iteration Count", ValueType::Float, SocketDirection::Output},
+                    {"normalizedIteration", "Normalized Iteration", ValueType::Float, SocketDirection::Output},
+                    {"firstIteration", "First Iteration", ValueType::Float, SocketDirection::Output},
+                    {"lastIteration", "Last Iteration", ValueType::Float, SocketDirection::Output}}, {}};
+        return &storage;
+    }
+    if (node.type == "simulation_step_info") {
+        storage = {"simulation_step_info", 1, "Simulation Step / Frame Info", "Simulation",
+                   {{"deltaTime", "Delta Time", ValueType::Float, SocketDirection::Output},
+                    {"simulationStep", "Simulation Step", ValueType::Float, SocketDirection::Output},
+                    {"simulationTime", "Simulation Time", ValueType::Float, SocketDirection::Output},
+                    {"wasReset", "Was Reset", ValueType::Float, SocketDirection::Output},
+                    {"frameIndex", "Frame Index", ValueType::Float, SocketDirection::Output}}, {}};
+        return &storage;
+    }
     if (node.type == "simulation_initial_state") {
         if (const auto* slot = stateSlot(definition, node)) {
             storage = {"simulation_initial_state", 2, "Initial State", "Simulation",
@@ -641,6 +659,8 @@ bool isSubgraphBodyNodeType(std::string_view type) {
            type == "laplacian" || type == "subgraph_input" || type == "subgraph_output" ||
            type == "simulation_previous_state" ||
            type == "simulation_channel" ||
+           type == "simulation_iteration_info" ||
+           type == "simulation_step_info" ||
            type == "simulation_initial_state" ||
            type == "simulation_next_state";
 }
@@ -652,6 +672,8 @@ const NodeDescriptor* resolveSubgraphBodyDescriptor(const SubgraphDefinition& de
     if (node.type == "subgraph_input" || node.type == "subgraph_output" ||
         node.type == "simulation_previous_state" ||
         node.type == "simulation_channel" ||
+        node.type == "simulation_iteration_info" ||
+        node.type == "simulation_step_info" ||
         node.type == "simulation_initial_state" ||
         node.type == "simulation_next_state") {
         return intrinsicDescriptor(definition, node, storage);

@@ -34,8 +34,7 @@ public:
         if (!definition_.stateSlots.empty()) return stateSlotShader(initialization);
         const auto* endpoint = endpointFor(initialization ? "initial" : "next");
         if (!endpoint) throw std::runtime_error("Simulation subgraph is missing a state endpoint");
-        helpers_.clear(); helperNames_.clear(); statements_.str({}); statements_.clear();
-        mainValues_.clear(); usedInterfaces_.clear(); frames_.clear();
+        resetLoweringState();
         const auto a = lowerInput(*endpoint, "a", "uv", 0.0F);
         const auto b = lowerInput(*endpoint, "b", "uv", 0.0F);
         const auto expression = "vec2(" + a.name + "," + b.name + ")";
@@ -44,6 +43,7 @@ public:
                << "layout(rg16f,binding=0)writeonly uniform image2D stateOut;\n"
                << "layout(binding=0)uniform sampler2D stateIn;\n";
         declareInterface(source, 1);
+        declareSimulationInfo(source);
         source << "vec2 sampleState(vec2 q){return texture(stateIn,fract(q)).rg;}\n";
         source << "vec2 pixelSize;\n";
         for (const auto& helper : helpers_) source << helper.source;
@@ -175,8 +175,7 @@ private:
     }
 
     std::string stateSlotShader(bool initialization) {
-        helpers_.clear(); helperNames_.clear(); statements_.str({}); statements_.clear();
-        mainValues_.clear(); usedInterfaces_.clear(); frames_.clear();
+        resetLoweringState();
         std::vector<ShaderValue> values;
         for (std::size_t slot = 0; slot < definition_.stateSlots.size(); ++slot) {
             const auto* endpoint = endpointFor(initialization ? "initial" : "next", slot);
@@ -192,6 +191,7 @@ private:
                    << slot << ";\nlayout(binding=" << slot << ")uniform sampler2D stateIn" << slot << ";\n";
         }
         declareInterface(source, static_cast<int>(definition_.stateSlots.size()));
+        declareSimulationInfo(source);
         for (std::size_t slot = 0; slot < definition_.stateSlots.size(); ++slot)
             source << "vec4 sampleState" << slot << "(vec2 q){return texture(stateIn" << slot << ",fract(q));}\n";
         source << "vec2 pixelSize;\n";
@@ -225,6 +225,25 @@ private:
                 ++binding;
             }
         }
+    }
+
+    void resetLoweringState() {
+        helpers_.clear(); helperNames_.clear(); statements_.str({}); statements_.clear();
+        mainValues_.clear(); usedInterfaces_.clear(); frames_.clear();
+        usesIterationInfo_ = false;
+        usesStepInfo_ = false;
+    }
+
+    void declareSimulationInfo(std::ostringstream& out) const {
+        if (usesIterationInfo_)
+            out << "uniform float simulationIterationIndex;\n"
+                   "uniform float simulationIterationCount;\n";
+        if (usesStepInfo_)
+            out << "uniform float simulationDeltaTime;\n"
+                   "uniform float simulationStep;\n"
+                   "uniform float simulationTime;\n"
+                   "uniform float simulationWasReset;\n"
+                   "uniform float simulationFrameIndex;\n";
     }
 
     const LinkRecord* inputLink(NodeId node, std::string_view socket) const {
@@ -268,6 +287,31 @@ private:
             const auto state = lowerInput(node, "state", uv);
             return materialize(node, socket, uv, ShaderValueType::Scalar,
                                state.name + (socket == "b" ? ".y" : ".x"));
+        }
+        if (node.type == "simulation_iteration_info") {
+            usesIterationInfo_ = true;
+            std::string expression;
+            if (socket == "iterationIndex") expression = "simulationIterationIndex";
+            else if (socket == "iterationCount") expression = "simulationIterationCount";
+            else if (socket == "normalizedIteration") expression =
+                "(simulationIterationIndex/max(simulationIterationCount-1.0,1.0))";
+            else if (socket == "firstIteration") expression =
+                "(simulationIterationIndex==0.0?1.0:0.0)";
+            else if (socket == "lastIteration") expression =
+                "(simulationIterationIndex==simulationIterationCount-1.0?1.0:0.0)";
+            else throw std::runtime_error("Unknown simulation iteration-info socket");
+            return materialize(node, socket, uv, ShaderValueType::Scalar, std::move(expression));
+        }
+        if (node.type == "simulation_step_info") {
+            usesStepInfo_ = true;
+            std::string expression;
+            if (socket == "deltaTime") expression = "simulationDeltaTime";
+            else if (socket == "simulationStep") expression = "simulationStep";
+            else if (socket == "simulationTime") expression = "simulationTime";
+            else if (socket == "wasReset") expression = "simulationWasReset";
+            else if (socket == "frameIndex") expression = "simulationFrameIndex";
+            else throw std::runtime_error("Unknown simulation step-info socket");
+            return materialize(node, socket, uv, ShaderValueType::Scalar, std::move(expression));
         }
         if (node.type == "subgraph_input") {
             const auto interfaceKey = node.parameters.at("key").get<std::string>();
@@ -382,6 +426,8 @@ private:
     std::vector<ShaderHelper> helpers_;
     std::ostringstream statements_;
     std::unordered_set<std::string> helperNames_;
+    bool usesIterationInfo_ = false;
+    bool usesStepInfo_ = false;
     std::unordered_map<std::string, ShaderValue> mainValues_;
     std::unordered_set<std::string> usedInterfaces_;
     std::vector<Frame> frames_;
@@ -489,12 +535,14 @@ public:
                 glBindImageTexture(static_cast<GLuint>(slot), state_[slot][0], 0, GL_FALSE, 0,
                                    GL_WRITE_ONLY, stateFormat(slot));
             bindInterface(initProgram_, inputs, static_cast<int>(state_.size()), initializationInterfaces_);
+            bindSimulationInfo(initProgram_, 0, 1, context, true);
             gpu.dispatch(initProgram_, context.width, context.height);
-            index_ = 0; resetPending_ = false;
+            index_ = 0; resetPending_ = false; resetSinceLastStep_ = true;
         };
         if (resetPending_) initialize();
         if (context.playing) {
             const int iterations = std::clamp(static_cast<int>(parameter(parameters_, "iterations", 8)), 1, 64);
+            const bool wasReset = resetSinceLastStep_;
             for (int iteration = 0; iteration < iterations; ++iteration) {
                 const int next = 1 - index_;
                 glUseProgram(stepProgram_);
@@ -504,9 +552,13 @@ public:
                                        GL_WRITE_ONLY, stateFormat(slot));
                 }
                 bindInterface(stepProgram_, inputs, static_cast<int>(state_.size()), updateInterfaces_);
+                bindSimulationInfo(stepProgram_, iteration, iterations, context, wasReset);
                 gpu.dispatch(stepProgram_, context.width, context.height);
                 index_ = next;
             }
+            resetSinceLastStep_ = false;
+            ++simulationStep_;
+            simulationTime_ += context.deltaTime;
         }
         if (parameter(parameters_, "autoReset", 0) > .5F && ++collapseCheckCounter_ >= 8) {
             collapseCheckCounter_ = 0; const GLuint zero = 0;
@@ -657,6 +709,17 @@ private:
         }
     }
 
+    void bindSimulationInfo(GLuint program, int iteration, int iterationCount,
+                            const EvaluationContext& context, bool wasReset) const {
+        uniform(program, "simulationIterationIndex", static_cast<float>(iteration));
+        uniform(program, "simulationIterationCount", static_cast<float>(iterationCount));
+        uniform(program, "simulationDeltaTime", static_cast<float>(context.deltaTime));
+        uniform(program, "simulationStep", static_cast<float>(simulationStep_));
+        uniform(program, "simulationTime", static_cast<float>(simulationTime_));
+        uniform(program, "simulationWasReset", wasReset ? 1.0F : 0.0F);
+        uniform(program, "simulationFrameIndex", static_cast<float>(context.frame));
+    }
+
     SubgraphDefinition definition_;
     NodeDescriptor descriptor_;
     const NodeRegistry& registry_;
@@ -671,7 +734,10 @@ private:
     GLuint initProgram_ = 0, stepProgram_ = 0, outputProgram_ = 0, collapseProgram_ = 0;
     GLuint collapseBuffer_ = 0;
     int width_ = 0, height_ = 0, index_ = 0, collapseCheckCounter_ = 0;
+    std::uint64_t simulationStep_ = 0;
+    double simulationTime_ = 0.0;
     bool resetPending_ = true;
+    bool resetSinceLastStep_ = false;
 };
 
 } // namespace

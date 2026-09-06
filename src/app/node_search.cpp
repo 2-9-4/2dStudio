@@ -101,6 +101,7 @@ std::vector<AddNodeEntry> buildSubgraphEditorEntries(
         if (descriptor->lowerable) addAliases(entries, *descriptor);
 
     for (const auto* type : {"simulation_previous_state", "simulation_channel",
+                             "simulation_iteration_info", "simulation_step_info",
                              "simulation_initial_state", "simulation_next_state"}) {
         NodeRecord node;
         node.type = type;

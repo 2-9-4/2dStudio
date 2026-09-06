@@ -169,6 +169,13 @@ These nodes are scoped to a simulation body and are not ordinary root-graph node
   iteration’s two-channel state. This is the controlled feedback boundary of the simulation.
 - **Simulation Channel Split** (`simulation_channel`) — Splits a two-channel state into
   scalar **Chemical A** and **Chemical B** outputs.
+- **Simulation Iteration Info** (`simulation_iteration_info`) — Provides the current internal
+  **Iteration Index**, **Iteration Count**, normalized index, and 0/1 first/last flags. The
+  index runs from 0 through Count - 1 during each outer simulation step.
+- **Simulation Step / Frame Info** (`simulation_step_info`) — Provides **Delta Time**,
+  monotonically increasing **Simulation Step**, **Simulation Time**, 0/1 **Was Reset**, and
+  render **Frame Index**. Simulation Time advances once per outer step, after all internal
+  iterations complete.
 - **Initial Simulation State** (`simulation_initial_state`) — Combines initial Chemical A
   and B expressions into the state used when the simulation resets.
 - **Next Simulation State** (`simulation_next_state`) — Combines the updated Chemical A and
