@@ -73,15 +73,20 @@ Vec2 transformInverse(Vec2 p, Vec2 translation, float rotation, Vec2 scale,
 class Transform2DNode final : public TextureNode {
 public:
     static NodeDescriptor describe() {
-        return {"transform_2d", 1, "2D Transform", "Coordinates",
-            {{"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Input, true},
-             {"translation", "Translation", ValueType::AnyVector, SocketDirection::Input, true},
-             {"rotation", "Rotation", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"scale", "Scale", ValueType::AnyVector, SocketDirection::Input, true},
-             {"shear", "Shear", ValueType::AnyVector, SocketDirection::Input, true},
-             {"pivot", "Pivot", ValueType::AnyVector, SocketDirection::Input, true},
-             {"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Output}},
+        auto result = NodeDescriptor{"transform_2d", 1, "2D Transform", "Coordinates",
+            {{"coordinates", "Coordinates", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"translation", "Translation", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"rotation", "Rotation", SocketContract::Numeric, SocketDirection::Input, true},
+             {"scale", "Scale", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"shear", "Shear", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"pivot", "Pivot", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"coordinates", "Coordinates", SocketContract::VectorNumeric, SocketDirection::Output}},
             {{"rotation", "Rotation", 0.0F, -6.2831853F, 6.2831853F}}};
+        result.sockets[0].fieldDefault = true;
+        result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::VectorPromotion;
+        result.sockets.back().typeInputs = {"coordinates", "translation", "rotation",
+                                           "scale", "shear", "pivot"};
+        return result;
     }
 
     const NodeDescriptor& descriptor() const override {
@@ -126,7 +131,7 @@ public:
         // Override the unconnected-coordinate constant with canvas UV handling.
         // (The branch is written directly to keep the common helper simple.)
         gpu.dispatch(program_, context.width, context.height);
-        outputs[0] = ImageHandle{texture_, context.width, context.height};
+        outputs[0] = ImageHandle{texture_, context.width, context.height, ValueType::VectorField};
     }
 };
 

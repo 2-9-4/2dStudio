@@ -40,7 +40,7 @@ public:
 
     static NodeDescriptor describe() {
         return {"image", 1, "Image", "Input",
-                {{"image", "Image", ValueType::Image2D, SocketDirection::Output}}, {}};
+                {{"image", "Image", ValueType::ColorImage, SocketDirection::Output}}, {}};
     }
     const NodeDescriptor& descriptor() const override {
         static const auto value = describe();
@@ -64,7 +64,7 @@ public:
         uniform(program_, "sourceImage", 0);
         glBindImageTexture(0, texture_, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
         gpu.dispatch(program_, context.width, context.height);
-        outputs[0] = ImageHandle{texture_, context.width, context.height};
+        outputs[0] = ImageHandle{texture_, context.width, context.height, ValueType::ColorImage};
     }
 
 private:
@@ -195,12 +195,15 @@ void main(){
 class CombineVectorNode final : public TextureNode {
 public:
     static NodeDescriptor describe() {
-        return {"combine_vector", 1, "Combine Vector", "Utility",
-            {{"x", "X", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"y", "Y", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"value", "Vector", ValueType::AnyVector, SocketDirection::Output}},
+        auto result = NodeDescriptor{"combine_vector", 1, "Combine Vector", "Utility",
+            {{"x", "X", SocketContract::Numeric, SocketDirection::Input, true},
+             {"y", "Y", SocketContract::Numeric, SocketDirection::Input, true},
+             {"value", "Vector", SocketContract::VectorNumeric, SocketDirection::Output}},
             {{"x", "X", 0.0F, -10.0F, 10.0F},
              {"y", "Y", 0.0F, -10.0F, 10.0F}}};
+        result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::VectorPromotion;
+        result.sockets.back().typeInputs = {"x", "y"};
+        return result;
     }
     const NodeDescriptor& descriptor() const override {
         static const auto value = describe(); return value;
@@ -222,7 +225,7 @@ public:
         uniform(program_, "xConstant", x); uniform(program_, "yConstant", y);
         glBindImageTexture(0, texture_, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
         gpu.dispatch(program_, context.width, context.height);
-        outputs[0] = ImageHandle{texture_, context.width, context.height};
+        outputs[0] = ImageHandle{texture_, context.width, context.height, ValueType::VectorField};
     }
 };
 
@@ -248,10 +251,14 @@ public:
     }
     static NodeDescriptor describe() {
         auto result = NodeDescriptor{"separate_vector", 1, "Separate Vector", "Utility",
-            {{"value", "Vector", ValueType::AnyVector, SocketDirection::Input},
-             {"x", "X", ValueType::AnyNumeric, SocketDirection::Output},
-             {"y", "Y", ValueType::AnyNumeric, SocketDirection::Output}}, {}};
+            {{"value", "Vector", SocketContract::VectorNumeric, SocketDirection::Input},
+             {"x", "X", SocketContract::Numeric, SocketDirection::Output},
+             {"y", "Y", SocketContract::Numeric, SocketDirection::Output}}, {}};
         result.lowerable = true;
+        result.sockets[1].typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+        result.sockets[1].typeInputs = {"value"};
+        result.sockets[2].typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+        result.sockets[2].typeInputs = {"value"};
         return result;
     }
     const NodeDescriptor& descriptor() const override {
@@ -284,8 +291,8 @@ public:
         glBindImageTexture(0, textures_[0], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
         glBindImageTexture(1, textures_[1], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
         gpu.dispatch(program_, context.width, context.height);
-        outputs[0] = ImageHandle{textures_[0], context.width, context.height};
-        outputs[1] = ImageHandle{textures_[1], context.width, context.height};
+        outputs[0] = ImageHandle{textures_[0], context.width, context.height, ValueType::ScalarField};
+        outputs[1] = ImageHandle{textures_[1], context.width, context.height, ValueType::ScalarField};
     }
     bool lowerShader(ShaderLoweringContext& context) const override {
         const auto value = context.vector("value", "value", 0.0F);

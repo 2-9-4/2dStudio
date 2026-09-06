@@ -90,7 +90,7 @@ std::string simulationSignature(const SubgraphDefinition& definition) {
     for (const auto& item : definition.interface) {
         result.push_back('\0');
         result += item.key + ":" + std::to_string(static_cast<int>(item.kind)) + ":" +
-                  std::to_string(static_cast<int>(item.type)) + ":" +
+                  std::to_string(static_cast<int>(item.contract)) + ":" +
                   std::to_string(item.defaultValue);
         if (item.kind != SubgraphInterfaceKind::Output) continue;
         const auto endpoint = std::ranges::find_if(definition.body.nodes(), [&](const auto& node) {
@@ -746,8 +746,13 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                     auto& nodeValues = values_[generatedOutput.node];
                     if (nodeValues.size() <= *slot) nodeValues.resize(*slot + 1);
                     if (generatedOutput.requiresImage) {
+                        const auto semantic = compiled_.socketType(
+                            generatedOutput.node, generatedOutput.socket)
+                            .value_or(ValueType::ColorImage);
+                        const auto imageSemantic = isFieldType(semantic)
+                            ? semantic : fieldTypeForWidth(componentCount(semantic));
                         nodeValues[*slot] = ImageHandle{region.textures[outputIndex],
-                                                        dispatchWidth, dispatchHeight};
+                                                        dispatchWidth, dispatchHeight, imageSemantic};
                     } else {
                         std::array<float, 4> folded{};
                         glBindTexture(GL_TEXTURE_2D, region.textures[outputIndex]);
@@ -834,6 +839,17 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
         GLuint64 nanoseconds = 0;
         glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
         timings_[id] = static_cast<double>(nanoseconds) / 1'000'000.0;
+        std::size_t outputIndex = 0;
+        for (const auto& socket : desc.sockets) {
+            if (socket.direction != SocketDirection::Output) continue;
+            if (outputIndex < outputs.size()) {
+                if (auto* image = std::get_if<ImageHandle>(&outputs[outputIndex]))
+                    if (const auto semantic = compiled_.socketType(id, socket.key))
+                        image->semanticType = isFieldType(*semantic)
+                            ? *semantic : fieldTypeForWidth(componentCount(*semantic));
+            }
+            ++outputIndex;
+        }
         pendingResets_.erase(id);
     }
     needsReset_ = false;

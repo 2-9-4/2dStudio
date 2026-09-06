@@ -31,6 +31,43 @@ std::string glslType(ShaderValueType type) {
     return "float";
 }
 
+ShaderValueType shaderType(ValueType type) {
+    switch (type) {
+    case ValueType::Float:
+    case ValueType::ScalarField: return ShaderValueType::Scalar;
+    case ValueType::Vec2:
+    case ValueType::VectorField: return ShaderValueType::Vec2;
+    case ValueType::ColorImage: return ShaderValueType::Vec4;
+    }
+    return ShaderValueType::Scalar;
+}
+
+ShaderValue applyCoercionImpl(ShaderValue value, Coercion coercion) {
+    switch (coercion) {
+    case Coercion::Identity: return value;
+    case Coercion::FloatToVec2:
+    case Coercion::FloatToVectorField:
+    case Coercion::ScalarFieldToVectorField:
+        value.name = "vec2(" + value.name + ")";
+        value.type = ShaderValueType::Vec2;
+        return value;
+    case Coercion::FloatToScalarField:
+    case Coercion::Vec2ToVectorField: return value;
+    case Coercion::FloatToColorImage:
+    case Coercion::ScalarFieldToColorImage:
+        value.name = "vec4(" + value.name + "," + value.name + "," +
+                     value.name + ",1.0)";
+        value.type = ShaderValueType::Vec4;
+        return value;
+    case Coercion::Vec2ToColorImage:
+    case Coercion::VectorFieldToColorImage:
+        value.name = "vec4(" + value.name + ",0.0,1.0)";
+        value.type = ShaderValueType::Vec4;
+        return value;
+    }
+    return value;
+}
+
 void replaceAll(std::string& value, std::string_view from, std::string_view to) {
     if (from.empty()) return;
     for (std::size_t at = 0; (at = value.find(from, at)) != std::string::npos;
@@ -89,6 +126,12 @@ public:
             const auto variant = instance->shaderVariantKey(record->parameters);
             if (!variant.empty())
                 result.specializationKey += std::to_string(id) + ":" + variant + ";";
+            for (const auto& [linkId, edge] : compiled_.resolvedEdges) {
+                if (edge.sourceSocket.node != id && edge.destinationSocket.node != id) continue;
+                result.specializationKey += "type:" + std::to_string(linkId) + ":" +
+                    toString(edge.sourceType) + ":" + toString(edge.targetType) + ":" +
+                    std::to_string(static_cast<int>(edge.coercion)) + ";";
+            }
         }
         region_ = nullptr;
         return result;
@@ -109,7 +152,9 @@ public:
             if (found == values_.end())
                 throw std::runtime_error("Generated region is not in dependency order");
             nodeHasFieldDependency_ |= found->second.field;
-            return found->second;
+            const auto edge = compiled_.resolvedEdges.find(link->id);
+            return edge == compiled_.resolvedEdges.end()
+                ? found->second : applyCoercionImpl(found->second, edge->second.coercion);
         }
         if (link) {
             const auto kind = boundaryKind(link->fromNode, link->fromSocket);
@@ -126,7 +171,9 @@ public:
                     "fract(" + std::string(uvExpression) + ")", type);
             }
             nodeHasFieldDependency_ |= required.field;
-            return required;
+            const auto edge = compiled_.resolvedEdges.find(link->id);
+            return edge == compiled_.resolvedEdges.end()
+                ? required : applyCoercionImpl(required, edge->second.coercion);
         }
         if (socketRequiresImage(socket))
             typedError("Input '" + std::string(socket) + "' requires a field image");
@@ -199,10 +246,8 @@ public:
     }
 
     ShaderValueType valueType() const override {
-        if (compiled_.inferredOutputs.contains(currentNode_->id) &&
-            compiled_.inferredOutputs.at(currentNode_->id) == ValueType::Vec2)
-            return ShaderValueType::Vec2;
-        return ShaderValueType::Vec4;
+        const auto type = compiled_.socketType(currentNode_->id, defaultOutputSocket());
+        return type ? shaderType(*type) : ShaderValueType::Scalar;
     }
 
 private:
@@ -229,7 +274,9 @@ private:
                 if (input.direction != SocketDirection::Input || input.key != link.toSocket)
                     continue;
                 if (input.requiresImage) return false;
-                if (input.type == ValueType::Image2D && !descriptor->lowerable) return true;
+                const auto edge = compiled_.resolvedEdges.find(link.id);
+                if (edge != compiled_.resolvedEdges.end() &&
+                    isFieldType(edge->second.targetType) && !descriptor->lowerable) return true;
             }
         }
         return false;
@@ -273,31 +320,17 @@ private:
 
     ShaderInputKind boundaryKind(NodeId node, std::string_view socket) const {
         if (boundaryResolver_) return boundaryResolver_(node, socket);
-        const auto found = compiled_.inferredOutputs.find(node);
-        if (found == compiled_.inferredOutputs.end()) return ShaderInputKind::Empty;
-        if (found->second == ValueType::Image2D) return ShaderInputKind::Field;
-        if (found->second == ValueType::Vec2) return ShaderInputKind::Vector;
+        const auto found = compiled_.socketType(node, socket);
+        if (!found) return ShaderInputKind::Empty;
+        if (isFieldType(*found)) return ShaderInputKind::Field;
+        if (*found == ValueType::Vec2) return ShaderInputKind::Vector;
         return ShaderInputKind::Float;
     }
 
     ShaderValueType semanticType(NodeId node, std::string_view socket,
                                  std::string_view targetSocket) const {
-        const auto* record = graph_.findNode(node);
-        if (!record) return ShaderValueType::Scalar;
-        NodeDescriptor storage;
-        const auto* descriptor = resolveDescriptor(graph_, *record, registry_, storage);
-        if (descriptor) for (const auto& port : descriptor->sockets) {
-            if (port.direction != SocketDirection::Output || port.key != socket) continue;
-            if (port.type == ValueType::Vec2 || port.type == ValueType::AnyVector)
-                return ShaderValueType::Vec2;
-            if (port.type == ValueType::Image2D) return ShaderValueType::Vec4;
-        }
-        if (currentDescriptor_) for (const auto& port : currentDescriptor_->sockets) {
-            if (port.direction != SocketDirection::Input || port.key != targetSocket) continue;
-            if (port.type == ValueType::Vec2 || port.type == ValueType::AnyVector)
-                return ShaderValueType::Vec2;
-            if (port.type == ValueType::Image2D) return ShaderValueType::Vec4;
-        }
+        (void)targetSocket;
+        if (const auto type = compiled_.socketType(node, socket)) return shaderType(*type);
         return ShaderValueType::Scalar;
     }
 
@@ -319,7 +352,7 @@ private:
         const auto scalar = std::to_string(fallback);
         return type == ShaderValueType::Scalar ? scalar :
                type == ShaderValueType::Vec2 ? "vec2(" + scalar + ")" :
-                                                "vec4(" + scalar + ")";
+               "vec4(" + scalar + "," + scalar + "," + scalar + ",1.0)";
     }
 
     void typedError(std::string message) {
@@ -367,13 +400,17 @@ int scalarInputCount(const ShaderRegion& region) {
 
 } // namespace
 
+ShaderValue coerceShaderValue(ShaderValue value, Coercion coercion) {
+    return applyCoercionImpl(std::move(value), coercion);
+}
+
 std::string convertShaderValue(const ShaderValue& value, ShaderValueType type) {
     if (value.type == type) return value.name;
-    if (type == ShaderValueType::Scalar) return "(" + value.name + ").x";
-    if (type == ShaderValueType::Vec2)
-        return value.type == ShaderValueType::Scalar ? "vec2(" + value.name + ")"
-                                                     : "(" + value.name + ").xy";
-    if (value.type == ShaderValueType::Scalar) return "vec4(" + value.name + ")";
+    if (static_cast<int>(type) < static_cast<int>(value.type))
+        throw std::invalid_argument("Shader value narrowing requires an explicit graph node");
+    if (type == ShaderValueType::Vec2) return "vec2(" + value.name + ")";
+    if (value.type == ShaderValueType::Scalar)
+        return "vec4(" + value.name + "," + value.name + "," + value.name + ",1.0)";
     return "vec4(" + value.name + ",0.0,1.0)";
 }
 
@@ -649,7 +686,8 @@ GeneratedShader generateComputeShader(const ShaderRegion& region,
         const auto first = lines.size() + 1;
         append("    // materialized output for node " + std::to_string(output.node));
         const auto stored = output.value.type == ShaderValueType::Scalar
-            ? "vec4(" + output.value.name + ")"
+            ? "vec4(" + output.value.name + "," + output.value.name + "," +
+              output.value.name + ",1.0)"
             : output.value.type == ShaderValueType::Vec2
             ? "vec4(" + output.value.name + ",0.0,1.0)" : output.value.name;
         append("    imageStore(" + output.imageName + ",p," + stored + ");");

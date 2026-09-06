@@ -6,6 +6,103 @@
 
 namespace reaction {
 
+ValueType disconnectedType(SocketContract contract) {
+    if (const auto exact = fixedType(contract)) return *exact;
+    switch (contract) {
+    case SocketContract::Numeric: return ValueType::Float;
+    case SocketContract::VectorNumeric: return ValueType::Vec2;
+    case SocketContract::AnyField: return ValueType::ColorImage;
+    case SocketContract::AnyImageValue: return ValueType::Float;
+    default: return ValueType::Float;
+    }
+}
+
+std::vector<std::string> typePolicyInputs(const NodeDescriptor& descriptor,
+                                          const SocketDescriptor& output) {
+    if (!output.typeInputs.empty()) return output.typeInputs;
+    std::vector<std::string> result;
+    for (const auto& input : descriptor.sockets) {
+        if (input.direction != SocketDirection::Input) continue;
+        const bool relevant = output.contract == SocketContract::Numeric
+            ? input.contract == SocketContract::Numeric
+            : output.contract == SocketContract::VectorNumeric
+            ? input.contract == SocketContract::VectorNumeric
+            : output.contract == SocketContract::AnyImageValue
+            ? input.contract == SocketContract::AnyImageValue
+            : output.contract == SocketContract::AnyField
+            ? input.contract == SocketContract::AnyField : false;
+        if (relevant) result.push_back(input.key);
+    }
+    return result;
+}
+
+SocketDescriptor::TypePolicy effectiveTypePolicy(const SocketDescriptor& output) {
+    if (output.typePolicy != SocketDescriptor::TypePolicy::Fixed) return output.typePolicy;
+    if (fixedType(output.contract)) return SocketDescriptor::TypePolicy::Fixed;
+    if (output.contract == SocketContract::Numeric)
+        return SocketDescriptor::TypePolicy::NumericPromotion;
+    if (output.contract == SocketContract::VectorNumeric)
+        return SocketDescriptor::TypePolicy::VectorPromotion;
+    if (output.contract == SocketContract::AnyField)
+        return SocketDescriptor::TypePolicy::PreserveInput;
+    return SocketDescriptor::TypePolicy::WidestValue;
+}
+
+ValueType resolveOutputType(
+    const NodeDescriptor& descriptor, const SocketDescriptor& output,
+    const std::function<std::optional<ValueType>(std::string_view)>& inputType) {
+    ValueType resolved = disconnectedType(output.contract);
+    std::vector<ValueType> operands;
+    for (const auto& key : typePolicyInputs(descriptor, output)) {
+        if (const auto type = inputType(key)) operands.push_back(*type);
+    }
+    switch (effectiveTypePolicy(output)) {
+    case SocketDescriptor::TypePolicy::Fixed:
+        resolved = fixedType(output.contract).value_or(resolved);
+        break;
+    case SocketDescriptor::TypePolicy::NumericPromotion:
+        resolved = std::ranges::any_of(operands, isFieldType)
+            ? ValueType::ScalarField : ValueType::Float;
+        break;
+    case SocketDescriptor::TypePolicy::VectorPromotion:
+        resolved = std::ranges::any_of(operands, isFieldType)
+            ? ValueType::VectorField : ValueType::Vec2;
+        break;
+    case SocketDescriptor::TypePolicy::WidestValue:
+        if (!operands.empty()) resolved = widestValue(operands);
+        break;
+    case SocketDescriptor::TypePolicy::PreserveInput:
+        if (!operands.empty()) resolved = operands.front();
+        break;
+    }
+    if (!isFieldType(resolved) && !output.fieldInputs.empty()) {
+        const bool spatial = std::ranges::any_of(output.fieldInputs,
+            [&](const std::string& key) {
+                const auto type = inputType(key);
+                return type && isFieldType(*type);
+            });
+        if (spatial) resolved = fieldTypeForWidth(componentCount(resolved));
+    }
+    if (descriptor.producedField && !isFieldType(resolved))
+        resolved = fieldTypeForWidth(componentCount(resolved));
+    return resolved;
+}
+
+ValueType resolveInputType(
+    const NodeDescriptor& descriptor, std::string_view inputKey, ValueType sourceType,
+    const std::function<std::optional<ValueType>(std::string_view)>& outputType) {
+    std::vector<ValueType> targets{sourceType};
+    for (const auto& output : descriptor.sockets) {
+        if (output.direction != SocketDirection::Output ||
+            effectiveTypePolicy(output) != SocketDescriptor::TypePolicy::WidestValue)
+            continue;
+        const auto keys = typePolicyInputs(descriptor, output);
+        if (std::ranges::find(keys, inputKey) == keys.end()) continue;
+        if (const auto type = outputType(output.key)) targets.push_back(*type);
+    }
+    return widestValue(targets);
+}
+
 void addParameterInputSockets(NodeDescriptor& descriptor) {
     for (const auto& parameter : descriptor.parameters) {
         if (parameter.control != ParameterDescriptor::Control::Float &&
@@ -67,10 +164,12 @@ void NodeRegistry::add(NodeDescriptor descriptor, Factory factory) {
                 return item.direction == SocketDirection::Input && item.key == parameter.key;
             });
             if (socket == descriptor.sockets.end() ||
-                (socket->type != ValueType::Float && socket->type != ValueType::AnyNumeric)) {
+                (socket->contract != SocketContract::FloatOnly &&
+                 socket->contract != SocketContract::Numeric &&
+                 socket->contract != SocketContract::AnyImageValue)) {
                 throw std::invalid_argument("Numeric parameter '" + parameter.key + "' on node '" +
                                             descriptor.type +
-                                            "' needs a Float or AnyNumeric input with the same key");
+                                            "' needs a Float, Numeric, or AnyImageValue input with the same key");
             }
         }
     }

@@ -16,14 +16,6 @@ const SocketDescriptor* socket(const NodeDescriptor& node, std::string_view key,
     return it == node.sockets.end() ? nullptr : &*it;
 }
 
-bool compatible(const SocketDescriptor& from, const SocketDescriptor& to) {
-    if (!areSocketTypesCompatible(from.type, to.type)) return false;
-    if (!(from.strictType || to.strictType)) return true;
-    const bool numericToVector = isNumericType(from.type) && to.type == ValueType::AnyVector;
-    const bool vectorToNumeric = from.type == ValueType::AnyVector && isNumericType(to.type);
-    return !numericToVector && !vectorToNumeric;
-}
-
 } // namespace
 
 NodeId GraphBody::addNode(std::string type, Vec2 position) {
@@ -149,10 +141,6 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
             result.errors.push_back("Link " + std::to_string(link.id) + " names an unknown socket");
             continue;
         }
-        if (!compatible(*output, *input)) {
-            result.errors.push_back("Link " + std::to_string(link.id) + " has incompatible socket types");
-            continue;
-        }
         const auto inputKey = std::to_string(link.toNode) + ":" + link.toSocket;
         if (!occupiedInputs.insert(inputKey).second) {
             result.errors.push_back("Input has more than one link: " + inputKey);
@@ -172,28 +160,82 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
     }
     if (result.order.size() != nodes_.size()) result.errors.push_back("Graph contains a cycle");
 
+    const auto incoming = [&](NodeId node, std::string_view key) -> const LinkRecord* {
+        const auto found = std::ranges::find_if(links_, [&](const LinkRecord& link) {
+            return link.toNode == node && link.toSocket == key;
+        });
+        return found == links_.end() ? nullptr : &*found;
+    };
+
     for (const auto id : result.order) {
         const auto* node = findNode(id);
         NodeDescriptor descriptorStorage;
         const auto* descriptor = node ? resolveDescriptor(*this, *node, registry, descriptorStorage) : nullptr;
         if (!descriptor) continue;
-        ValueType inferred = ValueType::Float;
-        if (descriptor->producedField) inferred = ValueType::Image2D;
+
+        std::unordered_map<std::string, ValueType> inputTypes;
         for (const auto& port : descriptor->sockets) {
-            if (port.direction == SocketDirection::Output && port.type == ValueType::Image2D) {
-                inferred = ValueType::Image2D;
-            } else if (port.direction == SocketDirection::Output &&
-                       port.type == ValueType::Vec2 && inferred != ValueType::Image2D) {
-                inferred = ValueType::Vec2;
+            if (port.direction != SocketDirection::Input) continue;
+            ValueType resolved = port.fieldDefault
+                ? fieldTypeForWidth(componentCount(disconnectedType(port.contract)))
+                : disconnectedType(port.contract);
+            if (const auto* link = incoming(id, port.key)) {
+                const auto source = result.socketType(link->fromNode, link->fromSocket);
+                if (source) resolved = *source;
+                if (source && !contractAccepts(port.contract, *source)) {
+                    result.errors.push_back(
+                        "Cannot connect " + toString(*source) + " to " +
+                        descriptor->displayName + "." + port.key + "; socket accepts " +
+                        toString(port.contract) + " (semantically inadmissible)");
+                } else if (source && port.requiresImage && !isFieldType(*source)) {
+                    result.errors.push_back(descriptor->displayName + "." + port.key +
+                                            " requires a field image");
+                }
             }
+            inputTypes[port.key] = resolved;
+            result.resolvedSockets[{id, port.key, SocketDirection::Input}] =
+                {port.contract, resolved};
         }
-        for (const auto& link : links_) {
-            if (link.toNode != id) continue;
-            if (result.inferredOutputs[link.fromNode] == ValueType::Image2D) inferred = ValueType::Image2D;
-            else if (result.inferredOutputs[link.fromNode] == ValueType::Vec2 &&
-                     inferred != ValueType::Image2D) inferred = ValueType::Vec2;
+
+        for (const auto& port : descriptor->sockets) {
+            if (port.direction != SocketDirection::Output) continue;
+            const auto resolved = resolveOutputType(*descriptor, port,
+                [&](std::string_view key) -> std::optional<ValueType> {
+                    const auto found = inputTypes.find(std::string(key));
+                    return found == inputTypes.end() ? std::nullopt
+                                                     : std::optional(found->second);
+                });
+            result.resolvedSockets[{id, port.key, SocketDirection::Output}] =
+                {port.contract, resolved};
+
         }
-        result.inferredOutputs[id] = inferred;
+        for (const auto& [key, sourceType] : inputTypes) {
+            const auto inputKey = CompileResult::SocketKey{id, key, SocketDirection::Input};
+            const auto targetType = resolveInputType(*descriptor, key, sourceType,
+                [&](std::string_view outputKey) {
+                    return result.socketType(id, outputKey, SocketDirection::Output);
+                });
+            if (auto found = result.resolvedSockets.find(inputKey);
+                found != result.resolvedSockets.end())
+                found->second.concreteType = targetType;
+        }
+    }
+
+    for (const auto& link : links_) {
+        const auto source = result.socketType(link.fromNode, link.fromSocket);
+        const auto target = result.socketType(link.toNode, link.toSocket,
+                                              SocketDirection::Input);
+        if (!source || !target) continue;
+        const auto coercion = coercionBetween(*source, *target);
+        if (!coercion) {
+            result.errors.push_back("Link " + std::to_string(link.id) + " cannot convert " +
+                                    toString(*source) + " to " + toString(*target));
+            continue;
+        }
+        result.resolvedEdges[link.id] = {
+            {link.fromNode, link.fromSocket, SocketDirection::Output},
+            {link.toNode, link.toSocket, SocketDirection::Input},
+            *source, *target, *coercion};
     }
 
     std::unordered_set<std::string> validatedSubgraphs;

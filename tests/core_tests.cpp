@@ -36,39 +36,39 @@ NodeRegistry registry() {
         {{"value", "Vector", ValueType::Vec2, SocketDirection::Output}},
         {{"x", "X", 0.0F, -10.0F, 10.0F}, {"y", "Y", 0.0F, -10.0F, 10.0F}}});
     add(result, {"image", 1, "Image", "Test",
-        {{"out", "Out", ValueType::Image2D, SocketDirection::Output}}, {}});
+        {{"out", "Out", ValueType::ScalarField, SocketDirection::Output}}, {}});
     add(result, {"math", 1, "Math", "Test",
-        {{"a", "A", ValueType::AnyNumeric, SocketDirection::Input, true},
-         {"b", "B", ValueType::AnyNumeric, SocketDirection::Input, true},
-         {"c", "C", ValueType::AnyNumeric, SocketDirection::Input, true},
-         {"out", "Out", ValueType::AnyNumeric, SocketDirection::Output},
-         {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
+        {{"a", "A", SocketContract::Numeric, SocketDirection::Input, true},
+         {"b", "B", SocketContract::Numeric, SocketDirection::Input, true},
+         {"c", "C", SocketContract::Numeric, SocketDirection::Input, true},
+         {"out", "Out", SocketContract::Numeric, SocketDirection::Output},
+         {"result", "Result", SocketContract::Numeric, SocketDirection::Output}},
         {{"operation", "Operation", 0, 0, 11}, {"a", "A", 0, -10, 10},
          {"b", "B", 0, -10, 10}, {"c", "C", 1, -10, 10}}});
     add(result, {"threshold", 1, "Threshold", "Test",
-        {{"value", "Value", ValueType::AnyNumeric, SocketDirection::Input, true},
-         {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
+        {{"value", "Value", SocketContract::Numeric, SocketDirection::Input, true},
+         {"result", "Result", SocketContract::Numeric, SocketDirection::Output}},
         {{"value", "Value", .5F, 0, 1}, {"threshold", "Threshold", .5F, 0, 1}}});
     add(result, {"select", 1, "Select", "Test",
-        {{"condition", "Condition", ValueType::AnyNumeric, SocketDirection::Input, true},
-         {"ifTrue", "If True", ValueType::AnyNumeric, SocketDirection::Input, true},
-         {"ifFalse", "If False", ValueType::AnyNumeric, SocketDirection::Input, true},
-         {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
+        {{"condition", "Condition", SocketContract::Numeric, SocketDirection::Input, true},
+         {"ifTrue", "If True", SocketContract::Numeric, SocketDirection::Input, true},
+         {"ifFalse", "If False", SocketContract::Numeric, SocketDirection::Input, true},
+         {"result", "Result", SocketContract::Numeric, SocketDirection::Output}},
         {{"condition", "Condition", 0.0F, -10.0F, 10.0F},
          {"ifTrue", "If True", 1.0F, -10.0F, 10.0F},
          {"ifFalse", "If False", 0.0F, -10.0F, 10.0F}}});
     add(result, {"coordinates", 1, "Canvas Coordinates", "Input",
-        {{"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Output}},
+        {{"coordinates", "Coordinates", SocketContract::VectorNumeric, SocketDirection::Output}},
         {{"pixels", "Pixels", 0.0F, 0.0F, 1.0F,
           ParameterDescriptor::Control::Boolean}}});
     add(result, {"laplacian", 1, "Laplacian", "Filter",
-        {{"value", "Value", ValueType::AnyVector, SocketDirection::Input},
+        {{"value", "Value", SocketContract::VectorNumeric, SocketDirection::Input},
          {"scale", "Scale", ValueType::Float, SocketDirection::Input, true},
-         {"result", "Result", ValueType::AnyVector, SocketDirection::Output}},
+         {"result", "Result", SocketContract::VectorNumeric, SocketDirection::Output}},
         {{"scale", "Scale", 1.0F, .25F, 8.0F}}});
     add(result, {"output", 1, "Output", "Test",
-        {{"in", "In", ValueType::Image2D, SocketDirection::Input},
-         {"out", "Out", ValueType::Image2D, SocketDirection::Output}}, {}});
+        {{"in", "In", SocketContract::AnyField, SocketDirection::Input},
+         {"out", "Out", SocketContract::AnyField, SocketDirection::Output}}, {}});
     return result;
 }
 
@@ -86,7 +86,7 @@ TEST_CASE("graph compiles in dependency order") {
     const auto result = graph.compile(nodes);
     REQUIRE(result.valid);
     REQUIRE(result.order == std::vector<NodeId>{source, math, output});
-    REQUIRE(result.inferredOutputs.at(math) == ValueType::Image2D);
+    REQUIRE(result.socketType(math, "out") == ValueType::ScalarField);
 }
 
 TEST_CASE("registry rejects incomplete enum metadata") {
@@ -99,22 +99,22 @@ TEST_CASE("registry rejects incomplete enum metadata") {
 TEST_CASE("registry validates generated field and neighborhood declarations") {
     NodeRegistry nodes;
     auto generator = NodeDescriptor{"bad_generator", 1, "Bad Generator", "Test",
-        {{"out", "Out", ValueType::AnyNumeric, SocketDirection::Output}}, {}};
+        {{"out", "Out", SocketContract::Numeric, SocketDirection::Output}}, {}};
     generator.producedField = true;
     REQUIRE_THROWS_AS(add(nodes, generator), std::invalid_argument);
 
     auto filter = NodeDescriptor{"bad_filter", 1, "Bad Filter", "Test",
-        {{"source", "Source", ValueType::Image2D, SocketDirection::Input},
-         {"out", "Out", ValueType::Image2D, SocketDirection::Output}}, {}};
+        {{"source", "Source", ValueType::ColorImage, SocketDirection::Input},
+         {"out", "Out", ValueType::ColorImage, SocketDirection::Output}}, {}};
     filter.lowerable = true;
     filter.neighborhoodSocket = "source";
     REQUIRE_THROWS_AS(add(nodes, filter), std::invalid_argument);
 }
 
-TEST_CASE("producedField makes an AnyNumeric generator infer a field output") {
+TEST_CASE("producedField makes a Numeric generator infer a field output") {
     NodeRegistry nodes;
     auto generator = NodeDescriptor{"field_generator", 1, "Field Generator", "Test",
-        {{"out", "Out", ValueType::AnyNumeric, SocketDirection::Output}}, {}};
+        {{"out", "Out", SocketContract::Numeric, SocketDirection::Output}}, {}};
     generator.lowerable = true;
     generator.producedField = true;
     add(nodes, generator);
@@ -123,7 +123,7 @@ TEST_CASE("producedField makes an AnyNumeric generator infer a field output") {
     const auto node = graph.addNode("field_generator");
     const auto compiled = graph.compile(nodes);
     REQUIRE(compiled.valid);
-    REQUIRE(compiled.inferredOutputs.at(node) == ValueType::Image2D);
+    REQUIRE(compiled.socketType(node, "out") == ValueType::ScalarField);
 }
 
 TEST_CASE("cycles are rejected without mutating the graph") {
@@ -154,12 +154,12 @@ TEST_CASE("socket errors and duplicate inputs are reported") {
     REQUIRE(result.errors.size() >= 2);
 }
 
-TEST_CASE("Vec2 is confined to AnyVector paths and excluded from numeric math") {
+TEST_CASE("Vec2 is confined to VectorNumeric paths and excluded from numeric math") {
     auto nodes = registry();
     add(nodes, {"vec2_source", 1, "Vec2", "Test",
         {{"state", "State", ValueType::Vec2, SocketDirection::Output}}, {}});
     REQUIRE(toString(ValueType::Vec2) == "vec2");
-    REQUIRE(toString(ValueType::AnyVector) == "vector");
+    REQUIRE(toString(SocketContract::VectorNumeric) == "vector_numeric");
 
     Graph vectorGraph;
     const auto state = vectorGraph.addNode("vec2_source");
@@ -167,7 +167,7 @@ TEST_CASE("Vec2 is confined to AnyVector paths and excluded from numeric math") 
     vectorGraph.addLink(state, "state", laplacian, "value");
     const auto vectorResult = vectorGraph.compile(nodes);
     REQUIRE(vectorResult.valid);
-    REQUIRE(vectorResult.inferredOutputs.at(laplacian) == ValueType::Vec2);
+    REQUIRE(vectorResult.socketType(laplacian, "result") == ValueType::Vec2);
 
     Graph numericGraph;
     const auto numericState = numericGraph.addNode("vec2_source");
@@ -176,26 +176,141 @@ TEST_CASE("Vec2 is confined to AnyVector paths and excluded from numeric math") 
     REQUIRE_FALSE(numericGraph.compile(nodes).valid);
 }
 
+TEST_CASE("semantic contracts are distinct from the widening table") {
+    constexpr std::array allTypes{ValueType::Float, ValueType::Vec2,
+        ValueType::ScalarField, ValueType::VectorField, ValueType::ColorImage};
+    for (const auto expected : allTypes) {
+        for (const auto actual : allTypes)
+            REQUIRE(contractAccepts(exactContract(expected), actual) == (expected == actual));
+        REQUIRE(contractAccepts(SocketContract::AnyImageValue, expected));
+        REQUIRE(contractAccepts(SocketContract::AnyField, expected) == isFieldType(expected));
+        REQUIRE(coercionBetween(expected, expected) == Coercion::Identity);
+    }
+    REQUIRE(contractAccepts(SocketContract::Numeric, ValueType::Float));
+    REQUIRE(contractAccepts(SocketContract::Numeric, ValueType::ScalarField));
+    REQUIRE_FALSE(contractAccepts(SocketContract::Numeric, ValueType::Vec2));
+    REQUIRE_FALSE(contractAccepts(SocketContract::Numeric, ValueType::VectorField));
+    REQUIRE_FALSE(contractAccepts(SocketContract::VectorNumeric, ValueType::Float));
+    REQUIRE_FALSE(contractAccepts(SocketContract::VectorNumeric, ValueType::ScalarField));
+    REQUIRE(contractAccepts(SocketContract::VectorNumeric, ValueType::Vec2));
+    REQUIRE(contractAccepts(SocketContract::VectorNumeric, ValueType::VectorField));
+
+    REQUIRE(coercionBetween(ValueType::Float, ValueType::ScalarField) ==
+            Coercion::FloatToScalarField);
+    REQUIRE(coercionBetween(ValueType::Float, ValueType::Vec2) ==
+            Coercion::FloatToVec2);
+    REQUIRE(coercionBetween(ValueType::Float, ValueType::VectorField) ==
+            Coercion::FloatToVectorField);
+    REQUIRE(coercionBetween(ValueType::Float, ValueType::ColorImage) ==
+            Coercion::FloatToColorImage);
+    REQUIRE(coercionBetween(ValueType::Vec2, ValueType::VectorField) ==
+            Coercion::Vec2ToVectorField);
+    REQUIRE(coercionBetween(ValueType::Vec2, ValueType::ColorImage) ==
+            Coercion::Vec2ToColorImage);
+    REQUIRE(coercionBetween(ValueType::ScalarField, ValueType::VectorField) ==
+            Coercion::ScalarFieldToVectorField);
+    REQUIRE(coercionBetween(ValueType::ScalarField, ValueType::ColorImage) ==
+            Coercion::ScalarFieldToColorImage);
+    REQUIRE(coercionBetween(ValueType::VectorField, ValueType::ColorImage) ==
+            Coercion::VectorFieldToColorImage);
+    REQUIRE_FALSE(coercionBetween(ValueType::Vec2, ValueType::ScalarField));
+    REQUIRE_FALSE(coercionBetween(ValueType::VectorField, ValueType::ScalarField));
+    REQUIRE_FALSE(coercionBetween(ValueType::ColorImage, ValueType::VectorField));
+}
+
+TEST_CASE("widest-value inference is per socket and records edge coercions") {
+    NodeRegistry nodes;
+    add(nodes, {"float_source", 1, "Float", "Test",
+        {{"value", "Value", ValueType::Float, SocketDirection::Output}}, {}});
+    add(nodes, {"scalar_source", 1, "Scalar", "Test",
+        {{"value", "Value", ValueType::ScalarField, SocketDirection::Output}}, {}});
+    add(nodes, {"color_source", 1, "Color", "Test",
+        {{"value", "Value", ValueType::ColorImage, SocketDirection::Output}}, {}});
+    auto widest = NodeDescriptor{"widest", 1, "Widest", "Test",
+        {{"a", "A", SocketContract::AnyImageValue, SocketDirection::Input, true},
+         {"b", "B", SocketContract::AnyImageValue, SocketDirection::Input, true},
+         {"factor", "Factor", SocketContract::Numeric, SocketDirection::Input, true},
+         {"value", "Value", SocketContract::AnyImageValue, SocketDirection::Output}}, {}};
+    widest.sockets.back().typePolicy = SocketDescriptor::TypePolicy::WidestValue;
+    widest.sockets.back().typeInputs = {"a", "b"};
+    widest.sockets.back().fieldInputs = {"a", "b", "factor"};
+    add(nodes, widest);
+
+    Graph graph;
+    const auto scalar = graph.addNode("scalar_source");
+    const auto color = graph.addNode("color_source");
+    const auto factor = graph.addNode("scalar_source");
+    const auto operation = graph.addNode("widest");
+    const auto scalarLink = graph.addLink(scalar, "value", operation, "a");
+    graph.addLink(color, "value", operation, "b");
+    graph.addLink(factor, "value", operation, "factor");
+    const auto compiled = graph.compile(nodes);
+    INFO(nlohmann::json(compiled.errors).dump());
+    REQUIRE(compiled.valid);
+    REQUIRE(compiled.socketType(operation, "value") == ValueType::ColorImage);
+    REQUIRE(compiled.socketType(operation, "a", SocketDirection::Input) ==
+            ValueType::ColorImage);
+    REQUIRE(compiled.socketType(operation, "factor", SocketDirection::Input) ==
+            ValueType::ScalarField);
+    REQUIRE(compiled.resolvedEdges.at(scalarLink).coercion ==
+            Coercion::ScalarFieldToColorImage);
+
+    Graph spatialFactorGraph;
+    const auto a = spatialFactorGraph.addNode("float_source");
+    const auto b = spatialFactorGraph.addNode("float_source");
+    const auto spatialFactor = spatialFactorGraph.addNode("scalar_source");
+    const auto spatialOperation = spatialFactorGraph.addNode("widest");
+    spatialFactorGraph.addLink(a, "value", spatialOperation, "a");
+    spatialFactorGraph.addLink(b, "value", spatialOperation, "b");
+    spatialFactorGraph.addLink(spatialFactor, "value", spatialOperation, "factor");
+    const auto spatialCompiled = spatialFactorGraph.compile(nodes);
+    REQUIRE(spatialCompiled.valid);
+    REQUIRE(spatialCompiled.socketType(spatialOperation, "value") ==
+            ValueType::ScalarField);
+}
+
+TEST_CASE("multi-output and preserve policies do not leak types between sockets") {
+    NodeRegistry nodes;
+    add(nodes, {"multi", 1, "Multi", "Test",
+        {{"scalar", "Scalar", ValueType::ScalarField, SocketDirection::Output},
+         {"vector", "Vector", ValueType::VectorField, SocketDirection::Output}}, {}});
+    auto preserve = NodeDescriptor{"preserve", 1, "Preserve", "Test",
+        {{"source", "Source", SocketContract::AnyField, SocketDirection::Input},
+         {"value", "Value", SocketContract::AnyField, SocketDirection::Output}}, {}};
+    preserve.sockets.back().typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+    preserve.sockets.back().typeInputs = {"source"};
+    add(nodes, preserve);
+    Graph graph;
+    const auto multi = graph.addNode("multi");
+    const auto filter = graph.addNode("preserve");
+    graph.addLink(multi, "vector", filter, "source");
+    const auto compiled = graph.compile(nodes);
+    REQUIRE(compiled.valid);
+    REQUIRE(compiled.socketType(multi, "scalar") == ValueType::ScalarField);
+    REQUIRE(compiled.socketType(multi, "vector") == ValueType::VectorField);
+    REQUIRE(compiled.socketType(filter, "value") == ValueType::VectorField);
+}
+
 TEST_CASE("Vector Math descriptors expose only active semantic sockets") {
     const auto normalize = vectorMathDescriptor(VectorMathOperation::Normalize);
     REQUIRE(normalize.sockets.size() == 2);
     REQUIRE(normalize.sockets[0].key == "a");
-    REQUIRE(normalize.sockets[0].type == ValueType::AnyVector);
+    REQUIRE(normalize.sockets[0].contract == SocketContract::VectorNumeric);
     REQUIRE(normalize.sockets[1].key == "result");
-    REQUIRE(normalize.sockets[1].type == ValueType::AnyVector);
+    REQUIRE(normalize.sockets[1].contract == SocketContract::VectorNumeric);
 
     const auto dot = vectorMathDescriptor(VectorMathOperation::Dot);
     REQUIRE(dot.sockets.size() == 3);
     REQUIRE(dot.sockets[0].key == "a");
     REQUIRE(dot.sockets[1].key == "b");
-    REQUIRE(dot.sockets[2].type == ValueType::AnyNumeric);
+    REQUIRE(dot.sockets[2].contract == SocketContract::Numeric);
 
     const auto scale = vectorMathDescriptor(VectorMathOperation::Scale);
     REQUIRE(scale.sockets.size() == 3);
-    REQUIRE(scale.sockets[0].type == ValueType::AnyVector);
+    REQUIRE(scale.sockets[0].contract == SocketContract::VectorNumeric);
     REQUIRE(scale.sockets[1].key == "scalar");
-    REQUIRE(scale.sockets[1].type == ValueType::AnyNumeric);
-    REQUIRE(scale.sockets[2].type == ValueType::AnyVector);
+    REQUIRE(scale.sockets[1].contract == SocketContract::Numeric);
+    REQUIRE(scale.sockets[2].contract == SocketContract::VectorNumeric);
 
 }
 
@@ -215,6 +330,22 @@ TEST_CASE("Vector Math scalar results do not feed vector-only operations") {
     REQUIRE_FALSE(graph.compile(nodes).valid);
 }
 
+TEST_CASE("Vector Math field controls promote vector results without changing width") {
+    auto nodes = registry();
+    Graph graph;
+    const auto vector = graph.addNode("vector");
+    const auto scalarField = graph.addNode("image");
+    const auto scale = graph.addNode("vector_math");
+    graph.findNode(scale)->parameters["operation"] =
+        static_cast<float>(VectorMathOperation::Scale);
+    graph.addLink(vector, "value", scale, "a");
+    graph.addLink(scalarField, "out", scale, "scalar");
+    const auto compiled = graph.compile(nodes);
+    INFO(nlohmann::json(compiled.errors).dump());
+    REQUIRE(compiled.valid);
+    REQUIRE(compiled.socketType(scale, "result") == ValueType::VectorField);
+}
+
 TEST_CASE("project JSON round trips graph state") {
     auto nodes = registry();
     Graph graph;
@@ -232,6 +363,39 @@ TEST_CASE("project JSON round trips graph state") {
     REQUIRE(restored.links().size() == 1);
     REQUIRE(restored.activeOutput == output);
     REQUIRE(restored.findNode(image)->parameters.at("seed") == 42);
+}
+
+TEST_CASE("legacy color narrowing migrates through explicit channel nodes") {
+    auto nodes = registry();
+    add(nodes, {"legacy_color", 1, "Legacy Color", "Test",
+        {{"value", "Value", ValueType::ColorImage, SocketDirection::Output}}, {}});
+    add(nodes, {"color_r", 1, "Color to R", "Test",
+        {{"color", "Color", ValueType::ColorImage, SocketDirection::Input},
+         {"value", "R", ValueType::ScalarField, SocketDirection::Output}}, {}});
+    add(nodes, {"color_rg", 1, "Color to RG", "Test",
+        {{"color", "Color", ValueType::ColorImage, SocketDirection::Input},
+         {"value", "RG", ValueType::VectorField, SocketDirection::Output}}, {}});
+    const nlohmann::json document = {
+        {"formatVersion", 3},
+        {"project", {{"width", 128}, {"height", 128}, {"targetFps", 60}}},
+        {"nodes", {{{"id", 1}, {"type", "legacy_color"}, {"position", {0, 0}},
+                     {"parameters", nlohmann::json::object()}},
+                    {{"id", 2}, {"type", "math"}, {"position", {200, 0}},
+                     {"parameters", nlohmann::json::object()}}}},
+        {"links", {{{"id", 7}, {"from", {{"node", 1}, {"socket", "value"}}},
+                     {"to", {{"node", 2}, {"socket", "a"}}}}}},
+        {"activeOutput", 0}};
+
+    const auto restored = deserializeProject(document, nodes);
+    REQUIRE(restored.nodes().size() == 3);
+    const auto conversion = std::ranges::find(restored.nodes(), std::string("color_r"),
+                                               &NodeRecord::type);
+    REQUIRE(conversion != restored.nodes().end());
+    REQUIRE(restored.links().size() == 2);
+    const auto preserved = std::ranges::find(restored.links(), LinkId{7}, &LinkRecord::id);
+    REQUIRE(preserved != restored.links().end());
+    REQUIRE(preserved->toNode == conversion->id);
+    REQUIRE(restored.compile(nodes).valid);
 }
 
 TEST_CASE("null node parameters load as an empty object") {
@@ -291,7 +455,9 @@ TEST_CASE("unsupported schema and invalid project settings fail clearly") {
 
 TEST_CASE("built-in discrete reaction exposes a stable dynamic interface") {
     auto nodes = registry();
-    REQUIRE(validateSubgraph(builtInSubgraphs().front(), nodes).empty());
+    const auto validationErrors = validateSubgraph(builtInSubgraphs().front(), nodes);
+    INFO(nlohmann::json(validationErrors).dump());
+    REQUIRE(validationErrors.empty());
     Graph graph;
     const auto id = graph.addNode("subgraph");
     graph.findNode(id)->subgraphId = "builtin.reaction_diffusion.discrete";
@@ -309,6 +475,11 @@ TEST_CASE("built-in discrete reaction exposes a stable dynamic interface") {
     REQUIRE(descriptor->sockets[10].label == "Image");
     REQUIRE(descriptor->sockets[11].label == "Chemical A");
     REQUIRE(descriptor->sockets[12].label == "Chemical B");
+    Graph persisted;
+    persisted.subgraphs().push_back(builtInSubgraphs().front());
+    const auto serialized = serializeProject(persisted);
+    REQUIRE(serialized["subgraphs"][0]["interface"][2]["type"] == "scalar_field");
+    REQUIRE(serialized["subgraphs"][0]["interface"][11]["type"] == "scalar_field");
     REQUIRE(graph.compile(nodes).valid);
 }
 
@@ -344,7 +515,7 @@ TEST_CASE("custom shared subgraphs round trip once with per-instance values") {
     graph.findNode(second)->parameters["feed"] = .07F;
 
     const auto json = serializeProject(graph);
-    REQUIRE(json["formatVersion"] == 3);
+    REQUIRE(json["formatVersion"] == 4);
     REQUIRE(json["subgraphs"].size() == 1);
     REQUIRE(json["subgraphs"][0].contains("nodes"));
     REQUIRE(json["subgraphs"][0].contains("links"));
@@ -372,8 +543,8 @@ TEST_CASE("subgraph labels may change without changing serialized socket keys") 
 TEST_CASE("simulation convolution exposes only its single-pass form") {
     auto nodes = registry();
     NodeDescriptor convolutionDescriptor{"convolution", 1, "Convolution", "Filter",
-        {{"image", "Image", ValueType::Image2D, SocketDirection::Input},
-         {"image", "Image", ValueType::Image2D, SocketDirection::Output}},
+        {{"image", "Image", ValueType::ColorImage, SocketDirection::Input},
+         {"image", "Image", ValueType::ColorImage, SocketDirection::Output}},
         {{"iterations", "Iterations", 1.0F, 1.0F, 32.0F}}};
     convolutionDescriptor.lowerable = true;
     add(nodes, std::move(convolutionDescriptor));
@@ -456,8 +627,8 @@ TEST_CASE("simulation bodies reuse registered normal node descriptors") {
     const auto* channelDescriptor = resolveSubgraphBodyDescriptor(
         definition, *channel, nodes, channelStorage);
     REQUIRE(channelDescriptor != nullptr);
-    REQUIRE(channelDescriptor->sockets.front().type == ValueType::Vec2);
-    REQUIRE(channelDescriptor->sockets[1].type == ValueType::Float);
+    REQUIRE(channelDescriptor->sockets.front().contract == SocketContract::VectorFieldOnly);
+    REQUIRE(channelDescriptor->sockets[1].contract == SocketContract::ScalarFieldOnly);
 }
 
 TEST_CASE("simulation topology accepts sources created after their targets") {
@@ -484,7 +655,7 @@ TEST_CASE("Vec2 Laplacian results require a simulation channel split before math
     definition.body.addLink(laplacianId, "result", math, "a");
     const auto errors = validateSubgraph(definition, nodes);
     REQUIRE(std::ranges::any_of(errors, [](const std::string& error) {
-        return error.find("resolved value types") != std::string::npos;
+        return error.find("cannot connect vector_field") != std::string::npos;
     }));
 }
 
@@ -570,7 +741,7 @@ TEST_CASE("format 2 kernel subgraphs migrate to normal node and link bodies") {
     INFO(nlohmann::json(migrationErrors).dump());
     REQUIRE(migrationErrors.empty());
     const auto serialized = serializeProject(restored);
-    REQUIRE(serialized["formatVersion"] == 3);
+    REQUIRE(serialized["formatVersion"] == 4);
     REQUIRE(serialized["subgraphs"][0].contains("nodes"));
     REQUIRE_FALSE(serialized["subgraphs"][0].contains("kernel"));
 }

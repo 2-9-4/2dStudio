@@ -78,18 +78,21 @@ void main() {
 class RepeatFoldNode final : public TextureNode {
 public:
     static NodeDescriptor describe() {
-        return {"repeat_fold", 1, "Repeat / Fold", "Math",
-            {{"value", "Value", ValueType::AnyNumeric, SocketDirection::Input},
-             {"period", "Period", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"offset", "Offset", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"foldCenter", "Fold Center", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"value", "Value", ValueType::AnyNumeric, SocketDirection::Output}},
+        auto result = NodeDescriptor{"repeat_fold", 1, "Repeat / Fold", "Math",
+            {{"value", "Value", SocketContract::Numeric, SocketDirection::Input},
+             {"period", "Period", SocketContract::Numeric, SocketDirection::Input, true},
+             {"offset", "Offset", SocketContract::Numeric, SocketDirection::Input, true},
+             {"foldCenter", "Fold Center", SocketContract::Numeric, SocketDirection::Input, true},
+             {"value", "Value", SocketContract::Numeric, SocketDirection::Output}},
             {{"mode", "Mode", 0.0F, 0.0F, 3.0F, ParameterDescriptor::Control::Enum,
               {"Repeat", "Mirror Repeat", "Fold Positive", "Fold Negative"}},
              {"value", "Value", 0.0F, -100.0F, 100.0F},
              {"period", "Period", 1.0F, -100.0F, 100.0F},
              {"offset", "Offset", 0.0F, -100.0F, 100.0F},
              {"foldCenter", "Fold Center", 0.0F, -100.0F, 100.0F}}};
+        result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+        result.sockets.back().typeInputs = {"value", "period", "offset", "foldCenter"};
+        return result;
     }
 
     const NodeDescriptor& descriptor() const override {
@@ -127,7 +130,7 @@ public:
         bindNumericInput(program_, 3, "foldCenterImage", "hasFoldCenter", "foldCenterConstant", foldCenter);
         node_support::uniform(program_, "mode", static_cast<int>(mode));
         gpu.dispatch(program_, context.width, context.height);
-        outputs[0] = ImageHandle{texture_, context.width, context.height};
+        outputs[0] = ImageHandle{texture_, context.width, context.height, ValueType::ScalarField};
     }
 };
 

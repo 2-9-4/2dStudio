@@ -69,21 +69,31 @@ public:
     }
 
     static NodeDescriptor describe() {
-        return {"polar_coordinates", 1, "Polar Coordinates", "Coordinate",
-            {{"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Input, true},
-             {"center", "Center", ValueType::AnyVector, SocketDirection::Input, true},
-             {"radiusScale", "Radius Scale", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"angleOffset", "Angle Offset", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"radius", "Radius", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"angle", "Angle", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"radius", "Radius", ValueType::AnyNumeric, SocketDirection::Output},
-             {"angle", "Angle", ValueType::AnyNumeric, SocketDirection::Output},
-             {"normalizedAngle", "Normalized Angle", ValueType::AnyNumeric, SocketDirection::Output},
-             {"outputCoordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Output}},
+        auto result = NodeDescriptor{"polar_coordinates", 1, "Polar Coordinates", "Coordinate",
+            {{"coordinates", "Coordinates", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"center", "Center", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"radiusScale", "Radius Scale", SocketContract::Numeric, SocketDirection::Input, true},
+             {"angleOffset", "Angle Offset", SocketContract::Numeric, SocketDirection::Input, true},
+             {"radius", "Radius", SocketContract::Numeric, SocketDirection::Input, true},
+             {"angle", "Angle", SocketContract::Numeric, SocketDirection::Input, true},
+             {"radius", "Radius", SocketContract::Numeric, SocketDirection::Output},
+             {"angle", "Angle", SocketContract::Numeric, SocketDirection::Output},
+             {"normalizedAngle", "Normalized Angle", SocketContract::Numeric, SocketDirection::Output},
+             {"outputCoordinates", "Coordinates", SocketContract::VectorNumeric, SocketDirection::Output}},
             {{"mode", "Mode", 0.0F, 0.0F, 1.0F, ParameterDescriptor::Control::Enum,
               {"Cartesian to Polar", "Polar to Cartesian"}},
              {"radiusScale", "Radius Scale", 1.0F, -10.0F, 10.0F},
              {"angleOffset", "Angle Offset", 0.0F, -20.0F, 20.0F}}};
+        result.sockets[0].fieldDefault = true;
+        const std::vector<std::string> inputs{"coordinates", "center", "radiusScale",
+                                              "angleOffset"};
+        for (std::size_t index = 6; index < 9; ++index) {
+            result.sockets[index].typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+            result.sockets[index].typeInputs = inputs;
+        }
+        result.sockets[9].typePolicy = SocketDescriptor::TypePolicy::VectorPromotion;
+        result.sockets[9].typeInputs = {"center", "radius", "angle"};
+        return result;
     }
 
     [[nodiscard]] const NodeDescriptor& descriptor() const override {
@@ -140,11 +150,11 @@ public:
         node_support::uniform(program_, "mode", mode == 0 ? 0 : 1);
         gpu.dispatch(program_, context.width, context.height);
         if (mode == 0) {
-            outputs[0] = ImageHandle{textures_[0], context.width, context.height};
-            outputs[1] = ImageHandle{textures_[1], context.width, context.height};
-            outputs[2] = ImageHandle{textures_[2], context.width, context.height};
+            outputs[0] = ImageHandle{textures_[0], context.width, context.height, ValueType::ScalarField};
+            outputs[1] = ImageHandle{textures_[1], context.width, context.height, ValueType::ScalarField};
+            outputs[2] = ImageHandle{textures_[2], context.width, context.height, ValueType::ScalarField};
         } else {
-            outputs[3] = ImageHandle{textures_[3], context.width, context.height};
+            outputs[3] = ImageHandle{textures_[3], context.width, context.height, ValueType::VectorField};
         }
     }
 

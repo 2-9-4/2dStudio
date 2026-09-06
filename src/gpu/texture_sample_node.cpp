@@ -103,15 +103,19 @@ BorderInput borderInput(std::span<const Value> values, std::size_t index) {
 class TextureSampleNode final : public TextureNode {
 public:
     static NodeDescriptor describe() {
-        return NodeDescriptor{"texture_sample", 1, "Texture Sample", "Coordinates",
-            {{"source", "Source", ValueType::Image2D, SocketDirection::Input},
-             {"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Input, true},
-             {"border", "Border Value", ValueType::AnyVector, SocketDirection::Input, true},
-             {"sampled", "Sampled", ValueType::Image2D, SocketDirection::Output}},
+        auto result = NodeDescriptor{"texture_sample", 1, "Texture Sample", "Coordinates",
+            {{"source", "Source", SocketContract::AnyField, SocketDirection::Input},
+             {"coordinates", "Coordinates", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"border", "Border Value", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"sampled", "Sampled", SocketContract::AnyField, SocketDirection::Output}},
             {{"sampling", "Sampling", 1.0F, 0.0F, 1.0F, ParameterDescriptor::Control::Enum,
               {"Nearest", "Linear"}},
              {"addressMode", "Address Mode", 0.0F, 0.0F, 3.0F, ParameterDescriptor::Control::Enum,
               {"Clamp", "Repeat", "Mirror", "Border"}}}};
+        result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+        result.sockets.back().typeInputs = {"source"};
+        result.sockets[1].fieldDefault = true;
+        return result;
     }
 
     const NodeDescriptor& descriptor() const override {
@@ -140,7 +144,7 @@ public:
         uniform(program_, "addressMode", std::clamp(static_cast<int>(parameter(parameters_, "addressMode", 0.0F)), 0, 3));
         glBindImageTexture(0, texture_, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
         gpu.dispatch(program_, context.width, context.height);
-        outputs[0] = ImageHandle{texture_, context.width, context.height};
+        outputs[0] = ImageHandle{texture_, context.width, context.height, source.semanticType};
     }
 };
 

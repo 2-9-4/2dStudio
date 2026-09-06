@@ -64,9 +64,26 @@ public:
 
     ShaderValue inputAt(std::string_view socket, std::string_view uvExpression,
                         std::string_view parameterKey, float fallback) override {
-        const auto& frame = frames_.back();
-        const auto* link = inputLink(frame.node->id, socket);
-        if (link) return lower(link->fromNode, link->fromSocket, std::string(uvExpression));
+        const auto* frameNode = frames_.back().node;
+        const auto* link = inputLink(frameNode->id, socket);
+        if (link) {
+            auto value = lower(link->fromNode, link->fromSocket, std::string(uvExpression));
+            NodeDescriptor storage;
+            const auto* descriptor = resolveSubgraphBodyDescriptor(
+                definition_, *frameNode, registry_, storage);
+            const auto sourceType = inferredSemanticType(link->fromNode, link->fromSocket);
+            const auto targetType = descriptor
+                ? resolveInputType(*descriptor, socket, sourceType,
+                    [&](std::string_view outputKey) -> std::optional<ValueType> {
+                        return inferredSemanticType(frameNode->id, outputKey);
+                    })
+                : sourceType;
+            const auto coercion = coercionBetween(sourceType, targetType);
+            if (!coercion)
+                throw std::runtime_error("Simulation edge cannot convert " +
+                    toString(sourceType) + " to " + toString(targetType));
+            return coerceShaderValue(std::move(value), *coercion);
+        }
         return parameter(parameterKey, fallback);
     }
 
@@ -256,29 +273,41 @@ private:
         return "result";
     }
 
-    ShaderValueType inferredType(NodeId id, std::string_view socket) const {
+    ValueType inferredSemanticType(NodeId id, std::string_view socket) const {
         const auto found = nodes_.find(id);
-        if (found == nodes_.end()) return ShaderValueType::Scalar;
+        if (found == nodes_.end()) return ValueType::Float;
         const auto& node = *found->second;
-        if (node.type == "simulation_previous_state" && socket == "state")
-            return ShaderValueType::Vec2;
-        if (node.type == "laplacian") {
-            const auto* link = inputLink(id, "value");
-            return link ? inferredType(link->fromNode, link->fromSocket)
-                        : ShaderValueType::Scalar;
-        }
         NodeDescriptor storage;
         if (const auto* descriptor = resolveSubgraphBodyDescriptor(definition_, node, registry_, storage)) {
             const auto output = std::ranges::find_if(descriptor->sockets, [&](const auto& item) {
                 return item.key == socket && item.direction == SocketDirection::Output;
             });
-            if (output != descriptor->sockets.end()) {
-                if (output->type == ValueType::Vec2 || output->type == ValueType::AnyVector)
-                    return ShaderValueType::Vec2;
-                if (output->type == ValueType::Image2D) return ShaderValueType::Vec4;
-            }
+            if (output != descriptor->sockets.end())
+                return resolveOutputType(*descriptor, *output,
+                    [&](std::string_view inputKey) -> std::optional<ValueType> {
+                        if (const auto* link = inputLink(id, inputKey))
+                            return inferredSemanticType(link->fromNode, link->fromSocket);
+                        const auto input = std::ranges::find_if(descriptor->sockets,
+                            [&](const auto& item) {
+                                return item.key == inputKey &&
+                                       item.direction == SocketDirection::Input;
+                            });
+                        if (input == descriptor->sockets.end()) return std::nullopt;
+                        auto type = disconnectedType(input->contract);
+                        if (input->fieldDefault)
+                            type = fieldTypeForWidth(componentCount(type));
+                        return type;
+                    });
         }
-        return ShaderValueType::Scalar;
+        return ValueType::Float;
+    }
+
+    ShaderValueType inferredType(NodeId id, std::string_view socket) const {
+        switch (componentCount(inferredSemanticType(id, socket))) {
+        case 2: return ShaderValueType::Vec2;
+        case 4: return ShaderValueType::Vec4;
+        default: return ShaderValueType::Scalar;
+        }
     }
 
     const SubgraphInterfaceItem* interfaceItem(std::string_view key) const {
@@ -395,14 +424,28 @@ public:
         }
         glUseProgram(outputProgram_); bindTexture(0, state_[index_]);
         for (std::size_t output = 0; output < output_.size(); ++output)
-            if (requiredOutputs_[output])
+            if (requiredOutputs_[output]) {
                 glBindImageTexture(static_cast<GLuint>(output), output_[output], 0, GL_FALSE, 0,
                                    GL_WRITE_ONLY, GL_RGBA16F);
+            }
         gpu.dispatch(outputProgram_, context.width, context.height);
         for (std::size_t output = 0; output < outputs.size() && output < output_.size(); ++output) {
-            if (requiredOutputs_[output])
-                outputs[output] = ImageHandle{output_[output], context.width, context.height};
-            else outputs[output] = Value{};
+            if (requiredOutputs_[output]) {
+                const auto& interface = definition_.interface;
+                const auto item = std::ranges::find_if(interface, [](const auto& candidate) {
+                    return candidate.kind == SubgraphInterfaceKind::Output;
+                });
+                ValueType semantic = ValueType::ColorImage;
+                std::size_t outputOffset = 0;
+                for (auto current = item; current != interface.end(); ++current) {
+                    if (current->kind != SubgraphInterfaceKind::Output) continue;
+                    if (outputOffset++ != output) continue;
+                    semantic = fixedType(current->contract).value_or(ValueType::ColorImage);
+                    break;
+                }
+                outputs[output] = ImageHandle{output_[output], context.width, context.height,
+                                              semantic};
+            } else outputs[output] = Value{};
         }
     }
 

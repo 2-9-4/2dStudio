@@ -13,24 +13,37 @@ NOT USED YET
 * **Particle Buffer** — persistent collection of particles containing at minimum position, velocity, age, lifetime, and ID. Proposed new graph/state type.
 * **Histogram** — fixed-size array of scalar bin counts. Proposed auxiliary type for analysis nodes.
 
-## Socket colors and type indicators
+## Socket contracts, colors, and type indicators
 
-Every input and output pin renders one small filled square per concrete type it accepts, using the
-per-type color below. A union socket (Numeric / Vector Numeric) renders one square per member so
-the acceptable inputs are visible at a glance; a single-type socket renders exactly one square.
+`ValueType` is always one concrete semantic type. `SocketContract` separately declares which
+concrete types a pin admits. Do not encode a union in `ValueType`, and do not mistake the fact that
+a widening conversion exists for permission to connect it to a semantically narrower contract.
 
-| ValueType | Accepts | Square color | Tooltip |
-|---|---|---|---|
-| `Float` | Float | blue | `Float — Input` / `Output` |
-| `Vec2` | Float2 / Vector | teal | `Float2 / Vector — Input` / `Output` |
-| `Image2D` | per-pixel field | amber | `Image (per-pixel) — Input` / `Output` |
-| `AnyNumeric` | Float, per-pixel field | blue + amber | `Float \| Image (per-pixel) — Input` |
-| `AnyVector` | Float, Float2 / Vector, per-pixel field | blue + teal + amber | `Float \| Float2 / Vector \| Image (per-pixel) — Input` |
+| Concrete `ValueType` | Meaning | Square color |
+|---|---|---|
+| `Float` | one frame-wide scalar | blue |
+| `Vec2` | one frame-wide XY pair | teal |
+| `ScalarField` | one scalar per pixel (R) | purple |
+| `VectorField` | one XY pair per pixel (RG) | green |
+| `ColorImage` | one RGBA color per pixel | amber |
 
-Hovering a pin shows its accepted types plus direction; hovering a wire shows the type it carries.
-`Image2D` is the GPU storage type for every per-pixel value: a socket's contract gives it meaning
-(scalar field = R, vector field = RG, color = RGBA), so all three share the amber color and the
-"per-pixel" tooltip wording.
+| `SocketContract` | Accepted concrete types |
+|---|---|
+| `FloatOnly` | Float |
+| `Vec2Only` | Vec2 |
+| `ScalarFieldOnly` | Scalar Field |
+| `VectorFieldOnly` | Vector Field |
+| `ColorImageOnly` | Color Image |
+| `Numeric` | Float, Scalar Field |
+| `VectorNumeric` | Vec2, Vector Field |
+| `AnyField` | Scalar Field, Vector Field, Color Image |
+| `AnyImageValue` | all five concrete types |
+
+Every pin renders one square per accepted concrete type. A resolved output renders just its actual
+type. Hovering a pin lists its contract members and direction; hovering a wire names its concrete
+source and destination types. Widening wires are orange and thicker, with the exact conversion in
+their tooltip. Invalid drag targets are red and explain the rejected source type and target
+contract.
 
 ### Materialized outputs and wires
 
@@ -41,9 +54,7 @@ anything that has actually run states its result with certainty; when a node has
 falls back to the promotion rules below. Subgraph body nodes resolve by promotion only (their
 body-local ids cannot be correlated with root runtime values).
 
-Union outputs still show the full accept set while their type is undetermined. When the strong
-`Image2D` subtyping the roadmap calls for arrives, these resolved lookups gain a fourth concrete
-type and the promotion rules extend to it unchanged.
+Union outputs show the full accept set only while their concrete type is undetermined.
 
 ## Type aliases
 
@@ -66,6 +77,38 @@ Numeric inputs broadcast naturally. A Float combined with a Scalar Field is trea
 The equivalent rule applies to Float2 and Vector Field.
 
 Image-Like filters preserve the source type unless otherwise specified. Scalar operations applied to Vector Fields or Color Images operate component-wise unless explicitly defined otherwise.
+
+Resolution is per output socket. `Fixed`, `NumericPromotion`, `VectorPromotion`, `WidestValue`,
+and `PreserveInput` policies identify both the rule and the width-driving input keys. A separate
+`fieldInputs` list lets a condition or factor make the result spatial without changing its
+component width; unrelated inputs and outputs must never leak into the result type. Root compilation, root UI,
+subgraph UI, validation, and simulation shader lowering all use `resolveOutputType`.
+
+Admissibility is checked first against the destination `SocketContract`. Only then may compilation
+plan one of these lossless widenings:
+
+| Source | Destination | Shader value |
+|---|---|---|
+| Float | Vec2 | `(s, s)` |
+| Float | Scalar Field | `s`, kept as a uniform expression until materialization |
+| Float | Vector Field | `(s, s)` |
+| Float | Color Image | `(s, s, s, 1)` |
+| Vec2 | Vector Field | `(x, y)` |
+| Vec2 | Color Image | `(x, y, 0, 1)` |
+| Scalar Field | Vector Field | `(s, s)` |
+| Scalar Field | Color Image | `(s, s, s, 1)` |
+| Vector Field | Color Image | `(x, y, 0, 1)` |
+
+No implicit narrowing is legal. In particular, Color Image to Scalar Field or Vector Field must
+use an explicit `Color to R`, `Color to Luminance`, or `Color to RG` node. Constants widened into
+field expressions remain uniforms; coercion alone does not allocate an intermediate texture.
+`CompileResult` records the concrete type of every input/output socket and the exact coercion of
+every edge. Materialized `ImageHandle` values retain that semantic type independently of their GPU
+texture format.
+
+These widenings are structural channel expansion, not semantic interpretation: Vector Field to
+Color Image places X/Y in R/G with B=0 and A=1; it is not a color-space conversion, normal-map
+encoding, magnitude, or claim that the vector is meaningful RGB.
 
 ## Coordinate convention
 
@@ -95,15 +138,16 @@ convolution.
 Lowering works with concrete runtime boundary values:
 
 * `Float` and `Vector` become scalar or `vec2` uniforms.
-* `Field` becomes one sampler and is sampled automatically.
+* Scalar Field, Vector Field, and Color Image become one typed sampler and are sampled at their
+  semantic width.
 * `Empty` prevents generated dispatch until the source becomes available.
 * Values produced inside a region remain expressions and are substituted directly.
 
 The `ShaderValue` width (`Scalar`, `Vec2`, or `Vec4`) is independent of its constant/field
 category. Use `scalar`, `vector`, or `color` when a socket has a fixed semantic width, and use
 the raw `input` value plus `promotedShaderType` for component-wise operations whose width follows
-their operands. `convertShaderValue` implements scalar broadcast, vector extension, and `.x`/`.xy`
-projection consistently.
+their operands. `convertShaderValue` implements the central widening table. It must not perform
+`.x`/`.xy` projection; semantic narrowing belongs in an explicit graph node.
 
 Field-ness is derived by the lowering infrastructure. An emitted value is a field when any value
 it uses is a field. Position-dependent generators set `NodeDescriptor::producedField`; ordinary

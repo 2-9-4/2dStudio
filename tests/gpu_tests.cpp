@@ -204,6 +204,45 @@ TEST_CASE("simulation shader prunes interfaces and lowers one vec2 state neighbo
     REQUIRE(neighborhoodSamples == 8);
 }
 
+TEST_CASE("simulation shader uses the central widest-edge coercion") {
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    SubgraphDefinition definition;
+    definition.id = "test.simulation.widening";
+    definition.name = "Simulation Widening";
+    definition.execution = SubgraphExecution::Simulation;
+    definition.interface = {{"image", "Image", SubgraphInterfaceKind::Output,
+                             ValueType::ScalarField}};
+    auto addNode = [&](std::string type, nlohmann::json parameters = nlohmann::json::object()) {
+        const auto id = definition.body.addNode(std::move(type));
+        definition.body.findNode(id)->parameters = std::move(parameters);
+        return id;
+    };
+    const auto constant = addNode("float", {{"value", 0.5F}});
+    const auto initial = addNode("simulation_initial_state");
+    const auto previous = addNode("simulation_previous_state");
+    const auto channels = addNode("simulation_channel");
+    const auto mix = addNode("mix");
+    const auto separate = addNode("separate_vector");
+    const auto next = addNode("simulation_next_state");
+    const auto output = addNode("subgraph_output", {{"key", "image"}});
+    definition.body.addLink(constant, "value", initial, "a");
+    definition.body.addLink(constant, "value", initial, "b");
+    definition.body.addLink(previous, "state", channels, "state");
+    definition.body.addLink(channels, "a", mix, "a");
+    definition.body.addLink(previous, "state", mix, "b");
+    definition.body.addLink(mix, "result", separate, "value");
+    definition.body.addLink(separate, "x", next, "a");
+    definition.body.addLink(channels, "b", next, "b");
+    definition.body.addLink(next, "a", output, "value");
+
+    const auto errors = validateSubgraph(definition, registry);
+    INFO(nlohmann::json(errors).dump());
+    REQUIRE(errors.empty());
+    const auto shader = generateSimulationShader(definition, false);
+    REQUIRE(shader.find("vec2(v_" + std::to_string(channels) + "_a)") != std::string::npos);
+ }
+
 TEST_CASE("shader planner specializes and fuses a linear image chain") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph;
@@ -245,17 +284,44 @@ TEST_CASE("shader planner specializes and fuses a linear image chain") {
     REQUIRE(operationEdit.specializationKey != originalSpecialization);
 }
 
-TEST_CASE("shared node lowering follows the same contract for Scalar and Vec4 planners") {
+TEST_CASE("shared scalar node lowering follows one contract") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     const auto scalar = lowerMathThresholdSelect(registry, ShaderValueType::Scalar);
-    const auto vector = lowerMathThresholdSelect(registry, ShaderValueType::Vec4);
-    REQUIRE(scalar.trace == vector.trace);
     REQUIRE(scalar.expressions[0].find('+') != std::string::npos);
-    REQUIRE(vector.expressions[0].find('+') != std::string::npos);
     REQUIRE(scalar.expressions[1].find("step(") != std::string::npos);
-    REQUIRE(vector.expressions[1].find("step(") != std::string::npos);
     REQUIRE(scalar.expressions[2].find('?') != std::string::npos);
-    REQUIRE(vector.expressions[2].find(".x") != std::string::npos);
+}
+
+TEST_CASE("central widening emits canonical channels and keeps constants uniform-backed") {
+    REQUIRE(convertShaderValue({ShaderValueType::Scalar, "s"}, ShaderValueType::Vec2) ==
+            "vec2(s)");
+    REQUIRE(convertShaderValue({ShaderValueType::Scalar, "s"}, ShaderValueType::Vec4) ==
+            "vec4(s,s,s,1.0)");
+    REQUIRE(convertShaderValue({ShaderValueType::Vec2, "v"}, ShaderValueType::Vec4) ==
+            "vec4(v,0.0,1.0)");
+    REQUIRE_THROWS_AS(convertShaderValue({ShaderValueType::Vec4, "c"},
+                                         ShaderValueType::Scalar), std::invalid_argument);
+    REQUIRE_THROWS_AS(convertShaderValue({ShaderValueType::Vec4, "c"},
+                                         ShaderValueType::Vec2), std::invalid_argument);
+
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph;
+    const auto scalar = graph.addNode("float");
+    const auto coordinates = graph.addNode("coordinates");
+    const auto mix = graph.addNode("mix");
+    graph.addLink(scalar, "value", mix, "a");
+    graph.addLink(coordinates, "coordinates", mix, "b");
+    const auto compiled = graph.compile(registry);
+    INFO(nlohmann::json(compiled.errors).dump());
+    REQUIRE(compiled.valid);
+    REQUIRE(compiled.socketType(mix, "result") == ValueType::VectorField);
+    const auto region = lowerShaderRegion(graph, registry, compiled, {mix});
+    const auto shader = generateComputeShader(region, {mix});
+    REQUIRE(std::ranges::count(shader.inputs, ShaderInputKind::Float,
+                               &ShaderInputRequirement::kind) >= 1);
+    REQUIRE(std::ranges::count(shader.inputs, ShaderInputKind::Field,
+                               &ShaderInputRequirement::kind) == 1);
+    REQUIRE(shader.source.find("vec2(inputFloat_") != std::string::npos);
 }
 
 TEST_CASE("general shader planner fuses threshold and select and preserves multi-output sockets") {
@@ -267,17 +333,22 @@ TEST_CASE("general shader planner fuses threshold and select and preserves multi
     }
     Graph graph;
     const auto source = graph.addNode("image");
+    const auto red = graph.addNode("color_r");
     const auto threshold = graph.addNode("threshold");
     const auto select = graph.addNode("select");
-    graph.addLink(source, "image", threshold, "value");
+    graph.addLink(source, "image", red, "color");
+    graph.addLink(red, "value", threshold, "value");
     graph.addLink(threshold, "result", select, "condition");
     graph.addLink(source, "image", select, "ifTrue");
-    const auto regions = planShaderRegions(graph, registry, graph.compile(registry), 16, 1024);
+    const auto compiled = graph.compile(registry);
+    INFO(nlohmann::json(compiled.errors).dump());
+    REQUIRE(compiled.valid);
+    const auto regions = planShaderRegions(graph, registry, compiled, 16, 1024);
     REQUIRE(regions.size() == 1);
-    REQUIRE(regions.front().nodes == std::vector<NodeId>{threshold, select});
+    REQUIRE(regions.front().nodes == std::vector<NodeId>{red, threshold, select});
     const auto generated = generateComputeShader(regions.front(), {select});
     REQUIRE(generated.source.find("step(") != std::string::npos);
-    REQUIRE(generated.source.find("step(vec4(") != std::string::npos);
+    REQUIRE(generated.source.find(".r") != std::string::npos);
 
     Graph coordinatesGraph;
     const auto coordinates = coordinatesGraph.addNode("coordinates");
@@ -461,16 +532,10 @@ TEST_CASE("requiresImage reports the contributing node for constant inputs") {
     const auto convolution = graph.addNode("convolution");
     graph.addLink(constant, "result", convolution, "image");
     const auto compiled = graph.compile(registry);
-    REQUIRE(compiled.valid);
-
-    const auto invalid = lowerShaderRegion(graph, registry, compiled, {convolution},
-        [](NodeId, std::string_view) { return ShaderInputKind::Float; });
-    REQUIRE(invalid.diagnosticNode == convolution);
-    REQUIRE(invalid.diagnostic.find("requires a field image") != std::string::npos);
-
-    const auto valid = lowerShaderRegion(graph, registry, compiled, {convolution},
-        [](NodeId, std::string_view) { return ShaderInputKind::Field; });
-    REQUIRE(valid.diagnostic.empty());
+    REQUIRE_FALSE(compiled.valid);
+    REQUIRE(std::ranges::any_of(compiled.errors, [](const auto& error) {
+        return error.find("semantically inadmissible") != std::string::npos;
+    }));
 }
 
 TEST_CASE("native convolution escape hatch still rejects a constant source") {
@@ -493,7 +558,7 @@ TEST_CASE("native convolution escape hatch still rejects a constant source") {
 TEST_CASE("shader planner keeps branch and join boundaries materialized") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph;
-    const auto source = graph.addNode("image");
+    const auto source = graph.addNode("reaction_diffusion");
     const auto branch = graph.addNode("math");
     const auto left = graph.addNode("math");
     const auto right = graph.addNode("math");
@@ -566,7 +631,7 @@ TEST_CASE("image input exposes a PNG-backed image output") {
     REQUIRE(descriptor->category == "Input");
     REQUIRE(descriptor->sockets.size() == 1);
     REQUIRE(descriptor->sockets[0].direction == SocketDirection::Output);
-    REQUIRE(descriptor->sockets[0].type == ValueType::Image2D);
+    REQUIRE(descriptor->sockets[0].contract == exactContract(ValueType::ColorImage));
 }
 
 TEST_CASE("image input loads PNG pixels with the graph image orientation") {
@@ -658,7 +723,7 @@ TEST_CASE("procedural node descriptors expose safe controls and vector sockets")
     REQUIRE(sample != nullptr);
     REQUIRE(sample->sockets.size() == 4);
     REQUIRE(sample->sockets[1].key == "coordinates");
-    REQUIRE(sample->sockets[1].type == ValueType::AnyVector);
+    REQUIRE(sample->sockets[1].contract == SocketContract::VectorNumeric);
 
     for (const auto type : {"texture_sample", "repeat_fold", "worley_noise", "gradient", "wave"}) {
         const auto* descriptor = registry.descriptor(type);
@@ -695,11 +760,11 @@ TEST_CASE("Resolution exposes render dimensions as semantic constants") {
     REQUIRE(descriptor != nullptr);
     REQUIRE(descriptor->sockets.size() == 3);
     REQUIRE(descriptor->sockets[0].key == "resolution");
-    REQUIRE(descriptor->sockets[0].type == ValueType::Vec2);
+    REQUIRE(descriptor->sockets[0].contract == exactContract(ValueType::Vec2));
     REQUIRE(descriptor->sockets[1].key == "pixelSize");
-    REQUIRE(descriptor->sockets[1].type == ValueType::Vec2);
+    REQUIRE(descriptor->sockets[1].contract == exactContract(ValueType::Vec2));
     REQUIRE(descriptor->sockets[2].key == "aspectRatio");
-    REQUIRE(descriptor->sockets[2].type == ValueType::Float);
+    REQUIRE(descriptor->sockets[2].contract == exactContract(ValueType::Float));
 
     auto node = registry.create("resolution");
     std::array<Value, 3> values;
@@ -719,8 +784,8 @@ TEST_CASE("Table maps promoted indices through editable addressed values") {
     const auto* descriptor = registry.descriptor("table");
     REQUIRE(descriptor != nullptr);
     REQUIRE(descriptor->lowerable);
-    REQUIRE(descriptor->sockets[0].type == ValueType::AnyNumeric);
-    REQUIRE(descriptor->sockets[1].type == ValueType::AnyNumeric);
+    REQUIRE(descriptor->sockets[0].contract == SocketContract::Numeric);
+    REQUIRE(descriptor->sockets[1].contract == SocketContract::Numeric);
 
     auto node = registry.create("table");
     node->setParameters({{"values", {0.0F, 10.0F, 20.0F}}, {"sampling", 1.0F},
@@ -754,10 +819,10 @@ TEST_CASE("Bit Test safely queries Float-backed masks for constants and fields")
     REQUIRE(descriptor->lowerable);
     REQUIRE(descriptor->sockets.size() == 3);
     REQUIRE(descriptor->sockets[0].key == "mask");
-    REQUIRE(descriptor->sockets[0].type == ValueType::Float);
+    REQUIRE(descriptor->sockets[0].contract == exactContract(ValueType::Float));
     REQUIRE(descriptor->sockets[1].key == "bit");
-    REQUIRE(descriptor->sockets[1].type == ValueType::AnyNumeric);
-    REQUIRE(descriptor->sockets[2].type == ValueType::AnyNumeric);
+    REQUIRE(descriptor->sockets[1].contract == SocketContract::Numeric);
+    REQUIRE(descriptor->sockets[2].contract == SocketContract::Numeric);
 
     auto node = registry.create("bit_test");
     CapturingLoweringContext lowering(ShaderValueType::Scalar);
@@ -807,11 +872,11 @@ TEST_CASE("Deterministic Hash exposes typed outputs and fixed integer lowering")
     REQUIRE(descriptor != nullptr);
     REQUIRE(descriptor->lowerable);
     REQUIRE(descriptor->sockets.size() == 5);
-    REQUIRE(descriptor->sockets[0].type == ValueType::AnyVector);
-    REQUIRE(descriptor->sockets[1].type == ValueType::Float);
-    REQUIRE(descriptor->sockets[2].type == ValueType::Float);
-    REQUIRE(descriptor->sockets[3].type == ValueType::AnyNumeric);
-    REQUIRE(descriptor->sockets[4].type == ValueType::AnyVector);
+    REQUIRE(descriptor->sockets[0].contract == SocketContract::VectorNumeric);
+    REQUIRE(descriptor->sockets[1].contract == exactContract(ValueType::Float));
+    REQUIRE(descriptor->sockets[2].contract == exactContract(ValueType::Float));
+    REQUIRE(descriptor->sockets[3].contract == SocketContract::Numeric);
+    REQUIRE(descriptor->sockets[4].contract == SocketContract::VectorNumeric);
 
     auto node = registry.create("hash");
     node->setParameters({{"inputMode", 1.0F}});
@@ -833,7 +898,7 @@ TEST_CASE("Deterministic Hash exposes typed outputs and fixed integer lowering")
     REQUIRE(rawLowering.emitted.name.find("floatBitsToUint(position.x)") != std::string::npos);
 }
 
-TEST_CASE("Hash promotes a vector field and materializes a disconnected position for Output") {
+TEST_CASE("Hash promotes a vector field while disconnected hashes stay constant") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph;
     const auto coordinates = graph.addNode("coordinates");
@@ -841,7 +906,7 @@ TEST_CASE("Hash promotes a vector field and materializes a disconnected position
     const auto constantHash = graph.addNode("hash");
     const auto output = graph.addNode("output");
     graph.addLink(coordinates, "coordinates", fieldHash, "position");
-    graph.addLink(constantHash, "scalar", output, "image");
+    graph.addLink(fieldHash, "scalar", output, "image");
     const auto compiled = graph.compile(registry);
     REQUIRE(compiled.valid);
     const auto regions = planShaderRegions(graph, registry, compiled, 16, 1024);
@@ -859,7 +924,7 @@ TEST_CASE("Hash promotes a vector field and materializes a disconnected position
         return output.socket == "scalar";
     });
     REQUIRE(scalarOutput != constantRegion->candidateOutputs.end());
-    REQUIRE(scalarOutput->requiresImage);
+    REQUIRE_FALSE(scalarOutput->requiresImage);
 }
 
 TEST_CASE("reaction multiplier inputs accept both scalar and image values") {
@@ -867,10 +932,10 @@ TEST_CASE("reaction multiplier inputs accept both scalar and image values") {
     const auto* descriptor = registry.descriptor("reaction_diffusion");
     REQUIRE(descriptor != nullptr);
     const auto typeFor = [&](std::string_view key) {
-        return std::ranges::find(descriptor->sockets, key, &SocketDescriptor::key)->type;
+        return std::ranges::find(descriptor->sockets, key, &SocketDescriptor::key)->contract;
     };
-    REQUIRE(typeFor("feedMultiplier") == ValueType::AnyNumeric);
-    REQUIRE(typeFor("killMultiplier") == ValueType::AnyNumeric);
+    REQUIRE(typeFor("feedMultiplier") == SocketContract::Numeric);
+    REQUIRE(typeFor("killMultiplier") == SocketContract::Numeric);
 
     Graph graph;
     const auto feed = graph.addNode("float");
@@ -887,8 +952,8 @@ TEST_CASE("float preview accepts and passes through float values") {
     REQUIRE(descriptor != nullptr);
     REQUIRE(descriptor->displayName == "Float Preview");
     REQUIRE(descriptor->sockets.size() == 2);
-    REQUIRE(descriptor->sockets[0].type == ValueType::Float);
-    REQUIRE(descriptor->sockets[1].type == ValueType::Float);
+    REQUIRE(descriptor->sockets[0].contract == exactContract(ValueType::Float));
+    REQUIRE(descriptor->sockets[1].contract == exactContract(ValueType::Float));
 
     Graph graph;
     const auto source = graph.addNode("float");
@@ -897,14 +962,14 @@ TEST_CASE("float preview accepts and passes through float values") {
     REQUIRE(graph.compile(registry).valid);
 }
 
-TEST_CASE("image invert exposes image-only input and output") {
+TEST_CASE("image invert exposes AnyField input and output") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     const auto* descriptor = registry.descriptor("invert");
     REQUIRE(descriptor != nullptr);
     REQUIRE(descriptor->displayName == "Image Invert");
     REQUIRE(descriptor->sockets.size() == 2);
-    REQUIRE(descriptor->sockets[0].type == ValueType::Image2D);
-    REQUIRE(descriptor->sockets[1].type == ValueType::Image2D);
+    REQUIRE(descriptor->sockets[0].contract == SocketContract::AnyField);
+    REQUIRE(descriptor->sockets[1].contract == SocketContract::AnyField);
 
     Graph graph;
     const auto source = graph.addNode("perlin");
@@ -933,7 +998,7 @@ TEST_CASE("spatial simulation operators are ordinary registered nodes") {
     REQUIRE(coordinates->category == "Input");
     REQUIRE(coordinates->sockets.size() == 1);
     REQUIRE(coordinates->sockets[0].key == "coordinates");
-    REQUIRE(coordinates->sockets[0].type == ValueType::AnyVector);
+    REQUIRE(coordinates->sockets[0].contract == SocketContract::VectorFieldOnly);
     REQUIRE(coordinates->parameters.size() == 1);
     REQUIRE(coordinates->parameters[0].key == "pixels");
 
@@ -943,12 +1008,12 @@ TEST_CASE("spatial simulation operators are ordinary registered nodes") {
     REQUIRE(laplacian->category == "Filter");
     REQUIRE(laplacian->sockets.size() == 3);
     REQUIRE(laplacian->sockets[0].key == "value");
-    REQUIRE(laplacian->sockets[0].type == ValueType::AnyVector);
+    REQUIRE(laplacian->sockets[0].contract == SocketContract::AnyField);
     REQUIRE(laplacian->sockets[1].key == "scale");
-    REQUIRE(laplacian->sockets[1].type == ValueType::Float);
+    REQUIRE(laplacian->sockets[1].contract == exactContract(ValueType::Float));
     REQUIRE(laplacian->sockets[1].optional);
     REQUIRE(laplacian->sockets[2].key == "result");
-    REQUIRE(laplacian->sockets[2].type == ValueType::AnyVector);
+    REQUIRE(laplacian->sockets[2].contract == SocketContract::AnyField);
     REQUIRE(laplacian->parameters.size() == 1);
     REQUIRE(laplacian->parameters[0].defaultValue == 1.0F);
     REQUIRE(laplacian->parameters[0].minimum == .25F);
@@ -1532,7 +1597,7 @@ TEST_CASE("text_test fusion matches solo lowering", "[.][text-test]") {
         if (error > 1e-4F) ++differing;
     }
     // Fused execution must reproduce solo lowered regions exactly, including
-    // AnyVector field producers such as transform coordinates and Worley positions.
+    // VectorNumeric field producers such as transform coordinates and Worley positions.
     REQUIRE(differing == 0);
 }
 

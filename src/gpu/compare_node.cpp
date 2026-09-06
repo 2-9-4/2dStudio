@@ -42,10 +42,10 @@ class CompareNode final : public node_support::ParameterNode {
 public:
     static NodeDescriptor describe() {
         auto result = NodeDescriptor{"compare", 1, "Compare", "Math",
-            {{"a", "A", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"b", "B", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"c", "C", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
+            {{"a", "A", SocketContract::Numeric, SocketDirection::Input, true},
+             {"b", "B", SocketContract::Numeric, SocketDirection::Input, true},
+             {"c", "C", SocketContract::Numeric, SocketDirection::Input, true},
+             {"result", "Result", SocketContract::Numeric, SocketDirection::Output}},
             {{"mode", "Operation", 0.0F, 0.0F, 11.0F, ParameterDescriptor::Control::Enum,
               {"Less Than", "Less Than Equal", "Greater Than", "Greater Than Equal",
                "Approximately Equal", "Not Approximately Equal", "Between Inclusive",

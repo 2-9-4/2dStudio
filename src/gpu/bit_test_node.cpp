@@ -18,9 +18,9 @@ class BitTestNode final : public node_support::ParameterNode {
 public:
     static NodeDescriptor describe() {
         auto result = NodeDescriptor{"bit_test", 1, "Bit Test / Integer Mask", "Math",
-            {{"mask", "Mask", ValueType::Float, SocketDirection::Input, true, true},
-             {"bit", "Bit", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
+            {{"mask", "Mask", ValueType::Float, SocketDirection::Input, true},
+             {"bit", "Bit", SocketContract::Numeric, SocketDirection::Input, true},
+             {"result", "Result", SocketContract::Numeric, SocketDirection::Output}},
             {{"mask", "Mask", 0.0F, 0.0F, kMaximumMask,
               ParameterDescriptor::Control::Integer},
              {"bit", "Bit", 0.0F, 0.0F, kMaximumBit,

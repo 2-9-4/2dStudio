@@ -68,19 +68,23 @@ float gradientValue(int mode, Vec2 coordinates, Vec2 center, float angle, float 
 class GradientNode final : public TextureNode {
 public:
     static NodeDescriptor describe() {
-        return {"gradient", 1, "Gradient", "Generator",
-            {{"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Input, true},
-             {"center", "Center", ValueType::AnyVector, SocketDirection::Input, true},
-             {"angle", "Angle", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"scale", "Scale", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"offset", "Offset", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"value", "Value", ValueType::AnyNumeric, SocketDirection::Output}},
+        auto result = NodeDescriptor{"gradient", 1, "Gradient", "Generator",
+            {{"coordinates", "Coordinates", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"center", "Center", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"angle", "Angle", SocketContract::Numeric, SocketDirection::Input, true},
+             {"scale", "Scale", SocketContract::Numeric, SocketDirection::Input, true},
+             {"offset", "Offset", SocketContract::Numeric, SocketDirection::Input, true},
+             {"value", "Value", SocketContract::Numeric, SocketDirection::Output}},
             {{"mode", "Mode", 0.0F, 0.0F, 4.0F, ParameterDescriptor::Control::Enum,
               {"Linear", "Reflected Linear", "Radial", "Angular", "Diamond"}},
              {"clamp", "Clamp", 0.0F, 0.0F, 1.0F, ParameterDescriptor::Control::Boolean},
              {"angle", "Angle", 0.0F, -20.0F, 20.0F},
              {"scale", "Scale", 1.0F, -100.0F, 100.0F},
              {"offset", "Offset", 0.0F, -100.0F, 100.0F}}};
+        result.sockets[0].fieldDefault = true;
+        result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+        result.sockets.back().typeInputs = {"coordinates", "center", "angle", "scale", "offset"};
+        return result;
     }
 
     [[nodiscard]] const NodeDescriptor& descriptor() const override {
@@ -118,7 +122,7 @@ public:
         node_support::uniform(program_, "mode", std::clamp(mode, 0, 4));
         node_support::uniform(program_, "clampOutput", clampOutput ? 1 : 0);
         gpu.dispatch(program_, context.width, context.height);
-        outputs[0] = ImageHandle{texture_, context.width, context.height};
+        outputs[0] = ImageHandle{texture_, context.width, context.height, ValueType::ScalarField};
     }
 };
 

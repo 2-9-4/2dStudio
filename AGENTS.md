@@ -23,4 +23,23 @@ and its hard limits. A `layoutGraph` change is not done until
 shows no regression in exact/packed vs far offenders. Layout is order-seeded from current
 positions, so evaluate after several passes.
 
+Semantic graph typing uses concrete `ValueType` values (`Float`, `Vec2`, `ScalarField`,
+`VectorField`, `ColorImage`) and separate `SocketContract` admissibility. Resolve polymorphic
+types per socket through the shared `resolveOutputType`; root compilation, UI previews,
+subgraph validation, and simulation lowering must not grow independent promotion logic. Plan
+only the lossless coercions in `types.hpp`; Color Image narrowing is always an explicit node.
+Preserve each materialized `ImageHandle::semanticType`, keep widened constants as uniforms until
+a real materialization boundary, and show coercing versus invalid links consistently on every
+canvas.
+
+`SocketDescriptor` historically accumulated positional boolean constructor arguments that could
+silently reinterpret descriptors. Its constructor now keeps only positional `optional`; construct
+the socket and then assign named fields such as `requiresImage`, `fieldDefault`, `typePolicy`, and
+`typeInputs`/`fieldInputs`. Do not add more positional flags. Project formats before 4 used a generic image type; migration inserts explicit
+Color-to-R/RG nodes where those projects previously relied on implicit channel projection.
+
+Simulation lowering is recursive and its frame stack is a `std::vector`. Never retain a reference
+to `frames_.back()` across a recursive `lower`/`input` call: pushing a child frame may reallocate the
+vector and invalidate that reference. Copy the current `NodeRecord*` and any needed values first.
+
 update [AGENTS.md](AGENTS.md) and associated files with whatever required more reading to accomplish your task. REPORT ANY FOOTGUNS/EERGONOMIC ISSUES THAT CAUSED BUGS TO THE USER FOR LATER FIXING

@@ -128,6 +128,7 @@ public:
 
 [[nodiscard]] ShaderValueType promotedShaderType(
     const std::vector<ShaderValue>& values);
+[[nodiscard]] ShaderValue coerceShaderValue(ShaderValue value, Coercion coercion);
 [[nodiscard]] std::string convertShaderValue(const ShaderValue& value,
                                              ShaderValueType type);
 

@@ -15,7 +15,7 @@ submodes, and the special nodes available inside simulation subgraphs.
 
 ### Input
 
-- **Image** (`image`) — Loads a PNG file and outputs it as an image. An empty or invalid
+- **Image** (`image`) — Loads a PNG file and outputs a Color Image. An empty or invalid
   path produces no image.
 - **Float** (`float`) — Outputs a constant scalar value.
 - **Resolution** (`resolution`) — Outputs render `Resolution` (width, height) in pixels,
@@ -29,7 +29,8 @@ submodes, and the special nodes available inside simulation subgraphs.
 
 - **Perlin Noise** (`perlin`) — Generates animated fractal noise. Its controls are `Seed`,
   `Scale`, `Octaves`, `Persistence`, `Lacunarity`, `Speed`, `Offset X`, and `Offset Y`.
-  More octaves add detail; persistence controls how quickly successive octaves fade.
+  More octaves add detail; persistence controls how quickly successive octaves fade. Its output
+  is a Scalar Field, not an untyped image.
 
 ### Math and logic
 
@@ -76,14 +77,16 @@ submodes, and the special nodes available inside simulation subgraphs.
   per-pixel vector-field variation and **Pixel Space** for integer cell hashing; the canonical
   cell use is `Hash(floor(position), seed)`.
 
-- **Threshold** (`threshold`) — Converts a value to 0 or 1 depending on whether it is at
-  least the configured threshold.
-- **Select** (`select`) — Outputs `If True` when `Condition` is nonzero; otherwise outputs
-  `If False`.
+- **Threshold** (`threshold`) — Converts a Numeric value to 0 or 1. Float input produces Float;
+  Scalar Field input produces Scalar Field.
+- **Select** (`select`) — Outputs `If True` when its Numeric `Condition` is nonzero; otherwise
+  outputs `If False`. The two `AnyImageValue` branches alone determine the widest output type.
 
 ### Color
 
-- **Mix** (`mix`) — Blends A and B using `Factor`. The blend submodes are:
+- **Mix** (`mix`) — Blends `AnyImageValue` A and B using a Numeric `Factor`. A and B resolve to
+  their common widest semantic type; Factor does not participate in result-width inference. The
+  blend submodes are:
 
   - **Mix** — Ordinary interpolation between A and B.
   - **Add** — A plus B.
@@ -97,14 +100,20 @@ submodes, and the special nodes available inside simulation subgraphs.
   - **Color Burn** — Darkens A using B.
 
 - **Color Ramp** (`color_ramp`) — Maps a scalar value to a gradient between configurable
-  start and end colors. `Low threshold` and `High threshold` define the mapped range.
+  start and end colors. `Low threshold` and `High threshold` define the mapped range. It accepts
+  Numeric input and always outputs a Color Image.
+- **Color to R** (`color_r`) — Explicitly narrows a Color Image to its red Scalar Field.
+- **Color to Luminance** (`color_luminance`) — Explicitly narrows a Color Image to a weighted
+  RGB luminance Scalar Field.
+- **Color to RG** (`color_rg`) — Explicitly narrows a Color Image to an RG Vector Field.
 
 ### Filters and utilities
 
 - **Convolution** (`convolution`) — Applies a configurable 3x3 through 15x15 neighborhood
   kernel, with optional weight normalization, bias, and repeated `Iterations`. Its
   operation submodes are **Convolution** (weighted sum), **Erosion** (minimum over enabled
-  kernel taps), and **Dilation** (maximum over enabled kernel taps).
+  kernel taps), and **Dilation** (maximum over enabled kernel taps). It accepts Any Field and
+  preserves Scalar Field, Vector Field, or Color Image identity.
 
   The preset menu provides:
 
@@ -120,8 +129,12 @@ submodes, and the special nodes available inside simulation subgraphs.
 
 - **Laplacian** (`laplacian`) — Computes a weighted neighborhood difference, useful for
   detecting local structure or implementing reaction-diffusion terms. `Scale` controls the
-  sampling radius; values other than 1 average several radii.
-- **Image Invert** (`invert`) — Inverts RGB while preserving alpha.
+  sampling radius; values other than 1 average several radii. It accepts Any Field and preserves
+  the input's semantic type.
+- **Image Invert** (`invert`) — Accepts Any Field and preserves its semantic type. Scalar and
+  vector inputs are inverted component-wise; Color Image RGB is inverted while alpha is preserved.
+- **Texture Sample** (`texture_sample`) — Samples an Any Field at Vector Numeric coordinates and
+  preserves the sampled field's scalar, vector, or color identity.
 - **Float Preview** (`float_preview`) — Materializes/displays a scalar value in the editor
   while allowing an optional input connection to override its fallback value.
 
@@ -130,17 +143,18 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **Reaction Diffusion (Monolithic)** (`reaction_diffusion`) — A stateful Gray–Scott-style
   simulation implemented as one built-in node. It exposes feed/kill controls, diffusion
   rates, structure scale, timestep, iteration count, optional feed/kill multiplier images,
-  and an optional seed image. `Auto Reset` reinitializes the simulation when activity has
-  collapsed.
-- **Output** (`output`) — Marks the image that becomes the graph’s rendered result.
+  and an optional Scalar Field seed. Its result is a Scalar Field. `Auto Reset` reinitializes
+  the simulation when activity has collapsed.
+- **Output** (`output`) — Marks an Any Field value as the graph’s rendered result and preserves
+  its Scalar Field, Vector Field, or Color Image identity.
 
 ## Built-in subgraph
 
 - **Reaction Diffusion (Discrete)** — An editable simulation subgraph with the same public
   feed, kill, diffusion, timestep, iteration, auto-reset, multiplier, and seed controls as
-  the monolithic node. It exposes three outputs: **Image**, **Chemical A**, and
-  **Chemical B**. Unlike the monolithic node, its internal computation is visible and can be
-  edited using the supported subgraph nodes below.
+  the monolithic node. Its Seed input and all three outputs—**Image**, **Chemical A**, and
+  **Chemical B**—are Scalar Fields. Unlike the monolithic node, its internal computation is
+  visible and can be edited using the supported subgraph nodes below.
 
 ## Simulation-subgraph-only nodes
 

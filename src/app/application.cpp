@@ -61,9 +61,9 @@ ImColor socketColor(ValueType type) {
     switch (type) {
     case ValueType::Float: return ImColor(116, 185, 255);
     case ValueType::Vec2: return ImColor(82, 210, 190);
-    case ValueType::Image2D: return ImColor(241, 196, 80);
-    case ValueType::AnyNumeric: return ImColor(180, 125, 230);
-    case ValueType::AnyVector: return ImColor(112, 200, 145);
+    case ValueType::ScalarField: return ImColor(180, 125, 230);
+    case ValueType::VectorField: return ImColor(112, 200, 145);
+    case ValueType::ColorImage: return ImColor(241, 196, 80);
     }
     return ImColor(180, 180, 180);
 }
@@ -72,20 +72,20 @@ std::string typeDisplayName(ValueType type) {
     switch (type) {
     case ValueType::Float: return "Float";
     case ValueType::Vec2: return "Float2 / Vector";
-    case ValueType::Image2D: return "Image (per-pixel)";
-    case ValueType::AnyNumeric: return "Numeric";
-    case ValueType::AnyVector: return "Vector Numeric";
+    case ValueType::ScalarField: return "Scalar Field";
+    case ValueType::VectorField: return "Vector Field";
+    case ValueType::ColorImage: return "Color Image";
     }
     return "Unknown";
 }
 
 // Hover text for a pin: the concrete types it accepts joined by "|" plus the
 // kind (Input / Output / Wire). Union sockets expand to their members so e.g. a
-// Numeric input reads "Float | Image (per-pixel) — Input".
+// Numeric input reads "Float | Scalar Field — Input".
 std::string socketTooltip(const SocketDescriptor& socket, std::string_view kind) {
-    const auto [types, count] = acceptedTypes(socket.type);
+    const auto types = acceptedTypes(socket.contract);
     std::string text;
-    for (std::size_t index = 0; index < count; ++index) {
+    for (std::size_t index = 0; index < types.size(); ++index) {
         if (index) text += " | ";
         text += typeDisplayName(types[index]);
     }
@@ -102,9 +102,7 @@ std::string resolvedTooltip(ValueType type, std::string_view kind) {
 // Resolves the concrete type an output socket materializes to, so outputs and
 // wires can state the actual result instead of the accept set. The root canvas
 // prefers the runtime's evaluated value kind (exact materialization); both
-// canvases fall back to the conventions' promotion rules: a union output becomes
-// a field when any reachable input is a field, a vector when any reachable input
-// is a vector (AnyVector only), and a plain Float otherwise.
+// canvases fall back to the same descriptor policy used by graph compilation.
 class OutputTypeResolver {
 public:
     OutputTypeResolver(const GraphBody& body,
@@ -127,15 +125,11 @@ public:
     }
 
 private:
-    const NodeDescriptor* descriptorOf(NodeId node) {
-        const auto* record = body_.findNode(node);
-        if (!record) return nullptr;
-        storage_ = NodeDescriptor{};
-        return resolve_(*record, storage_);
-    }
-
     ValueType compute(NodeId node, std::string_view socketKey) {
-        const auto* descriptor = descriptorOf(node);
+        const auto* record = body_.findNode(node);
+        if (!record) return ValueType::Float;
+        NodeDescriptor storage;
+        const auto* descriptor = resolve_(*record, storage);
         if (!descriptor) return ValueType::Float;
         if (runtimeValues_) {
             if (const auto* values = runtimeValues_(node); values && !values->empty()) {
@@ -146,7 +140,8 @@ private:
                         const auto& value = (*values)[outputIndex];
                         if (std::holds_alternative<float>(value)) return ValueType::Float;
                         if (std::holds_alternative<Vec2>(value)) return ValueType::Vec2;
-                        if (std::holds_alternative<ImageHandle>(value)) return ValueType::Image2D;
+                        if (const auto* image = std::get_if<ImageHandle>(&value))
+                            return image->semanticType;
                     }
                     ++outputIndex;
                 }
@@ -157,25 +152,27 @@ private:
             if (socket.direction == SocketDirection::Output && socket.key == socketKey)
                 output = &socket;
         if (!output) return ValueType::Float;
-        if (output->type != ValueType::AnyNumeric && output->type != ValueType::AnyVector)
-            return output->type;
-        if (descriptor->producedField) return ValueType::Image2D;
-        bool hasField = false, hasVector = false;
-        for (const auto& link : body_.links()) {
-            if (link.toNode != node) continue;
-            const auto source = outputType(link.fromNode, link.fromSocket);
-            if (source == ValueType::Image2D) hasField = true;
-            else if (source == ValueType::Vec2) hasVector = true;
-        }
-        if (hasField) return ValueType::Image2D;
-        if (output->type == ValueType::AnyVector && hasVector) return ValueType::Vec2;
-        return ValueType::Float;
+        return resolveOutputType(*descriptor, *output,
+            [&](std::string_view inputKey) -> std::optional<ValueType> {
+                const auto link = std::ranges::find_if(body_.links(), [&](const auto& candidate) {
+                    return candidate.toNode == node && candidate.toSocket == inputKey;
+                });
+                if (link != body_.links().end())
+                    return outputType(link->fromNode, link->fromSocket);
+                const auto input = std::ranges::find_if(descriptor->sockets, [&](const auto& item) {
+                    return item.direction == SocketDirection::Input && item.key == inputKey;
+                });
+                if (input == descriptor->sockets.end()) return std::nullopt;
+                auto type = disconnectedType(input->contract);
+                if (input->fieldDefault)
+                    type = fieldTypeForWidth(componentCount(type));
+                return type;
+            });
     }
 
     const GraphBody& body_;
     std::function<const NodeDescriptor*(const NodeRecord&, NodeDescriptor&)> resolve_;
     std::function<const std::vector<Value>* (NodeId)> runtimeValues_;
-    NodeDescriptor storage_;
     std::unordered_map<std::string, ValueType> memo_;
     std::unordered_set<std::string> visiting_;
 };
@@ -196,9 +193,7 @@ void collectOutputTypes(const GraphBody& body,
             const auto& socket = descriptor->sockets[index];
             if (socket.direction != SocketDirection::Output) continue;
             const auto type = resolver.outputType(node.id, socket.key);
-            if (type == ValueType::Float || type == ValueType::Vec2 ||
-                type == ValueType::Image2D)
-                outputTypes[pinUiId(node.id, index, SocketDirection::Output)] = type;
+            outputTypes[pinUiId(node.id, index, SocketDirection::Output)] = type;
         }
     }
 }
@@ -206,20 +201,27 @@ void collectOutputTypes(const GraphBody& body,
 // Draws one small filled square per accepted type at the given origin, returning
 // the consumed width. The squares let users see at a glance which concrete types
 // a union socket accepts; single-type sockets render exactly one square.
-float renderTypeSquares(ValueType type, const ImVec2& origin) {
-    const auto [types, count] = acceptedTypes(type);
+float renderTypeSquares(std::span<const ValueType> types, const ImVec2& origin) {
     constexpr float square = 8.0F;
     constexpr float gap = 2.0F;
     const float yOffset = std::max(0.0F, (ImGui::GetTextLineHeight() - square) * 0.5F);
     auto* draw = ImGui::GetWindowDrawList();
     float x = origin.x;
-    for (std::size_t index = 0; index < count; ++index) {
+    for (std::size_t index = 0; index < types.size(); ++index) {
         draw->AddRectFilled(ImVec2(x, origin.y + yOffset),
                             ImVec2(x + square, origin.y + yOffset + square),
                             socketColor(types[index]));
         x += square + gap;
     }
-    return count ? x - origin.x - gap : 0.0F;
+    return !types.empty() ? x - origin.x - gap : 0.0F;
+}
+
+float renderTypeSquares(ValueType type, const ImVec2& origin) {
+    return renderTypeSquares(std::span<const ValueType>(&type, 1), origin);
+}
+
+float renderTypeSquares(SocketContract contract, const ImVec2& origin) {
+    return renderTypeSquares(acceptedTypes(contract), origin);
 }
 
 void renderSocketPin(NodeId nodeId, const NodeDescriptor& descriptor, std::size_t socketIndex,
@@ -237,18 +239,19 @@ void renderSocketPin(NodeId nodeId, const NodeDescriptor& descriptor, std::size_
     // drop the declared accept set; inputs keep describing everything they take.
     const auto resolved = input ? outputTypes.end()
                                 : outputTypes.find(id);
-    const ValueType shown = resolved != outputTypes.end() ? resolved->second : socket.type;
     ImGui::BeginGroup();
     if (!input) {
+        const ValueType shown = resolved != outputTypes.end() ? resolved->second
+            : fixedType(socket.contract).value_or(ValueType::Float);
         ImGui::TextColored(socketColor(shown), "%s", socket.label.c_str());
         ImGui::SameLine(0.0F, labelGap);
         const float width = renderTypeSquares(shown, ImGui::GetCursorScreenPos());
         ImGui::Dummy(ImVec2(width, square));
     } else {
-        const float width = renderTypeSquares(socket.type, ImGui::GetCursorScreenPos());
+        const float width = renderTypeSquares(socket.contract, ImGui::GetCursorScreenPos());
         ImGui::Dummy(ImVec2(width, square));
         ImGui::SameLine(0.0F, labelGap);
-        ImGui::TextColored(socketColor(socket.type), "%s", socket.label.c_str());
+        ImGui::TextUnformatted(socket.label.c_str());
     }
     ImGui::EndGroup();
     ed::EndPin();
@@ -269,7 +272,8 @@ const SocketDescriptor* socketByKey(const NodeDescriptor& descriptor, std::strin
 void renderSocketTooltips(const GraphBody& body,
                           const std::function<const NodeDescriptor*(const NodeRecord&, NodeDescriptor&)>& resolve,
                           const std::unordered_map<std::uintptr_t, PinTarget>& pins,
-                          const std::unordered_map<std::uintptr_t, ValueType>& outputTypes) {
+                          const std::unordered_map<std::uintptr_t, ValueType>& outputTypes,
+                          const CompileResult* compiled = nullptr) {
     const auto hoveredPin = ed::GetHoveredPin().Get();
     if (hoveredPin != 0) {
         const auto it = pins.find(static_cast<std::uintptr_t>(hoveredPin));
@@ -300,6 +304,17 @@ void renderSocketTooltips(const GraphBody& body,
     const auto id = static_cast<LinkId>(hoveredLink - (std::uintptr_t{1} << 60U));
     const auto it = std::ranges::find(body.links(), id, &LinkRecord::id);
     if (it == body.links().end()) return;
+    if (compiled) {
+        if (const auto edge = compiled->resolvedEdges.find(id);
+            edge != compiled->resolvedEdges.end() &&
+            edge->second.coercion != Coercion::Identity) {
+            const auto message = typeDisplayName(edge->second.sourceType) + " -> " +
+                typeDisplayName(edge->second.targetType) + "\n" +
+                coercionDescription(edge->second.coercion);
+            ImGui::SetTooltip("%s", message.c_str());
+            return;
+        }
+    }
     const auto* record = body.findNode(it->fromNode);
     if (!record) return;
     NodeDescriptor storage;
@@ -317,6 +332,22 @@ void renderSocketTooltips(const GraphBody& body,
     if (!socket) return;
     const auto resolved = outputTypes.find(
         pinUiId(it->fromNode, socketIndex, SocketDirection::Output));
+    if (compiled && !compiled->resolvedEdges.contains(id) && resolved != outputTypes.end()) {
+        const auto* targetRecord = body.findNode(it->toNode);
+        NodeDescriptor targetStorage;
+        const auto* targetDescriptor = targetRecord ? resolve(*targetRecord, targetStorage) : nullptr;
+        const auto* targetSocket = targetDescriptor
+            ? socketByKey(*targetDescriptor, it->toSocket, SocketDirection::Input) : nullptr;
+        if (targetSocket) {
+            const auto reason = targetSocket->requiresImage && !isFieldType(resolved->second)
+                ? "requires a field image"
+                : "accepts " + toString(targetSocket->contract);
+            const auto message = "Invalid: " + typeDisplayName(resolved->second) + " -> " +
+                targetSocket->label + "\n" + reason;
+            ImGui::SetTooltip("%s", message.c_str());
+            return;
+        }
+    }
     if (resolved != outputTypes.end())
         ImGui::SetTooltip("%s", resolvedTooltip(resolved->second, "Wire").c_str());
     else
@@ -333,10 +364,9 @@ std::ptrdiff_t inputSocketIndex(const NodeDescriptor& descriptor, std::string_vi
 }
 
 bool compatible(const SocketDescriptor& from, const SocketDescriptor& to) {
-    if (!areSocketTypesCompatible(from.type, to.type)) return false;
-    if (!(from.strictType || to.strictType)) return true;
-    return !(isNumericType(from.type) && to.type == ValueType::AnyVector) &&
-           !(from.type == ValueType::AnyVector && isNumericType(to.type));
+    for (const auto source : acceptedTypes(from.contract))
+        if (contractAccepts(to.contract, source)) return true;
+    return false;
 }
 
 // Operation-dependent nodes can remove an input or change their result category.
@@ -1302,7 +1332,18 @@ void Application::renderGraph() {
         std::size_t fromIndex = 0, toIndex = 0; bool foundFrom = false, foundTo = false;
         for (const auto& socket : fromDesc->sockets) { if (socket.key == link.fromSocket && socket.direction == SocketDirection::Output) { foundFrom = true; break; } ++fromIndex; }
         for (const auto& socket : toDesc->sockets) { if (socket.key == link.toSocket && socket.direction == SocketDirection::Input) { foundTo = true; break; } ++toIndex; }
-        if (foundFrom && foundTo) ed::Link(ed::LinkId(linkUiId(link.id)), ed::PinId(pinUiId(link.fromNode, fromIndex, SocketDirection::Output)), ed::PinId(pinUiId(link.toNode, toIndex, SocketDirection::Input)));
+        if (foundFrom && foundTo) {
+            const auto edge = runtime_->compileResult().resolvedEdges.find(link.id);
+            const bool valid = edge != runtime_->compileResult().resolvedEdges.end();
+            const bool coercing = edge != runtime_->compileResult().resolvedEdges.end() &&
+                                  edge->second.coercion != Coercion::Identity;
+            ed::Link(ed::LinkId(linkUiId(link.id)),
+                     ed::PinId(pinUiId(link.fromNode, fromIndex, SocketDirection::Output)),
+                     ed::PinId(pinUiId(link.toNode, toIndex, SocketDirection::Input)),
+                     !valid ? ImColor(255, 75, 65) :
+                     coercing ? ImColor(245, 155, 55) : ImColor(255, 255, 255),
+                     !valid || coercing ? 2.5F : 1.0F);
+        }
     }
 
     if (ed::BeginCreate()) {
@@ -1312,7 +1353,28 @@ void Application::renderGraph() {
             if (a != pins.end() && b != pins.end()) {
                 if (a->second.direction == SocketDirection::Input) std::swap(a, b);
                 const bool directionOk = a->second.direction == SocketDirection::Output && b->second.direction == SocketDirection::Input;
-                if (directionOk && ed::AcceptNewItem()) {
+                bool typeOk = false;
+                std::string rejection;
+                if (directionOk) {
+                    const auto source = outputTypes.find(a->first);
+                    const auto* target = graph_.findNode(b->second.node);
+                    NodeDescriptor storage;
+                    const auto* descriptor = target
+                        ? resolveDescriptor(graph_, *target, registry_, storage) : nullptr;
+                    const auto* input = descriptor
+                        ? socketByKey(*descriptor, b->second.socket, SocketDirection::Input)
+                        : nullptr;
+                    typeOk = source != outputTypes.end() && input &&
+                        contractAccepts(input->contract, source->second) &&
+                        (!input->requiresImage || isFieldType(source->second));
+                    if (!typeOk && source != outputTypes.end() && input)
+                        rejection = "Cannot connect " + typeDisplayName(source->second) +
+                            "; " + input->label + " accepts " + toString(input->contract);
+                }
+                if (directionOk && !typeOk) {
+                    ed::RejectNewItem(ImColor(255, 75, 65), 2.0F);
+                    if (!rejection.empty()) ImGui::SetTooltip("%s", rejection.c_str());
+                } else if (directionOk && ed::AcceptNewItem()) {
                     graph_.addLink(a->second.node, a->second.socket, b->second.node, b->second.socket);
                     dirty_ = true; rebuildRuntime();
                 }
@@ -1401,7 +1463,7 @@ void Application::renderGraph() {
     ed::End();
     renderSocketTooltips(graph_, [&](const NodeRecord& node, NodeDescriptor& storage) {
         return resolveDescriptor(graph_, node, registry_, storage);
-    }, pins, outputTypes);
+    }, pins, outputTypes, &runtime_->compileResult());
     ed::SetCurrentEditor(nullptr);
 }
 
@@ -1698,6 +1760,7 @@ void Application::renderSubgraphEditor() {
         }
     }
 
+    CompileResult subgraphTypes;
     for (const auto& link : body.links()) {
         const auto* from = body.findNode(link.fromNode);
         const auto* to = body.findNode(link.toNode);
@@ -1719,10 +1782,47 @@ void Application::renderSubgraphEditor() {
             }
             ++toIndex;
         }
-        if (foundFrom && foundTo)
+        if (foundFrom && foundTo) {
+            const auto sourcePin = pinUiId(link.fromNode, fromIndex, SocketDirection::Output);
+            const auto source = outputTypes.find(sourcePin);
+            auto targetType = source == outputTypes.end() ? ValueType::Float : source->second;
+            if (source != outputTypes.end())
+                targetType = resolveInputType(*toDesc, link.toSocket, source->second,
+                    [&](std::string_view outputKey) -> std::optional<ValueType> {
+                        std::size_t outputIndex = 0;
+                        for (const auto& output : toDesc->sockets) {
+                            if (output.direction == SocketDirection::Output &&
+                                output.key == outputKey) {
+                                const auto resolved = outputTypes.find(pinUiId(
+                                    link.toNode, outputIndex, SocketDirection::Output));
+                                if (resolved != outputTypes.end()) return resolved->second;
+                                break;
+                            }
+                            ++outputIndex;
+                        }
+                        return std::nullopt;
+                    });
+            const auto coercion = source == outputTypes.end()
+                ? std::optional<Coercion>{}
+                : coercionBetween(source->second, targetType);
+            const auto* input = socketByKey(*toDesc, link.toSocket, SocketDirection::Input);
+            const bool valid = source != outputTypes.end() && input && coercion &&
+                contractAccepts(input->contract, source->second) &&
+                (!input->requiresImage || isFieldType(source->second));
+            if (valid) {
+                subgraphTypes.resolvedEdges[link.id] = {
+                    {link.fromNode, link.fromSocket, SocketDirection::Output},
+                    {link.toNode, link.toSocket, SocketDirection::Input},
+                    source->second, targetType, *coercion};
+            }
+            const bool coercing = coercion && *coercion != Coercion::Identity;
             ed::Link(ed::LinkId(linkUiId(link.id)),
                      ed::PinId(pinUiId(link.fromNode, fromIndex, SocketDirection::Output)),
-                     ed::PinId(pinUiId(link.toNode, toIndex, SocketDirection::Input)));
+                     ed::PinId(pinUiId(link.toNode, toIndex, SocketDirection::Input)),
+                     !valid ? ImColor(255, 75, 65) :
+                     coercing ? ImColor(245, 155, 55) : ImColor(255, 255, 255),
+                     !valid || coercing ? 2.5F : 1.0F);
+        }
     }
 
     if (ed::BeginCreate()) {
@@ -1733,7 +1833,27 @@ void Application::renderSubgraphEditor() {
                 if (from->second.direction == SocketDirection::Input) std::swap(from, to);
                 const bool directionOk = from->second.direction == SocketDirection::Output &&
                                          to->second.direction == SocketDirection::Input;
-                if (directionOk && ed::AcceptNewItem()) {
+                bool typeOk = false;
+                std::string rejection;
+                if (directionOk) {
+                    const auto source = outputTypes.find(from->first);
+                    const auto* target = body.findNode(to->second.node);
+                    NodeDescriptor storage;
+                    const auto* descriptor = target ? resolveSubgraphBodyDescriptor(
+                        *definition, *target, registry_, storage) : nullptr;
+                    const auto* input = descriptor ? socketByKey(
+                        *descriptor, to->second.socket, SocketDirection::Input) : nullptr;
+                    typeOk = source != outputTypes.end() && input &&
+                        contractAccepts(input->contract, source->second) &&
+                        (!input->requiresImage || isFieldType(source->second));
+                    if (!typeOk && source != outputTypes.end() && input)
+                        rejection = "Cannot connect " + typeDisplayName(source->second) +
+                            "; " + input->label + " accepts " + toString(input->contract);
+                }
+                if (directionOk && !typeOk) {
+                    ed::RejectNewItem(ImColor(255, 75, 65), 2.0F);
+                    if (!rejection.empty()) ImGui::SetTooltip("%s", rejection.c_str());
+                } else if (directionOk && ed::AcceptNewItem()) {
                     body.addLink(from->second.node, from->second.socket,
                                  to->second.node, to->second.socket);
                     changed = true; executionChanged = true;
@@ -1794,7 +1914,7 @@ void Application::renderSubgraphEditor() {
     ed::End();
     renderSocketTooltips(body, [&](const NodeRecord& node, NodeDescriptor& storage) {
         return resolveSubgraphBodyDescriptor(*definition, node, registry_, storage);
-    }, pins, outputTypes);
+    }, pins, outputTypes, &subgraphTypes);
     ed::SetCurrentEditor(nullptr);
 
     if (changed) {

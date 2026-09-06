@@ -14,7 +14,7 @@ struct SubgraphInterfaceItem {
     std::string key;
     std::string label;
     SubgraphInterfaceKind kind = SubgraphInterfaceKind::Input;
-    ValueType type = ValueType::Float;
+    SocketContract contract = SocketContract::FloatOnly;
     bool optional = false;
     float defaultValue = 0.0F;
     float minimum = 0.0F;
@@ -24,14 +24,23 @@ struct SubgraphInterfaceItem {
 
     SubgraphInterfaceItem() = default;
     SubgraphInterfaceItem(std::string keyValue, std::string labelValue,
+                          SubgraphInterfaceKind kindValue, SocketContract contractValue,
+                          bool optionalValue = false, float defaultValueValue = 0.0F,
+                          float minimumValue = 0.0F, float maximumValue = 1.0F,
+                          ParameterDescriptor::Control controlValue = ParameterDescriptor::Control::Float,
+                          std::string roleValue = {})
+        : key(std::move(keyValue)), label(std::move(labelValue)), kind(kindValue), contract(contractValue),
+          optional(optionalValue), defaultValue(defaultValueValue), minimum(minimumValue),
+          maximum(maximumValue), control(controlValue), role(std::move(roleValue)) {}
+    SubgraphInterfaceItem(std::string keyValue, std::string labelValue,
                           SubgraphInterfaceKind kindValue, ValueType typeValue,
                           bool optionalValue = false, float defaultValueValue = 0.0F,
                           float minimumValue = 0.0F, float maximumValue = 1.0F,
                           ParameterDescriptor::Control controlValue = ParameterDescriptor::Control::Float,
                           std::string roleValue = {})
-        : key(std::move(keyValue)), label(std::move(labelValue)), kind(kindValue), type(typeValue),
-          optional(optionalValue), defaultValue(defaultValueValue), minimum(minimumValue),
-          maximum(maximumValue), control(controlValue), role(std::move(roleValue)) {}
+        : SubgraphInterfaceItem(std::move(keyValue), std::move(labelValue), kindValue,
+                                exactContract(typeValue), optionalValue, defaultValueValue,
+                                minimumValue, maximumValue, controlValue, std::move(roleValue)) {}
 };
 
 struct NodeRecord {
@@ -102,7 +111,40 @@ struct CompileResult {
     bool valid = false;
     std::vector<NodeId> order;
     std::vector<std::string> errors;
-    std::unordered_map<NodeId, ValueType> inferredOutputs;
+    struct SocketKey {
+        NodeId node = 0;
+        std::string socket;
+        SocketDirection direction = SocketDirection::Output;
+        bool operator==(const SocketKey&) const = default;
+    };
+    struct SocketKeyHash {
+        std::size_t operator()(const SocketKey& value) const noexcept {
+            return std::hash<NodeId>{}(value.node) ^
+                   (std::hash<std::string>{}(value.socket) << 1U) ^
+                   (static_cast<std::size_t>(value.direction) << 2U);
+        }
+    };
+    struct ResolvedSocket {
+        SocketContract contract = SocketContract::FloatOnly;
+        ValueType concreteType = ValueType::Float;
+    };
+    struct ResolvedEdge {
+        SocketKey sourceSocket;
+        SocketKey destinationSocket;
+        ValueType sourceType = ValueType::Float;
+        ValueType targetType = ValueType::Float;
+        Coercion coercion = Coercion::Identity;
+    };
+    std::unordered_map<SocketKey, ResolvedSocket, SocketKeyHash> resolvedSockets;
+    std::unordered_map<LinkId, ResolvedEdge> resolvedEdges;
+
+    [[nodiscard]] std::optional<ValueType> socketType(
+        NodeId node, std::string_view socket,
+        SocketDirection direction = SocketDirection::Output) const {
+        const auto found = resolvedSockets.find(SocketKey{node, std::string(socket), direction});
+        if (found == resolvedSockets.end()) return std::nullopt;
+        return found->second.concreteType;
+    }
 };
 
 class Graph : public GraphBody {

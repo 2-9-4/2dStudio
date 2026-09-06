@@ -46,15 +46,19 @@ void main(){
 class DomainWarpNode final : public TextureNode {
 public:
     static NodeDescriptor describe() {
-        return {"domain_warp", 1, "Domain Warp", "Coordinate",
-            {{"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Input, true},
-             {"xOffset", "X Offset", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"yOffset", "Y Offset", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"strength", "Strength", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Output}},
+        auto result = NodeDescriptor{"domain_warp", 1, "Domain Warp", "Coordinate",
+            {{"coordinates", "Coordinates", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"xOffset", "X Offset", SocketContract::Numeric, SocketDirection::Input, true},
+             {"yOffset", "Y Offset", SocketContract::Numeric, SocketDirection::Input, true},
+             {"strength", "Strength", SocketContract::Numeric, SocketDirection::Input, true},
+             {"coordinates", "Coordinates", SocketContract::VectorNumeric, SocketDirection::Output}},
             {{"xOffset", "X Offset", 0.0F, -10.0F, 10.0F},
              {"yOffset", "Y Offset", 0.0F, -10.0F, 10.0F},
              {"strength", "Strength", 1.0F, -10.0F, 10.0F}}};
+        result.sockets[0].fieldDefault = true;
+        result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::VectorPromotion;
+        result.sockets.back().typeInputs = {"coordinates", "xOffset", "yOffset", "strength"};
+        return result;
     }
 
     [[nodiscard]] const NodeDescriptor& descriptor() const override {
@@ -93,7 +97,7 @@ public:
         procedural::bindNumericInput(program_, 3, "strengthImage", "hasStrength",
                                      "strengthConstant", strength);
         gpu.dispatch(program_, context.width, context.height);
-        outputs[0] = ImageHandle{texture_, context.width, context.height};
+        outputs[0] = ImageHandle{texture_, context.width, context.height, ValueType::VectorField};
     }
 };
 

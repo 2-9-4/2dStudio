@@ -62,9 +62,9 @@ TEST_CASE("subgraph editor entries include simulation and keyed interface nodes"
     NodeRegistry registry;
     SubgraphDefinition definition;
     definition.interface = {
-        {"source", "Source", SubgraphInterfaceKind::Input, ValueType::Image2D},
+        {"source", "Source", SubgraphInterfaceKind::Input, ValueType::ColorImage},
         {"rate", "Rate", SubgraphInterfaceKind::Slider, ValueType::Float},
-        {"result", "Result", SubgraphInterfaceKind::Output, ValueType::Image2D},
+        {"result", "Result", SubgraphInterfaceKind::Output, ValueType::ColorImage},
     };
 
     const auto entries = buildSubgraphEditorEntries(registry, definition);

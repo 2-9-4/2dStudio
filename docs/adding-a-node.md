@@ -17,8 +17,10 @@ class InvertNode final : public node_support::ParameterNode {
 public:
     static NodeDescriptor describe() {
         auto result = NodeDescriptor{"example.invert", 1, "Invert", "Color",
-            {{"image", "Image", ValueType::Image2D, SocketDirection::Input},
-             {"result", "Result", ValueType::Image2D, SocketDirection::Output}}, {}};
+            {{"image", "Image", SocketContract::AnyField, SocketDirection::Input},
+             {"result", "Result", SocketContract::AnyField, SocketDirection::Output}}, {}};
+        result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+        result.sockets.back().typeInputs = {"image"};
         result.lowerable = true;
         return result;
     }
@@ -44,12 +46,12 @@ Register the descriptor and factory in the node family's registration function. 
 
 Describe every editable constant as a `ParameterDescriptor`. Float and Integer parameters
 automatically acquire an optional input socket when the registry sees no socket with the same
-key. If you declare the socket yourself (for example because it is `AnyNumeric`), its key must
+key. If you declare the socket yourself (for example because it is `Numeric`), its key must
 exactly match the parameter key:
 
 ```cpp
-{{"rotation", "Rotation", ValueType::AnyNumeric, SocketDirection::Input, true},
- {"result", "Result", ValueType::AnyVector, SocketDirection::Output}},
+{{"rotation", "Rotation", SocketContract::Numeric, SocketDirection::Input, true},
+ {"result", "Result", SocketContract::VectorNumeric, SocketDirection::Output}},
 {{"rotation", "Rotation", 0.0F, -6.2831853F, 6.2831853F}}
 ```
 
@@ -90,13 +92,34 @@ node-specific editor in `node_widgets` and sanitize its stored JSON in the node 
 Generated lowering has scalar and image graph inputs but no shader-owned parameter-texture
 resource, so bounded arrays are currently specialized as GLSL constants.
 
-## Numeric, vector, and coordinate inputs
+## Semantic socket typing
 
-Use `ValueType::AnyNumeric` for `Float | Scalar Field` sockets and `ValueType::AnyVector` for
-`Float2 | Vector Field` sockets. Per-pixel scalars use R; per-pixel vectors use RG; colors use
-RGBA. A coordinate transform or sampler takes one `AnyVector` Coordinates socket—not separate
-U and V sockets. `Combine Vector` constructs a Float2 or RG vector field, and `Separate Vector`
-splits one back into its numeric X and Y components.
+Use a concrete `ValueType` for fixed sockets and a `SocketContract` for unions. Common patterns:
+
+```cpp
+// Scalar-only field operation.
+{"height", "Height", ValueType::ScalarField, SocketDirection::Input}
+
+// Vector-only field operation.
+{"flow", "Flow", ValueType::VectorField, SocketDirection::Input}
+
+// Component-wise filter: input/output AnyField; output PreserveInput from {"image"}.
+// Mixed-width Mix: a/b/output AnyImageValue; output WidestValue from {"a", "b"},
+// with fieldInputs={"a", "b", "factor"} so a field factor makes the result spatial.
+// Multi-output Separate Vector: each output resolves independently from {"vector"}.
+```
+
+`Numeric` means `Float | ScalarField`; `VectorNumeric` means `Vec2 | VectorField`;
+`AnyField` means the three per-pixel semantic types; `AnyImageValue` admits all five values.
+Never use `AnyImageValue` merely because a conversion exists: the contract must describe what the
+operation means. Widening is compiler-owned. Color-to-scalar/vector narrowing requires an explicit
+`Color to R`, `Color to Luminance`, or `Color to RG` node. For component-wise color operations,
+state whether alpha is transformed or preserved and test it.
+
+A coordinate transform or sampler takes one `VectorNumeric` Coordinates socket—not separate U
+and V sockets. Per-pixel scalars use R, vectors use RG, and colors use RGBA. `Combine Vector`
+constructs a Vec2 or Vector Field, and `Separate Vector` produces independently resolved numeric
+X and Y outputs.
 
 For a spatial node whose omitted Coordinates input means canvas coordinates, use the typed
 helper rather than an unbound sampler or a magic uniform value:
@@ -107,7 +130,8 @@ procedural::bindVectorInput(program, 0, "coordinatesImage", "hasCoordinates",
                             "coordinatesConstant", coordinates);
 ```
 
-`coordinateInput` explicitly represents the canvas-UV default as a generated field.
+`coordinateInput` explicitly represents the canvas-UV default as a generated field. Its socket
+descriptor must also set `fieldDefault = true` so compile-time inference agrees with lowering.
 `bindVectorInput` sends `1` for a real texture, `0` for a constant Float2, and `-1` for canvas
 coordinates; `proceduralVector` handles those three states safely. Do not test “nonzero means
 texture,” because the canvas state is negative and must not sample an unbound or reused texture.
@@ -116,9 +140,13 @@ texture,” because the canvas state is negative and must not sample an unbound 
 
 - Confirm every Float/Integer slider key matches the socket key consumed by lowering or evaluate.
 - Give every Enum a complete ordered label list and use the generic popup path.
-- Use one RG `AnyVector` socket for coordinates and `coordinateInput` for canvas defaults.
+- Use one `VectorNumeric` socket for coordinates, mark its canvas default with `fieldDefault`, and
+  use `coordinateInput` while evaluating it.
 - Native nodes must initialize every output on every evaluation path, including missing required inputs.
-- Preserve Float/field promotion: constants return Float or Float2; any field input returns an image.
+- Set every polymorphic output's `typePolicy` and `typeInputs`; never infer one node-wide type.
+- Native `ImageHandle` outputs must retain the compiler-resolved semantic type.
+- Test contracts, rejected narrowing, exact widening expressions, multi-output independence, and
+  fused versus materialized behavior.
 - Compile the full application and exercise the node once with inputs disconnected and connected.
 
 ## Editable simulation subgraphs
@@ -150,7 +178,7 @@ differing from the root node box.
 
 The simulation compiler is a planner/executor around the ordinary lowering semantics, not a replacement for them. Root shader fusion consumes acyclic image values once; a simulation additionally owns an initialization phase, an iterative RG16F ping-pong state, a controlled Previous-to-Next feedback boundary, neighborhood sampling, and exported state channels. Those responsibilities remain simulation-specific even while both paths share typed node lowering.
 
-Definitions returned by `builtInSubgraphs()` are source templates. Adding one to a project creates an editable definition in `Graph::subgraphs()`, serialized once at project level; any number of instances may reference that shared definition. Project format 3 stores each body as ordinary `nodes` and `links`, while the loader migrates older project definitions that used the format-2 expression representation.
+Definitions returned by `builtInSubgraphs()` are source templates. Adding one to a project creates an editable definition in `Graph::subgraphs()`, serialized once at project level; any number of instances may reference that shared definition. Project format 4 stores each body as ordinary `nodes` and `links` plus explicit interface contracts; the loader migrates older project definitions and inserts explicit channel-extraction nodes for legacy generic-image narrowing.
 
 Node controls that open custom popups must request them through `node_widgets::PopupState` and
 render them through `node_widgets::renderPopup`. Generic Enum parameters already do this.

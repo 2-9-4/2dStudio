@@ -43,7 +43,7 @@ bool scalarResult(VectorMathOperation operation) {
 
 void addNumeric(NodeDescriptor& descriptor, const char* key, const char* label,
                 float value, float minimum = -100.0F, float maximum = 100.0F) {
-    descriptor.sockets.push_back({key, label, ValueType::AnyNumeric, SocketDirection::Input, true});
+    descriptor.sockets.push_back({key, label, SocketContract::Numeric, SocketDirection::Input, true});
     descriptor.parameters.push_back({key, label, value, minimum, maximum});
 }
 
@@ -66,9 +66,9 @@ NodeDescriptor vectorMathDescriptor(VectorMathOperation operation) {
         {{"operation", "Operation", static_cast<float>(operation), 0.0F,
           static_cast<float>(kNames.size() - 1), ParameterDescriptor::Control::Enum,
           std::move(names)}}};
-    result.sockets.push_back({"a", "A", ValueType::AnyVector, SocketDirection::Input, true, true});
+    result.sockets.push_back({"a", "A", SocketContract::VectorNumeric, SocketDirection::Input, true});
     if (needsB(operation))
-        result.sockets.push_back({"b", "B", ValueType::AnyVector, SocketDirection::Input, true, true});
+        result.sockets.push_back({"b", "B", SocketContract::VectorNumeric, SocketDirection::Input, true});
 
     switch (operation) {
     case VectorMathOperation::Scale: case VectorMathOperation::SetLength:
@@ -90,8 +90,14 @@ NodeDescriptor vectorMathDescriptor(VectorMathOperation operation) {
     default: break;
     }
     result.sockets.push_back({"result", "Result",
-        scalarResult(operation) ? ValueType::AnyNumeric : ValueType::AnyVector,
-        SocketDirection::Output, false, true});
+        scalarResult(operation) ? SocketContract::Numeric : SocketContract::VectorNumeric,
+        SocketDirection::Output});
+    result.sockets.back().typePolicy = scalarResult(operation)
+        ? SocketDescriptor::TypePolicy::NumericPromotion
+        : SocketDescriptor::TypePolicy::VectorPromotion;
+    for (const auto& socket : result.sockets)
+        if (socket.direction == SocketDirection::Input)
+            result.sockets.back().typeInputs.push_back(socket.key);
     result.lowerable = true;
     return result;
 }

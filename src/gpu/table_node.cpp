@@ -43,8 +43,8 @@ class TableNode final : public node_support::ParameterNode {
 public:
     static NodeDescriptor describe() {
         auto result = NodeDescriptor{"table", 1, "Table", "Math",
-            {{"index", "Index", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
+            {{"index", "Index", SocketContract::Numeric, SocketDirection::Input, true},
+             {"result", "Result", SocketContract::Numeric, SocketDirection::Output}},
             {{"index", "Index", 0.0F, -100.0F, 100.0F},
              {"sampling", "Sampling", 0.0F, 0.0F, 1.0F, ParameterDescriptor::Control::Enum,
               {"Nearest", "Linear"}},

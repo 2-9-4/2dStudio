@@ -11,13 +11,18 @@
 namespace reaction {
 namespace {
 
-std::string valueTypeName(ValueType value) { return toString(value); }
-ValueType valueType(const std::string& value) {
-    if (value == "vec2") return ValueType::Vec2;
-    if (value == "image2d") return ValueType::Image2D;
-    if (value == "numeric") return ValueType::AnyNumeric;
-    if (value == "vector") return ValueType::AnyVector;
-    return ValueType::Float;
+SocketContract socketContract(const std::string& value) {
+    if (value == "vec2") return SocketContract::Vec2Only;
+    if (value == "scalar_field") return SocketContract::ScalarFieldOnly;
+    if (value == "vector_field") return SocketContract::VectorFieldOnly;
+    if (value == "color_image" || value == "image2d")
+        return SocketContract::ColorImageOnly;
+    if (value == "numeric") return SocketContract::Numeric;
+    if (value == "vector" || value == "vector_numeric")
+        return SocketContract::VectorNumeric;
+    if (value == "any_field") return SocketContract::AnyField;
+    if (value == "any_image_value") return SocketContract::AnyImageValue;
+    return SocketContract::FloatOnly;
 }
 
 nlohmann::json serializeNode(const NodeRecord& node) {
@@ -437,7 +442,7 @@ nlohmann::json serializeSubgraph(const SubgraphDefinition& definition) {
         const char* control = item.control == ParameterDescriptor::Control::Integer ? "integer" :
                               item.control == ParameterDescriptor::Control::Boolean ? "boolean" : "float";
         interface.push_back({{"key", item.key}, {"label", item.label}, {"kind", kind},
-            {"type", valueTypeName(item.type)}, {"optional", item.optional},
+            {"type", toString(item.contract)}, {"optional", item.optional},
             {"default", item.defaultValue}, {"minimum", item.minimum}, {"maximum", item.maximum},
             {"control", control}, {"role", item.role}});
     }
@@ -468,7 +473,14 @@ SubgraphDefinition deserializeSubgraph(const nlohmann::json& value,
         const auto kind = entry.value("kind", std::string("input"));
         item.kind = kind == "slider" ? SubgraphInterfaceKind::Slider :
                     kind == "output" ? SubgraphInterfaceKind::Output : SubgraphInterfaceKind::Input;
-        item.type = valueType(entry.value("type", std::string("float")));
+        const auto persistedType = entry.value("type", std::string("float"));
+        item.contract = socketContract(persistedType);
+        // Format 1-3 simulation definitions stored every field as image2d.
+        // Known reaction channels are producer-defined scalars; ambiguous
+        // interfaces deliberately retain the ColorImage fallback.
+        if (persistedType == "image2d" && result.execution == SubgraphExecution::Simulation &&
+            (item.key == "seed" || item.key == "image" || item.key == "a" || item.key == "b"))
+            item.contract = SocketContract::ScalarFieldOnly;
         item.optional = entry.value("optional", false);
         item.defaultValue = entry.value("default", 0.0F);
         item.minimum = entry.value("minimum", 0.0F);
@@ -522,7 +534,7 @@ nlohmann::json serializeProject(const Graph& graph) {
 
 Graph deserializeProject(const nlohmann::json& document, const NodeRegistry& registry) {
     const int format = document.value("formatVersion", 0);
-    if (!document.is_object() || (format != 1 && format != 2 && format != kProjectFormatVersion)) {
+    if (!document.is_object() || format < 1 || format > kProjectFormatVersion) {
         throw std::runtime_error("Unsupported or missing project formatVersion");
     }
     Graph graph;
@@ -553,6 +565,43 @@ Graph deserializeProject(const nlohmann::json& document, const NodeRegistry& reg
         graph.nextLinkId = std::max(graph.nextLinkId, graph.links().back().id + 1);
     }
     graph.activeOutput = document.value("activeOutput", NodeId{0});
+    if (format < 4) {
+        // Old Image2D links silently projected RGBA into scalar/vector node
+        // implementations. Make that narrowing explicit during migration.
+        const auto typed = graph.compile(registry);
+        const auto oldLinks = graph.links();
+        for (const auto& old : oldLinks) {
+            const auto source = typed.socketType(old.fromNode, old.fromSocket);
+            const auto targetNode = graph.findNode(old.toNode);
+            NodeDescriptor storage;
+            const auto* targetDescriptor = targetNode
+                ? resolveDescriptor(graph, *targetNode, registry, storage) : nullptr;
+            if (!source || *source != ValueType::ColorImage || !targetDescriptor) continue;
+            const auto input = std::ranges::find_if(targetDescriptor->sockets,
+                [&](const SocketDescriptor& candidate) {
+                    return candidate.direction == SocketDirection::Input &&
+                           candidate.key == old.toSocket;
+                });
+            if (input == targetDescriptor->sockets.end()) continue;
+            const bool scalar = input->contract == SocketContract::Numeric ||
+                                input->contract == SocketContract::ScalarFieldOnly;
+            const bool vector = input->contract == SocketContract::VectorNumeric ||
+                                input->contract == SocketContract::VectorFieldOnly;
+            if (!scalar && !vector) continue;
+            const auto* from = graph.findNode(old.fromNode);
+            const auto* to = graph.findNode(old.toNode);
+            const Vec2 position = from && to
+                ? Vec2{(from->position.x + to->position.x) * 0.5F,
+                       (from->position.y + to->position.y) * 0.5F} : Vec2{};
+            const auto conversion = graph.addNode(scalar ? "color_r" : "color_rg",
+                                                  position);
+            const auto link = std::ranges::find(graph.links(), old.id, &LinkRecord::id);
+            if (link == graph.links().end()) continue;
+            link->toNode = conversion;
+            link->toSocket = "color";
+            graph.addLink(conversion, "value", old.toNode, old.toSocket);
+        }
+    }
     return graph;
 }
 

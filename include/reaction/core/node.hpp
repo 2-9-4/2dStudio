@@ -25,15 +25,36 @@ void addParameterInputSockets(NodeDescriptor& descriptor);
 struct SocketDescriptor {
     std::string key;
     std::string label;
-    ValueType type = ValueType::Float;
+    SocketContract contract = SocketContract::FloatOnly;
     SocketDirection direction = SocketDirection::Input;
     bool optional = false;
-    // Prevent the legacy Numeric/Vector convenience bridge for sockets whose
-    // semantics require a real scalar or 2D vector value.
-    bool strictType = false;
+    // Polymorphic output resolution is explicit and evaluated independently for
+    // every socket. Input keys keep conditions/factors out of width inference.
+    enum class TypePolicy { Fixed, NumericPromotion, VectorPromotion,
+                            WidestValue, PreserveInput };
+    TypePolicy typePolicy = TypePolicy::Fixed;
+    // Inputs that determine component width/subtype.
+    std::vector<std::string> typeInputs;
+    // Optional wider dependency set that can make an otherwise constant result
+    // spatial without changing its component width (for example Mix.factor).
+    std::vector<std::string> fieldInputs;
     // Sampling accessors require a real field on this input. Constants are a
     // typed lowering error instead of being silently broadcast.
     bool requiresImage = false;
+    // An omitted coordinate-style input denotes a generated canvas field.
+    bool fieldDefault = false;
+
+    SocketDescriptor() = default;
+    SocketDescriptor(std::string keyValue, std::string labelValue,
+                     SocketContract contractValue, SocketDirection directionValue,
+                     bool optionalValue = false)
+        : key(std::move(keyValue)), label(std::move(labelValue)), contract(contractValue),
+          direction(directionValue), optional(optionalValue) {}
+    SocketDescriptor(std::string keyValue, std::string labelValue,
+                     ValueType typeValue, SocketDirection directionValue,
+                     bool optionalValue = false)
+        : SocketDescriptor(std::move(keyValue), std::move(labelValue), exactContract(typeValue),
+                           directionValue, optionalValue) {}
 };
 
 struct ParameterDescriptor {
@@ -77,6 +98,21 @@ struct NodeDescriptor {
     // therefore form a materialization boundary in generated shader regions.
     std::string neighborhoodSocket{};
 };
+
+// Shared semantic type resolution used by root compilation, both canvases,
+// and simulation lowering. Callers provide the already-resolved concrete type
+// of each input (including any field default).
+[[nodiscard]] ValueType disconnectedType(SocketContract contract);
+[[nodiscard]] std::vector<std::string> typePolicyInputs(
+    const NodeDescriptor& descriptor, const SocketDescriptor& output);
+[[nodiscard]] SocketDescriptor::TypePolicy effectiveTypePolicy(
+    const SocketDescriptor& output);
+[[nodiscard]] ValueType resolveOutputType(
+    const NodeDescriptor& descriptor, const SocketDescriptor& output,
+    const std::function<std::optional<ValueType>(std::string_view)>& inputType);
+[[nodiscard]] ValueType resolveInputType(
+    const NodeDescriptor& descriptor, std::string_view inputKey, ValueType sourceType,
+    const std::function<std::optional<ValueType>(std::string_view)>& outputType);
 
 struct EvaluationContext {
     int width = 1024;

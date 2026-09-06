@@ -113,12 +113,14 @@ public:
     ~ConvolutionNode() override { if (scratch_ != 0) glDeleteTextures(1, &scratch_); }
     static NodeDescriptor describe() {
         auto result = NodeDescriptor{"convolution", 1, "Convolution", "Filter",
-            {{"image", "Image", ValueType::Image2D, SocketDirection::Input},
-             {"image", "Image", ValueType::Image2D, SocketDirection::Output}},
+            {{"image", "Image", SocketContract::AnyField, SocketDirection::Input},
+             {"image", "Image", SocketContract::AnyField, SocketDirection::Output}},
             {{"iterations", "Iterations", 1.0F, 1.0F, 32.0F}}};
         result.lowerable = true;
         result.neighborhoodSocket = "image";
         result.sockets[0].requiresImage = true;
+        result.sockets[1].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+        result.sockets[1].typeInputs = {"image"};
         return result;
     }
     const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
@@ -241,7 +243,7 @@ public:
             gpu.dispatch(program_, context.width, context.height);
             inputTexture = outputTexture;
         }
-        outputs[0] = ImageHandle{texture_, context.width, context.height};
+        outputs[0] = ImageHandle{texture_, context.width, context.height, source.semanticType};
     }
 
 private:

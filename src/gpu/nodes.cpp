@@ -35,7 +35,7 @@ class PerlinNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() {
         auto result = NodeDescriptor{"perlin", 1, "Perlin Noise", "Generator",
-            {{"image", "Image", ValueType::AnyNumeric, SocketDirection::Output}},
+            {{"image", "Image", ValueType::ScalarField, SocketDirection::Output}},
             {{"seed", "Seed", 1, 0, 10000}, {"scale", "Scale", 6, 0.05F, 100},
              {"octaves", "Octaves", 4, 1, 8}, {"persistence", "Persistence", 0.5F, 0, 1},
              {"lacunarity", "Lacunarity", 2, 1, 4}, {"speed", "Speed", 0.08F, -2, 2},
@@ -75,10 +75,10 @@ class MathNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() {
         auto result = NodeDescriptor{"math", 1, "Math", "Math",
-            {{"a", "A", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"b", "B", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"c", "C", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
+            {{"a", "A", SocketContract::Numeric, SocketDirection::Input, true},
+             {"b", "B", SocketContract::Numeric, SocketDirection::Input, true},
+             {"c", "C", SocketContract::Numeric, SocketDirection::Input, true},
+             {"result", "Result", SocketContract::Numeric, SocketDirection::Output}},
             {{"operation", "Operation", 0, 0, 30, ParameterDescriptor::Control::Enum,
               {"Add", "Subtract", "Multiply", "Divide", "Power", "Minimum",
                "Maximum", "Absolute", "Sine", "Cosine", "Clamp", "Remap",
@@ -181,12 +181,15 @@ public:
 class MixNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() { auto result = NodeDescriptor{"mix",1,"Mix","Color",
-        {{"a","A",ValueType::AnyNumeric,SocketDirection::Input,true},{"b","B",ValueType::AnyNumeric,SocketDirection::Input,true},
-         {"factor","Factor",ValueType::AnyNumeric,SocketDirection::Input,true},{"result","Result",ValueType::AnyNumeric,SocketDirection::Output}},
+        {{"a","A",SocketContract::AnyImageValue,SocketDirection::Input,true},{"b","B",SocketContract::AnyImageValue,SocketDirection::Input,true},
+         {"factor","Factor",SocketContract::Numeric,SocketDirection::Input,true},{"result","Result",SocketContract::AnyImageValue,SocketDirection::Output}},
         {{"mode","Mode",0,0,9,ParameterDescriptor::Control::Enum,
           {"Mix", "Add", "Multiply", "Screen", "Overlay", "Difference", "Darken",
            "Lighten", "Color Dodge", "Color Burn"}},
-         {"a","A",0,0,1},{"b","B",1,0,1},{"factor","Factor",0.5F,0,1}}}; result.lowerable=true; return result; }
+         {"a","A",0,0,1},{"b","B",1,0,1},{"factor","Factor",0.5F,0,1}}};
+        result.sockets.back().typePolicy=SocketDescriptor::TypePolicy::WidestValue;
+        result.sockets.back().typeInputs={"a","b"};
+        result.sockets.back().fieldInputs={"a","b","factor"}; result.lowerable=true; return result; }
     const NodeDescriptor& descriptor() const override { static const auto value=describe();return value; }
     std::string shaderVariantKey(const nlohmann::json& parameters) const override {
         return "mode=" + std::to_string(std::clamp(
@@ -227,8 +230,8 @@ public:
 class ThresholdNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() { auto result = NodeDescriptor{"threshold", 1, "Threshold", "Math",
-        {{"value", "Value", ValueType::AnyNumeric, SocketDirection::Input, true},
-         {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
+        {{"value", "Value", SocketContract::Numeric, SocketDirection::Input, true},
+         {"result", "Result", SocketContract::Numeric, SocketDirection::Output}},
         {{"value", "Value", 0.5F, 0, 1}, {"threshold", "Threshold", 0.5F, 0, 1}}}; result.lowerable=true; return result; }
     const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
     bool lowerShader(ShaderLoweringContext& context) const override {
@@ -244,13 +247,16 @@ class SelectNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() {
         auto result = NodeDescriptor{"select", 1, "Select", "Logic",
-                {{"condition", "Condition", ValueType::AnyNumeric, SocketDirection::Input, true},
-                 {"ifTrue", "If True", ValueType::AnyNumeric, SocketDirection::Input, true},
-                 {"ifFalse", "If False", ValueType::AnyNumeric, SocketDirection::Input, true},
-                 {"result", "Result", ValueType::AnyNumeric, SocketDirection::Output}},
+                {{"condition", "Condition", SocketContract::Numeric, SocketDirection::Input, true},
+                 {"ifTrue", "If True", SocketContract::AnyImageValue, SocketDirection::Input, true},
+                 {"ifFalse", "If False", SocketContract::AnyImageValue, SocketDirection::Input, true},
+                 {"result", "Result", SocketContract::AnyImageValue, SocketDirection::Output}},
                 {{"condition", "Condition", 0.0F, -10.0F, 10.0F},
                  {"ifTrue", "If True", 1.0F, -10.0F, 10.0F},
                  {"ifFalse", "If False", 0.0F, -10.0F, 10.0F}}};
+        result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::WidestValue;
+        result.sockets.back().typeInputs = {"ifTrue", "ifFalse"};
+        result.sockets.back().fieldInputs = {"condition", "ifTrue", "ifFalse"};
         result.lowerable = true;
         return result;
     }
@@ -275,7 +281,7 @@ class CoordinatesNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() {
         auto result = NodeDescriptor{"coordinates", 1, "Canvas Coordinates", "Input",
-                {{"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Output}},
+                {{"coordinates", "Coordinates", ValueType::VectorField, SocketDirection::Output}},
                 {{"pixels", "Pixels", 0.0F, 0.0F, 1.0F,
                   ParameterDescriptor::Control::Boolean}}};
         result.lowerable = true;
@@ -301,13 +307,15 @@ class LaplacianNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() {
         auto result = NodeDescriptor{"laplacian", 1, "Laplacian", "Filter",
-                {{"value", "Value", ValueType::AnyVector, SocketDirection::Input},
+                {{"value", "Value", SocketContract::AnyField, SocketDirection::Input},
                  {"scale", "Scale", ValueType::Float, SocketDirection::Input, true},
-                 {"result", "Result", ValueType::AnyVector, SocketDirection::Output}},
+                 {"result", "Result", SocketContract::AnyField, SocketDirection::Output}},
                 {{"scale", "Scale", 1.0F, .25F, 8.0F}}};
         result.lowerable = true;
         result.neighborhoodSocket = "value";
         result.sockets[0].requiresImage = true;
+        result.sockets[2].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+        result.sockets[2].typeInputs = {"value"};
         return result;
     }
     const NodeDescriptor& descriptor() const override {
@@ -340,13 +348,75 @@ public:
 class InvertNode final : public ParameterNode {
 public:
     static NodeDescriptor describe() { auto result = NodeDescriptor{"invert", 1, "Image Invert", "Utility",
-        {{"image", "Image", ValueType::Image2D, SocketDirection::Input},
-         {"image", "Image", ValueType::Image2D, SocketDirection::Output}}, {}}; result.lowerable=true; return result; }
+        {{"image", "Image", SocketContract::AnyField, SocketDirection::Input},
+         {"image", "Image", SocketContract::AnyField, SocketDirection::Output}}, {}};
+        result.sockets.back().typePolicy=SocketDescriptor::TypePolicy::PreserveInput;
+        result.sockets.back().typeInputs={"image"}; result.lowerable=true; return result; }
     const NodeDescriptor& descriptor() const override { static const auto value = describe(); return value; }
     bool lowerShader(ShaderLoweringContext& context) const override {
-        const auto value = context.color("image", "image", 0.0F);
-        (void)context.emitTyped("vec4(vec3(1.0)-(" + value.name + ").rgb,(" + value.name + ").a)",
-                                ShaderValueType::Vec4, "image");
+        const auto value = context.input("image", "image", 0.0F);
+        const auto expression = value.type == ShaderValueType::Vec4
+            ? "vec4(vec3(1.0)-(" + value.name + ").rgb,(" + value.name + ").a)"
+            : "(1.0-(" + value.name + "))";
+        (void)context.emitTyped(expression, value.type, "image");
+        return true;
+    }
+};
+
+class ColorLuminanceNode final : public ParameterNode {
+public:
+    static NodeDescriptor describe() {
+        auto result = NodeDescriptor{"color_luminance", 1, "Color to Luminance", "Color",
+            {{"color", "Color", ValueType::ColorImage, SocketDirection::Input},
+             {"value", "Luminance", ValueType::ScalarField, SocketDirection::Output}}, {}};
+        result.lowerable = true;
+        return result;
+    }
+    const NodeDescriptor& descriptor() const override {
+        static const auto value = describe(); return value;
+    }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto color = context.color("color", "color", 0.0F);
+        (void)context.emitTyped("dot((" + color.name + ").rgb,vec3(0.2126,0.7152,0.0722))",
+                                ShaderValueType::Scalar, "value");
+        return true;
+    }
+};
+
+class ColorRNode final : public ParameterNode {
+public:
+    static NodeDescriptor describe() {
+        auto result = NodeDescriptor{"color_r", 1, "Color to R", "Color",
+            {{"color", "Color", ValueType::ColorImage, SocketDirection::Input},
+             {"value", "R", ValueType::ScalarField, SocketDirection::Output}}, {}};
+        result.lowerable = true;
+        return result;
+    }
+    const NodeDescriptor& descriptor() const override {
+        static const auto value = describe(); return value;
+    }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto color = context.color("color", "color", 0.0F);
+        (void)context.emitTyped("(" + color.name + ").r", ShaderValueType::Scalar, "value");
+        return true;
+    }
+};
+
+class ColorRgNode final : public ParameterNode {
+public:
+    static NodeDescriptor describe() {
+        auto result = NodeDescriptor{"color_rg", 1, "Color to RG", "Color",
+            {{"color", "Color", ValueType::ColorImage, SocketDirection::Input},
+             {"value", "RG", ValueType::VectorField, SocketDirection::Output}}, {}};
+        result.lowerable = true;
+        return result;
+    }
+    const NodeDescriptor& descriptor() const override {
+        static const auto value = describe(); return value;
+    }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto color = context.color("color", "color", 0.0F);
+        (void)context.emitTyped("(" + color.name + ").rg", ShaderValueType::Vec2, "value");
         return true;
     }
 };
@@ -354,7 +424,7 @@ public:
 class ColorRampNode final : public ParameterNode {
 public:
     static NodeDescriptor describe(){auto result=NodeDescriptor{"color_ramp",1,"Color Ramp","Color",
-        {{"value","Value",ValueType::AnyNumeric,SocketDirection::Input,true},{"image","Image",ValueType::Image2D,SocketDirection::Output}},
+        {{"value","Value",SocketContract::Numeric,SocketDirection::Input,true},{"image","Image",ValueType::ColorImage,SocketDirection::Output}},
         {{"value","Value",0.5F,0,1},{"low","Low threshold",.02F,0,1},{"high","High threshold",.4F,0,1},
          {"r0","Start R",.015F,0,1},{"g0","Start G",.01F,0,1},{"b0","Start B",.04F,0,1},
          {"r1","End R",1,0,1},{"g1","End G",.35F,0,1},{"b1","End B",.08F,0,1}}};result.lowerable=true;return result;}
@@ -403,8 +473,8 @@ class ReactionNode final : public TextureNode {
 public:
     ~ReactionNode()override{if(state_[0])glDeleteTextures(2,state_.data());if(initProgram_)glDeleteProgram(initProgram_);if(outputProgram_)glDeleteProgram(outputProgram_);if(collapseProgram_)glDeleteProgram(collapseProgram_);if(collapseBuffer_)glDeleteBuffers(1,&collapseBuffer_);}
     static NodeDescriptor describe(){auto result=NodeDescriptor{"reaction_diffusion",1,"Reaction Diffusion (Monolithic)","Simulation",
-        {{"feedMultiplier","Feed Multiplier",ValueType::AnyNumeric,SocketDirection::Input,true},{"killMultiplier","Kill Multiplier",ValueType::AnyNumeric,SocketDirection::Input,true},
-         {"seed","Seed",ValueType::Image2D,SocketDirection::Input,true},{"image","Image",ValueType::Image2D,SocketDirection::Output}},
+        {{"feedMultiplier","Feed Multiplier",SocketContract::Numeric,SocketDirection::Input,true},{"killMultiplier","Kill Multiplier",SocketContract::Numeric,SocketDirection::Input,true},
+         {"seed","Seed",ValueType::ScalarField,SocketDirection::Input,true},{"image","Image",ValueType::ScalarField,SocketDirection::Output}},
         {{"feed","Feed",.055F,0,.1F},{"kill","Kill",.062F,0,.1F},{"diffA","Diffusion A",1,0,2},{"diffB","Diffusion B",.5F,0,2},
          {"structureScale","Structure Scale",1,.25F,8},
          {"dt","Timestep",1,0.01F,2},{"iterations","Iterations",8,1,64,ParameterDescriptor::Control::Integer},
@@ -428,18 +498,20 @@ public:
                 gpu.dispatch(program_,context.width,context.height);index_=next;}}
         const bool autoReset=parameter(parameters_,"autoReset",0)>.5F;
         if(autoReset&&++collapseCheckCounter_>=8){collapseCheckCounter_=0;const GLuint zero=0;glBindBuffer(GL_SHADER_STORAGE_BUFFER,collapseBuffer_);glBufferSubData(GL_SHADER_STORAGE_BUFFER,0,sizeof(zero),&zero);glBindBufferBase(GL_SHADER_STORAGE_BUFFER,0,collapseBuffer_);glUseProgram(collapseProgram_);bindTexture(0,state_[index_]);uniform(collapseProgram_,"threshold",.001F);gpu.dispatch(collapseProgram_,context.width,context.height);GLuint active=0;glGetBufferSubData(GL_SHADER_STORAGE_BUFFER,0,sizeof(active),&active);if(active==0)initialize();}
-        glUseProgram(outputProgram_);bindTexture(0,state_[index_]);glBindImageTexture(0,texture_,0,GL_FALSE,0,GL_WRITE_ONLY,GL_RGBA16F);gpu.dispatch(outputProgram_,context.width,context.height);outputs[0]=ImageHandle{texture_,context.width,context.height};
+        glUseProgram(outputProgram_);bindTexture(0,state_[index_]);glBindImageTexture(0,texture_,0,GL_FALSE,0,GL_WRITE_ONLY,GL_RGBA16F);gpu.dispatch(outputProgram_,context.width,context.height);outputs[0]=ImageHandle{texture_,context.width,context.height,ValueType::ScalarField};
     }
 private:std::array<GLuint,2> state_{};GLuint initProgram_=0,outputProgram_=0,collapseProgram_=0,collapseBuffer_=0;int stateWidth_=0,stateHeight_=0,index_=0,collapseCheckCounter_=0;bool resetPending_=true;
 };
 
 class OutputNode final : public ParameterNode {
 public:
-    static NodeDescriptor describe(){return {"output",1,"Output","Output",{{"image","Image",ValueType::Image2D,SocketDirection::Input},{"image","Image",ValueType::Image2D,SocketDirection::Output}},{}};}
+    static NodeDescriptor describe(){auto result=NodeDescriptor{"output",1,"Output","Output",{{"image","Image",SocketContract::AnyField,SocketDirection::Input},{"image","Image",SocketContract::AnyField,SocketDirection::Output}}, {}};
+        result.sockets.back().typePolicy=SocketDescriptor::TypePolicy::PreserveInput;
+        result.sockets.back().typeInputs={"image"}; return result;}
     const NodeDescriptor& descriptor()const override{static const auto value=describe();return value;}
     void evaluate(EvaluationContext&,std::span<const Value> inputs,std::span<Value> outputs)override{
         // A generated scalar/vector producer normally materializes before this
-        // image-only boundary. Keep an unexpected constant from escaping as an
+        // field-only boundary. Keep an unexpected constant from escaping as an
         // invalid image value if that boundary cannot be generated.
         outputs[0] = !inputs.empty() && std::holds_alternative<ImageHandle>(inputs[0])
             ? inputs[0] : Value{};
@@ -467,7 +539,7 @@ void registerBuiltInNodes(NodeRegistry& registry) {
     registerTableNode(registry);
     registerBitTestNode(registry);
     addNode<PerlinNode>(registry); addNode<CoordinatesNode>(registry);
-    addNode<MathNode>(registry); addNode<VectorMathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<SelectNode>(registry); addNode<InvertNode>(registry); addNode<ColorRampNode>(registry);
+    addNode<MathNode>(registry); addNode<VectorMathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<SelectNode>(registry); addNode<InvertNode>(registry); addNode<ColorRNode>(registry); addNode<ColorLuminanceNode>(registry); addNode<ColorRgNode>(registry); addNode<ColorRampNode>(registry);
     registerConvolutionNode(registry); addNode<LaplacianNode>(registry);
     addNode<ReactionNode>(registry); addNode<OutputNode>(registry);
 }

@@ -159,17 +159,17 @@ public:
     }
 
     static NodeDescriptor describe() {
-        return {"worley_noise", 1, "Worley / Voronoi Noise", "Generator",
-            {{"coordinates", "Coordinates", ValueType::AnyVector, SocketDirection::Input, true},
-             {"frequency", "Frequency", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"offset", "Offset", ValueType::AnyVector, SocketDirection::Input, true},
-             {"jitter", "Jitter", ValueType::AnyNumeric, SocketDirection::Input, true},
+        auto result = NodeDescriptor{"worley_noise", 1, "Worley / Voronoi Noise", "Generator",
+            {{"coordinates", "Coordinates", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"frequency", "Frequency", SocketContract::Numeric, SocketDirection::Input, true},
+             {"offset", "Offset", SocketContract::VectorNumeric, SocketDirection::Input, true},
+             {"jitter", "Jitter", SocketContract::Numeric, SocketDirection::Input, true},
              {"seed", "Seed", ValueType::Float, SocketDirection::Input, true},
-             {"f1", "F1", ValueType::AnyNumeric, SocketDirection::Output},
-             {"f2", "F2", ValueType::AnyNumeric, SocketDirection::Output},
-             {"f2MinusF1", "F2 - F1", ValueType::AnyNumeric, SocketDirection::Output},
-             {"cellId", "Cell ID", ValueType::AnyNumeric, SocketDirection::Output},
-             {"featurePosition", "Feature Position", ValueType::AnyVector, SocketDirection::Output}},
+             {"f1", "F1", SocketContract::Numeric, SocketDirection::Output},
+             {"f2", "F2", SocketContract::Numeric, SocketDirection::Output},
+             {"f2MinusF1", "F2 - F1", SocketContract::Numeric, SocketDirection::Output},
+             {"cellId", "Cell ID", SocketContract::Numeric, SocketDirection::Output},
+             {"featurePosition", "Feature Position", SocketContract::VectorNumeric, SocketDirection::Output}},
             {{"frequency", "Frequency", 5.0F, -100.0F, 100.0F},
              {"offsetX", "Offset X", 0.0F, -100.0F, 100.0F},
              {"offsetY", "Offset Y", 0.0F, -100.0F, 100.0F},
@@ -177,6 +177,15 @@ public:
              {"seed", "Seed", 0.0F, -100000.0F, 100000.0F},
              {"distanceMetric", "Distance Metric", 0.0F, 0.0F, 2.0F, ParameterDescriptor::Control::Enum,
               {"Euclidean", "Manhattan", "Chebyshev"}}}};
+        result.sockets[0].fieldDefault = true;
+        const std::vector<std::string> inputs{"coordinates", "frequency", "offset", "jitter"};
+        for (std::size_t index = 5; index < 9; ++index) {
+            result.sockets[index].typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+            result.sockets[index].typeInputs = inputs;
+        }
+        result.sockets[9].typePolicy = SocketDescriptor::TypePolicy::VectorPromotion;
+        result.sockets[9].typeInputs = inputs;
+        return result;
     }
 
     const NodeDescriptor& descriptor() const override {
@@ -224,7 +233,8 @@ public:
         node_support::uniform(program_, "distanceMetric", metric);
         gpu.dispatch(program_, context.width, context.height);
         for (std::size_t index = 0; index < textures_.size(); ++index)
-            outputs[index] = ImageHandle{textures_[index], context.width, context.height};
+            outputs[index] = ImageHandle{textures_[index], context.width, context.height,
+                index == 4 ? ValueType::VectorField : ValueType::ScalarField};
     }
 
 private:

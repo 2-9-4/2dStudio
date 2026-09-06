@@ -35,7 +35,7 @@ const NodeDescriptor* intrinsicDescriptor(const SubgraphDefinition& definition,
         const auto* item = interfaceItem(definition, node);
         if (!item || item->kind == SubgraphInterfaceKind::Output) return nullptr;
         storage = {"subgraph_input", 1, item->label, "Subgraph Interface", {}, {}};
-        storage.sockets.push_back({"value", "Value", item->type, SocketDirection::Output});
+        storage.sockets.push_back({"value", "Value", item->contract, SocketDirection::Output});
         if (item->kind == SubgraphInterfaceKind::Input) {
             storage.sockets.push_back({"connected", "Connected", ValueType::Float,
                                        SocketDirection::Output});
@@ -46,33 +46,33 @@ const NodeDescriptor* intrinsicDescriptor(const SubgraphDefinition& definition,
         const auto* item = interfaceItem(definition, node);
         if (!item || item->kind != SubgraphInterfaceKind::Output) return nullptr;
         storage = {"subgraph_output", 1, item->label, "Subgraph Interface",
-                   {{"value", "Value", item->type, SocketDirection::Input}}, {}};
+                   {{"value", "Value", item->contract, SocketDirection::Input}}, {}};
         return &storage;
     }
     if (node.type == "simulation_previous_state") {
         storage = {"simulation_previous_state", 1, "Previous Simulation State", "Simulation",
-                   {{"state", "State", ValueType::Vec2, SocketDirection::Output}}, {}};
+                   {{"state", "State", ValueType::VectorField, SocketDirection::Output}}, {}};
         return &storage;
     }
     if (node.type == "simulation_channel") {
         storage = {"simulation_channel", 1, "Simulation Channel Split", "Simulation",
-                   {{"state", "State", ValueType::Vec2, SocketDirection::Input},
-                    {"a", "Chemical A", ValueType::Float, SocketDirection::Output},
-                    {"b", "Chemical B", ValueType::Float, SocketDirection::Output}}, {}};
+                   {{"state", "State", ValueType::VectorField, SocketDirection::Input},
+                    {"a", "Chemical A", ValueType::ScalarField, SocketDirection::Output},
+                    {"b", "Chemical B", ValueType::ScalarField, SocketDirection::Output}}, {}};
         return &storage;
     }
     if (node.type == "simulation_initial_state") {
         storage = {"simulation_initial_state", 1, "Initial Simulation State", "Simulation",
-                   {{"a", "Chemical A", ValueType::AnyNumeric, SocketDirection::Input},
-                    {"b", "Chemical B", ValueType::AnyNumeric, SocketDirection::Input}}, {}};
+                   {{"a", "Chemical A", SocketContract::Numeric, SocketDirection::Input},
+                    {"b", "Chemical B", SocketContract::Numeric, SocketDirection::Input}}, {}};
         return &storage;
     }
     if (node.type == "simulation_next_state") {
         storage = {"simulation_next_state", 1, "Next Simulation State", "Simulation",
-                   {{"a", "Chemical A", ValueType::AnyNumeric, SocketDirection::Input},
-                    {"b", "Chemical B", ValueType::AnyNumeric, SocketDirection::Input},
-                    {"a", "Chemical A", ValueType::Image2D, SocketDirection::Output},
-                    {"b", "Chemical B", ValueType::Image2D, SocketDirection::Output}}, {}};
+                   {{"a", "Chemical A", SocketContract::Numeric, SocketDirection::Input},
+                    {"b", "Chemical B", SocketContract::Numeric, SocketDirection::Input},
+                    {"a", "Chemical A", ValueType::ScalarField, SocketDirection::Output},
+                    {"b", "Chemical B", ValueType::ScalarField, SocketDirection::Output}}, {}};
         return &storage;
     }
 
@@ -123,10 +123,10 @@ SubgraphDefinition discreteReaction() {
     result.immutable = true;
     result.interface = {
         {"feedMultiplier", "Feed Multiplier", SubgraphInterfaceKind::Input,
-         ValueType::AnyNumeric, true, 1.0F},
+         SocketContract::Numeric, true, 1.0F},
         {"killMultiplier", "Kill Multiplier", SubgraphInterfaceKind::Input,
-         ValueType::AnyNumeric, true, 1.0F},
-        {"seed", "Seed", SubgraphInterfaceKind::Input, ValueType::Image2D, true},
+         SocketContract::Numeric, true, 1.0F},
+        {"seed", "Seed", SubgraphInterfaceKind::Input, ValueType::ScalarField, true},
         {"feed", "Feed", SubgraphInterfaceKind::Slider, ValueType::Float, false,
          .055F, 0.0F, .1F},
         {"kill", "Kill", SubgraphInterfaceKind::Slider, ValueType::Float, false,
@@ -143,9 +143,9 @@ SubgraphDefinition discreteReaction() {
          false, 8.0F, 1.0F, 64.0F, Control::Integer, "iterations"},
         {"autoReset", "Auto Reset", SubgraphInterfaceKind::Slider, ValueType::Float,
          false, 0.0F, 0.0F, 1.0F, Control::Boolean, "autoReset"},
-        {"image", "Image", SubgraphInterfaceKind::Output, ValueType::Image2D},
-        {"a", "Chemical A", SubgraphInterfaceKind::Output, ValueType::Image2D},
-        {"b", "Chemical B", SubgraphInterfaceKind::Output, ValueType::Image2D},
+        {"image", "Image", SubgraphInterfaceKind::Output, ValueType::ScalarField},
+        {"a", "Chemical A", SubgraphInterfaceKind::Output, ValueType::ScalarField},
+        {"b", "Chemical B", SubgraphInterfaceKind::Output, ValueType::ScalarField},
     };
 
     auto& body = result.body;
@@ -299,8 +299,9 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
             (item.minimum > item.maximum || item.defaultValue < item.minimum ||
              item.defaultValue > item.maximum))
             errors.push_back("Subgraph slider '" + item.label + "' has an invalid range");
-        if (item.kind == SubgraphInterfaceKind::Output && item.type != ValueType::Image2D)
-            errors.push_back("Subgraph outputs must be Image2D");
+        if (item.kind == SubgraphInterfaceKind::Output &&
+            !std::ranges::any_of(acceptedTypes(item.contract), isFieldType))
+            errors.push_back("Subgraph outputs must resolve to a field type");
         if (item.kind == SubgraphInterfaceKind::Output) ++outputCount;
     }
     if (definition.execution == SubgraphExecution::Simulation && (outputCount < 1 || outputCount > 3))
@@ -371,24 +372,47 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
     std::unordered_map<NodeId, int> indegree;
     std::unordered_map<NodeId, std::vector<NodeId>> outgoing;
     const auto bodyValueType = [&](NodeId id, std::string_view outputSocket) {
-        std::unordered_set<NodeId> visiting;
+        std::unordered_set<std::string> visiting;
+        std::unordered_map<std::string, ValueType> memo;
         std::function<ValueType(NodeId, std::string_view)> infer =
             [&](NodeId sourceId, std::string_view sourceSocket) -> ValueType {
                 const auto found = nodes.find(sourceId);
-                if (found == nodes.end() || !visiting.insert(sourceId).second)
+                const auto visitKey = std::to_string(sourceId) + ":" + std::string(sourceSocket);
+                if (const auto known = memo.find(visitKey); known != memo.end())
+                    return known->second;
+                if (found == nodes.end() || !visiting.insert(visitKey).second)
                     return ValueType::Float;
-                const auto& source = *found->second;
-                if (source.type == "simulation_previous_state" && sourceSocket == "state")
-                    return ValueType::Vec2;
-                if (source.type == "laplacian" && sourceSocket == "result") {
-                    const auto input = std::ranges::find_if(definition.body.links(),
-                        [&](const LinkRecord& link) {
-                            return link.toNode == sourceId && link.toSocket == "value";
-                        });
-                    if (input != definition.body.links().end())
-                        return infer(input->fromNode, input->fromSocket);
+                const auto descriptor = descriptors.find(sourceId);
+                if (descriptor == descriptors.end()) {
+                    visiting.erase(visitKey);
+                    return ValueType::Float;
                 }
-                return ValueType::Float;
+                const auto* output = socket(descriptor->second, sourceSocket,
+                                            SocketDirection::Output);
+                if (!output) {
+                    visiting.erase(visitKey);
+                    return ValueType::Float;
+                }
+                const auto result = resolveOutputType(descriptor->second, *output,
+                    [&](std::string_view inputKey) -> std::optional<ValueType> {
+                        const auto link = std::ranges::find_if(definition.body.links(),
+                            [&](const LinkRecord& candidate) {
+                                return candidate.toNode == sourceId &&
+                                       candidate.toSocket == inputKey;
+                            });
+                        if (link != definition.body.links().end())
+                            return infer(link->fromNode, link->fromSocket);
+                        const auto* input = socket(descriptor->second, inputKey,
+                                                   SocketDirection::Input);
+                        if (!input) return std::nullopt;
+                        auto type = disconnectedType(input->contract);
+                        if (input->fieldDefault)
+                            type = fieldTypeForWidth(componentCount(type));
+                        return type;
+                    });
+                visiting.erase(visitKey);
+                memo.emplace(visitKey, result);
+                return result;
             };
         return infer(id, outputSocket);
     };
@@ -411,14 +435,22 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
             errors.push_back("Subgraph link " + std::to_string(linkRecord.id) + " names an unknown socket");
             continue;
         }
-        if (!areSocketTypesCompatible(output->type, inputSocket->type))
-            errors.push_back("Subgraph link " + std::to_string(linkRecord.id) + " has incompatible socket types");
         const auto actualType = bodyValueType(linkRecord.fromNode, linkRecord.fromSocket);
-        if ((inputSocket->type == ValueType::Vec2 && actualType != ValueType::Vec2) ||
-            (inputSocket->type == ValueType::AnyNumeric && actualType == ValueType::Vec2) ||
-            (inputSocket->type == ValueType::Float && actualType == ValueType::Vec2)) {
+        if (!contractAccepts(inputSocket->contract, actualType)) {
             errors.push_back("Subgraph link " + std::to_string(linkRecord.id) +
-                             " has incompatible resolved value types");
+                             " cannot connect " + toString(actualType) + " to " +
+                             toDescriptor->second.displayName + "." + inputSocket->key +
+                             "; socket accepts " + toString(inputSocket->contract));
+        } else {
+            const auto targetType = resolveInputType(
+                toDescriptor->second, inputSocket->key, actualType,
+                [&](std::string_view outputKey) -> std::optional<ValueType> {
+                    return bodyValueType(linkRecord.toNode, outputKey);
+                });
+            if (!coercionBetween(actualType, targetType))
+                errors.push_back("Subgraph link " + std::to_string(linkRecord.id) +
+                                 " cannot convert " + toString(actualType) + " to " +
+                                 toString(targetType));
         }
         const auto inputKey = std::to_string(linkRecord.toNode) + ":" + linkRecord.toSocket;
         if (!occupiedInputs.insert(inputKey).second)
@@ -481,10 +513,10 @@ NodeDescriptor describeSubgraph(const SubgraphDefinition& definition) {
     NodeDescriptor result{"subgraph", definition.version, definition.name, definition.category, {}, {}};
     for (const auto& item : definition.interface) {
         if (item.kind == SubgraphInterfaceKind::Input) {
-            result.sockets.push_back({item.key, item.label, item.type,
+            result.sockets.push_back({item.key, item.label, item.contract,
                                       SocketDirection::Input, item.optional});
         } else if (item.kind == SubgraphInterfaceKind::Output) {
-            result.sockets.push_back({item.key, item.label, item.type,
+            result.sockets.push_back({item.key, item.label, item.contract,
                                       SocketDirection::Output});
         } else {
             result.parameters.push_back({item.key, item.label, item.defaultValue,

@@ -79,14 +79,14 @@ void main() {
 class WaveNode final : public TextureNode {
 public:
     static NodeDescriptor describe() {
-        return {"wave", 1, "Wave", "Generator",
-            {{"phase", "Phase", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"frequency", "Frequency", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"phaseOffset", "Phase Offset", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"amplitude", "Amplitude", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"bias", "Bias", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"dutyCycle", "Duty Cycle", ValueType::AnyNumeric, SocketDirection::Input, true},
-             {"value", "Value", ValueType::AnyNumeric, SocketDirection::Output}},
+        auto result = NodeDescriptor{"wave", 1, "Wave", "Generator",
+            {{"phase", "Phase", SocketContract::Numeric, SocketDirection::Input, true},
+             {"frequency", "Frequency", SocketContract::Numeric, SocketDirection::Input, true},
+             {"phaseOffset", "Phase Offset", SocketContract::Numeric, SocketDirection::Input, true},
+             {"amplitude", "Amplitude", SocketContract::Numeric, SocketDirection::Input, true},
+             {"bias", "Bias", SocketContract::Numeric, SocketDirection::Input, true},
+             {"dutyCycle", "Duty Cycle", SocketContract::Numeric, SocketDirection::Input, true},
+             {"value", "Value", SocketContract::Numeric, SocketDirection::Output}},
             {{"waveform", "Waveform", 0.0F, 0.0F, 5.0F, ParameterDescriptor::Control::Enum,
               {"Sine", "Cosine", "Triangle", "Saw", "Reverse Saw", "Square"}},
              {"normalize01", "Normalize 0-1", 0.0F, 0.0F, 1.0F, ParameterDescriptor::Control::Boolean},
@@ -96,6 +96,10 @@ public:
              {"amplitude", "Amplitude", 1.0F, -100.0F, 100.0F},
              {"bias", "Bias", 0.0F, -100.0F, 100.0F},
              {"dutyCycle", "Duty Cycle", 0.5F, 0.0F, 1.0F}}};
+        result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+        result.sockets.back().typeInputs = {"phase", "frequency", "phaseOffset", "amplitude",
+                                           "bias", "dutyCycle"};
+        return result;
     }
 
     const NodeDescriptor& descriptor() const override {
@@ -143,7 +147,7 @@ public:
         node_support::uniform(program_, "waveform", static_cast<int>(shape));
         node_support::uniform(program_, "normalize01", normalize ? 1 : 0);
         gpu.dispatch(program_, context.width, context.height);
-        outputs[0] = ImageHandle{texture_, context.width, context.height};
+        outputs[0] = ImageHandle{texture_, context.width, context.height, ValueType::ScalarField};
     }
 };
 
