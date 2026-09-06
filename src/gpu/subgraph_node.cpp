@@ -223,9 +223,6 @@ private:
                         << (width == 2 ? "vec2" : "float") << " value_" << name << ";\n";
                 }
                 ++binding;
-            } else if (item.kind == SubgraphInterfaceKind::Slider &&
-                       usedInterfaces_.contains(item.key)) {
-                out << "uniform float param_" << name << ";\n";
             }
         }
     }
@@ -279,8 +276,6 @@ private:
             const auto name = identifier(interfaceKey);
             std::string expression;
             if (socket == "connected") expression = "(mode_" + name + "!=0?1.0:0.0)";
-            else if (item && item->kind == SubgraphInterfaceKind::Slider)
-                expression = "param_" + name;
             else {
                 const auto fallback = std::to_string(node.parameters.value(
                     "default", item ? item->defaultValue : 0.0F));
@@ -422,16 +417,34 @@ public:
                                   mapping->fromNode == next->id && mapping->fromSocket == "b";
             outputChannels_.push_back(channelB ? 1 : 0);
             int stateSlot = 0;
+            int component = -1;
             if (!definition_.stateSlots.empty() && mapping != bodyLinks.end()) {
                 const auto source = std::ranges::find_if(bodyNodes, [&](const NodeRecord& node) {
                     return node.id == mapping->fromNode && node.type == "simulation_next_state" &&
                            mapping->fromSocket == "value";
                 });
-                if (source != bodyNodes.end()) stateSlot = std::clamp(
-                    static_cast<int>(source->parameters.value("slot", 0.0F)), 0,
+                auto stateSource = source;
+                if (stateSource == bodyNodes.end()) {
+                    const auto split = std::ranges::find_if(bodyNodes, [&](const NodeRecord& node) {
+                        return node.id == mapping->fromNode && node.type == "simulation_channel" &&
+                               (mapping->fromSocket == "a" || mapping->fromSocket == "b");
+                    });
+                    if (split != bodyNodes.end()) {
+                        const auto splitInput = std::ranges::find_if(bodyLinks, [&](const LinkRecord& link) {
+                            return link.toNode == split->id && link.toSocket == "state";
+                        });
+                        if (splitInput != bodyLinks.end()) stateSource = std::ranges::find_if(bodyNodes,
+                            [&](const NodeRecord& node) { return node.id == splitInput->fromNode &&
+                                node.type == "simulation_next_state" && splitInput->fromSocket == "value"; });
+                        component = mapping->fromSocket == "b" ? 1 : 0;
+                    }
+                }
+                if (stateSource != bodyNodes.end()) stateSlot = std::clamp(
+                    static_cast<int>(stateSource->parameters.value("slot", 0.0F)), 0,
                     static_cast<int>(definition_.stateSlots.size()) - 1);
             }
             outputSlots_.push_back(stateSlot);
+            outputComponents_.push_back(component);
         }
         requiredOutputs_.assign(outputChannels_.size(), true);
         output_.assign(outputChannels_.size(), 0);
@@ -564,7 +577,11 @@ private:
                 const auto width = componentCount(definition_.stateSlots[slot].type);
                 source << "vec4 q" << output << "=texelFetch(stateIn" << slot << ",p,0);imageStore(out"
                        << output << ",p,";
-                if (width == 1) source << "vec4(q" << output << ".r,q" << output << ".r,q" << output << ".r,1.0)";
+                if (outputComponents_[output] >= 0) {
+                    const char channel = outputComponents_[output] == 1 ? 'g' : 'r';
+                    source << "vec4(q" << output << "." << channel << ",q" << output << "." << channel
+                           << ",q" << output << "." << channel << ",1.0)";
+                } else if (width == 1) source << "vec4(q" << output << ".r,q" << output << ".r,q" << output << ".r,1.0)";
                 else if (width == 2) source << "vec4(q" << output << ".rg,0.0,1.0)";
                 else source << "q" << output;
                 source << ");\n";
@@ -636,17 +653,6 @@ private:
                 if (!value || !std::holds_alternative<Vec2>(*value))
                     uniform(program, ("value_" + name).c_str(), scalar);
                 ++textureUnit; ++inputIndex;
-            } else if (item.kind == SubgraphInterfaceKind::Slider) {
-                if (inputIndex < inputs.size() &&
-                    std::holds_alternative<float>(inputs[inputIndex])) {
-                    if (used.contains(item.key))
-                        uniform(program, ("param_" + name).c_str(),
-                                std::get<float>(inputs[inputIndex]));
-                } else if (used.contains(item.key)) {
-                    uniform(program, ("param_" + name).c_str(),
-                            parameter(parameters_, item.key.c_str(), item.defaultValue));
-                }
-                ++inputIndex;
             }
         }
     }
@@ -656,6 +662,7 @@ private:
     const NodeRegistry& registry_;
     std::vector<int> outputChannels_;
     std::vector<int> outputSlots_;
+    std::vector<int> outputComponents_;
     std::vector<std::array<GLuint, 2>> state_;
     std::vector<GLuint> output_;
     std::vector<bool> requiredOutputs_;

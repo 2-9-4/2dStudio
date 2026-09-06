@@ -187,7 +187,7 @@ TEST_CASE("simulation shader prunes interfaces and lowers one vec2 state neighbo
     REQUIRE(initialization.find("param_feed") == std::string::npos);
     REQUIRE(update.find("in_seed") == std::string::npos);
     REQUIRE(update.find("in_feedMultiplier") != std::string::npos);
-    REQUIRE(update.find("param_structureScale") != std::string::npos);
+    REQUIRE(update.find("in_structureScale") != std::string::npos);
     REQUIRE(update.find("param_iterations") == std::string::npos);
     REQUIRE(update.find("float lap_") == std::string::npos);
     REQUIRE(update.find("float laplacianKernel_") == std::string::npos);
@@ -199,8 +199,8 @@ TEST_CASE("simulation shader prunes interfaces and lowers one vec2 state neighbo
     REQUIRE(update.find(".y") != std::string::npos);
 
     std::size_t neighborhoodSamples = 0;
-    for (std::size_t at = update.find("sampleState(q+pixel*"); at != std::string::npos;
-         at = update.find("sampleState(q+pixel*", at + 1)) ++neighborhoodSamples;
+    for (std::size_t at = update.find("sampleState0(q+pixel*"); at != std::string::npos;
+         at = update.find("sampleState0(q+pixel*", at + 1)) ++neighborhoodSamples;
     REQUIRE(neighborhoodSamples == 8);
 }
 

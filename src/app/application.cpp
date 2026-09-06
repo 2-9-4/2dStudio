@@ -1421,7 +1421,8 @@ void Application::renderGraph() {
                 record->subgraphId = entry->subgraphId;
                 record->typeVersion = entry->subgraphVersion;
                 for (const auto& item : definition.interface)
-                    if (item.kind == SubgraphInterfaceKind::Slider)
+                    if (item.kind == SubgraphInterfaceKind::Input &&
+                        fixedType(item.contract) == ValueType::Float)
                         record->parameters[item.key] = item.defaultValue;
                 // A subgraph added from the menu is an editable project asset. The
                 // immutable built-in remains only as the pristine source template.
@@ -1691,12 +1692,11 @@ void Application::renderSubgraphEditor() {
             auto& item = definition->interface[index];
             ImGui::PushID(static_cast<int>(index));
             ImGui::TextDisabled("%s · %s",
-                item.kind == SubgraphInterfaceKind::Input ? "Input" :
-                item.kind == SubgraphInterfaceKind::Slider ? "Control" : "Output",
+                item.kind == SubgraphInterfaceKind::Input ? "Input" : "Output",
                 item.key.c_str());
             char label[128]{}; std::snprintf(label, sizeof(label), "%s", item.label.c_str());
             if (ImGui::InputText("Label", label, sizeof(label))) { item.label = label; changed = true; }
-            if (item.kind != SubgraphInterfaceKind::Slider) {
+            if (item.kind != SubgraphInterfaceKind::Output) {
                 constexpr std::array<ValueType, 5> interfaceTypes{
                     ValueType::Float, ValueType::Vec2, ValueType::ScalarField,
                     ValueType::VectorField, ValueType::ColorImage};
@@ -1712,7 +1712,8 @@ void Application::renderSubgraphEditor() {
                     changed = executionChanged = true;
                 }
             }
-            if (item.kind == SubgraphInterfaceKind::Slider) {
+            if (item.kind == SubgraphInterfaceKind::Input &&
+                fixedType(item.contract) == ValueType::Float) {
                 if (ImGui::DragFloat("Default", &item.defaultValue, .001F,
                                      item.minimum, item.maximum)) {
                     changed = true; executionChanged = true;
@@ -1983,7 +1984,9 @@ void Application::renderSubgraphEditor() {
 
     if (changed) {
         for (auto& node : graph_.nodes()) if (node.type == "subgraph" && node.subgraphId == editingSubgraphId_) {
-            for (const auto& item : definition->interface) if (item.kind == SubgraphInterfaceKind::Slider) {
+            for (const auto& item : definition->interface)
+                if (item.kind == SubgraphInterfaceKind::Input &&
+                    fixedType(item.contract) == ValueType::Float) {
                 const float value = node.parameters.value(item.key, item.defaultValue);
                 node.parameters[item.key] = std::clamp(value, item.minimum, item.maximum);
             }

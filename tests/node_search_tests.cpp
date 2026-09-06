@@ -63,7 +63,7 @@ TEST_CASE("subgraph editor entries include simulation and keyed interface nodes"
     SubgraphDefinition definition;
     definition.interface = {
         {"source", "Source", SubgraphInterfaceKind::Input, ValueType::ColorImage},
-        {"rate", "Rate", SubgraphInterfaceKind::Slider, ValueType::Float},
+        {"rate", "Rate", SubgraphInterfaceKind::Input, ValueType::Float, true},
         {"result", "Result", SubgraphInterfaceKind::Output, ValueType::ColorImage},
     };
 

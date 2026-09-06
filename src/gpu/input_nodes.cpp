@@ -203,10 +203,18 @@ public:
              {"y", "Y", 0.0F, -10.0F, 10.0F}}};
         result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::VectorPromotion;
         result.sockets.back().typeInputs = {"x", "y"};
+        result.lowerable = true;
         return result;
     }
     const NodeDescriptor& descriptor() const override {
         static const auto value = describe(); return value;
+    }
+    bool lowerShader(ShaderLoweringContext& context) const override {
+        const auto x = context.input("x", "x", 0.0F);
+        const auto y = context.input("y", "y", 0.0F);
+        (void)context.emitTyped("vec2(" + x.name + "," + y.name + ")",
+                                ShaderValueType::Vec2, "value");
+        return true;
     }
     void evaluate(EvaluationContext& context, std::span<const Value> inputs,
                   std::span<Value> outputs) override {

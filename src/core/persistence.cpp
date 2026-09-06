@@ -101,6 +101,58 @@ void markLegacyPreviousStateWiring(SubgraphDefinition& definition) {
     }
 }
 
+// Format-4 editable reaction graphs used one implicit RG feedback texture. Turn
+// that representation into the explicit Vector Field slot without changing the
+// math or the A/B presentation outputs.
+void upgradeLegacySimulationState(SubgraphDefinition& definition) {
+    if (definition.execution != SubgraphExecution::Simulation || !definition.stateSlots.empty()) return;
+    auto& body = definition.body;
+    const auto find = [&](std::string_view type) -> NodeRecord* {
+        const auto it = std::ranges::find(body.nodes(), type, &NodeRecord::type);
+        return it == body.nodes().end() ? nullptr : &*it;
+    };
+    const auto* previous = find("simulation_previous_state");
+    const auto* initial = find("simulation_initial_state");
+    const auto* next = find("simulation_next_state");
+    if (!previous || !initial || !next) return;
+    const NodeId previousId = previous->id, initialId = initial->id, nextId = next->id;
+    definition.stateSlots.push_back({"chemicals", "Chemicals", ValueType::VectorField});
+    body.findNode(previousId)->parameters["slot"] = 0.0F;
+    body.findNode(initialId)->parameters["slot"] = 0.0F;
+    body.findNode(nextId)->parameters["slot"] = 0.0F;
+
+    const auto add = [&](std::string type, std::string label, Vec2 position) {
+        const auto id = body.addNode(std::move(type), position);
+        body.findNode(id)->label = std::move(label);
+        return id;
+    };
+    const auto initialCombine = add("combine_vector", "Initial Chemicals",
+                                    body.findNode(initialId)->position);
+    const auto nextCombine = add("combine_vector", "Next Chemicals",
+                                 body.findNode(nextId)->position);
+    const auto split = add("simulation_channel", "Next State Channels",
+                           {body.findNode(nextId)->position.x + 220.0F,
+                            body.findNode(nextId)->position.y});
+    for (auto& link : body.links()) {
+        if (link.fromNode == previousId && link.fromSocket == "state") link.fromSocket = "value";
+        if (link.toNode == initialId && (link.toSocket == "a" || link.toSocket == "b")) {
+            link.toNode = initialCombine;
+            link.toSocket = link.toSocket == "a" ? "x" : "y";
+        }
+        if (link.toNode == nextId && (link.toSocket == "a" || link.toSocket == "b")) {
+            link.toNode = nextCombine;
+            link.toSocket = link.toSocket == "a" ? "x" : "y";
+        }
+        if (link.fromNode == nextId && (link.fromSocket == "a" || link.fromSocket == "b")) {
+            link.fromNode = split;
+            // Channel names intentionally remain a/b.
+        }
+    }
+    body.addLink(initialCombine, "value", initialId, "value");
+    body.addLink(nextCombine, "value", nextId, "value");
+    body.addLink(nextId, "value", split, "state");
+}
+
 struct LegacyKernelNode {
     std::string key;
     std::string operation;
@@ -444,8 +496,7 @@ void migrateLegacyKernel(SubgraphDefinition& definition, const nlohmann::json& k
 nlohmann::json serializeSubgraph(const SubgraphDefinition& definition) {
     nlohmann::json interface = nlohmann::json::array();
     for (const auto& item : definition.interface) {
-        const char* kind = item.kind == SubgraphInterfaceKind::Input ? "input" :
-                           item.kind == SubgraphInterfaceKind::Slider ? "slider" : "output";
+        const char* kind = item.kind == SubgraphInterfaceKind::Input ? "input" : "output";
         const char* control = item.control == ParameterDescriptor::Control::Integer ? "integer" :
                               item.control == ParameterDescriptor::Control::Boolean ? "boolean" : "float";
         interface.push_back({{"key", item.key}, {"label", item.label}, {"kind", kind},
@@ -481,8 +532,10 @@ SubgraphDefinition deserializeSubgraph(const nlohmann::json& value,
         item.key = entry.at("key").get<std::string>();
         item.label = entry.value("label", item.key);
         const auto kind = entry.value("kind", std::string("input"));
-        item.kind = kind == "slider" ? SubgraphInterfaceKind::Slider :
-                    kind == "output" ? SubgraphInterfaceKind::Output : SubgraphInterfaceKind::Input;
+        // Project format 4 called locally-widgeted Float inputs "slider".
+        // They are ordinary optional inputs now; preserve all their metadata.
+        item.kind = kind == "output" ? SubgraphInterfaceKind::Output : SubgraphInterfaceKind::Input;
+        if (kind == "slider") item.optional = true;
         const auto persistedType = entry.value("type", std::string("float"));
         item.contract = socketContract(persistedType);
         // Format 1-3 simulation definitions stored every field as image2d.
@@ -491,7 +544,7 @@ SubgraphDefinition deserializeSubgraph(const nlohmann::json& value,
         if (persistedType == "image2d" && result.execution == SubgraphExecution::Simulation &&
             (item.key == "seed" || item.key == "image" || item.key == "a" || item.key == "b"))
             item.contract = SocketContract::ScalarFieldOnly;
-        item.optional = entry.value("optional", false);
+        item.optional = item.optional || entry.value("optional", false);
         item.defaultValue = entry.value("default", 0.0F);
         item.minimum = entry.value("minimum", 0.0F);
         item.maximum = entry.value("maximum", 1.0F);
@@ -513,6 +566,7 @@ SubgraphDefinition deserializeSubgraph(const nlohmann::json& value,
     if (value.contains("nodes")) {
         const auto& nodes = value.at("nodes");
         deserializeBody(result.body, nodes, value.value("links", nlohmann::json::array()));
+        upgradeLegacySimulationState(result);
         markLegacyPreviousStateWiring(result);
         for (std::size_t index = 0; index < result.body.nodes().size(); ++index) {
             auto& node = result.body.nodes()[index];

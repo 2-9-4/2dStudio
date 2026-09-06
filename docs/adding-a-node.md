@@ -164,11 +164,17 @@ and writes every next slot to separate ping-pong textures, so reads cannot obser
 write in the same iteration.
 
 State slot keys are identities and must not be renamed implicitly when labels change. Existing
-projects with the legacy single RG state intentionally retain the Previous State / Channel Split
-form on load; do not convert their A/B wiring automatically. State slots are fields, not uniform
-Float/Vec2 values, because persistent simulation state has one value per canvas pixel.
+projects with the legacy implicit RG state migrate on load to one `Chemicals` Vector Field slot;
+their A/B presentation paths are preserved through an explicit Channel Split. State slots are
+fields, not uniform Float/Vec2 values, because persistent simulation state has one value per
+canvas pixel.
 
 Subgraph instances use the node type `subgraph` and a stable `subgraphId`. Their node descriptor is derived from `SubgraphInterfaceItem` records rather than the static registry. Interface keys are serialized identities; labels can be edited safely. Float, integer, and boolean control metadata drives the corresponding node widget without type-specific UI code.
+
+There is no separate public “control” interface kind. Every public value is an Input or Output.
+A Float input carries optional default/range/widget metadata and renders as a local slider (or
+integer/boolean control) while unwired; wiring its socket overrides that local value. Older project
+files containing `kind: "slider"` are migrated to these optional Float inputs on load.
 
 `SubgraphDefinition::body` is a `GraphBody`, the same node-and-link storage used by the root `Graph`. It contains normal `NodeRecord` and `LinkRecord` values and uses the same `addNode`, `removeNode`, `addLink`, and `removeLink` behavior. IDs are local to the body and remain stable when nodes are inserted, removed, or reordered. Links identify descriptor socket keys rather than array positions, and adding a link to an occupied input replaces the previous link.
 

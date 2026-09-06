@@ -35,6 +35,14 @@ NodeRegistry registry() {
     add(result, {"vector", 1, "Vector", "Test",
         {{"value", "Vector", ValueType::Vec2, SocketDirection::Output}},
         {{"x", "X", 0.0F, -10.0F, 10.0F}, {"y", "Y", 0.0F, -10.0F, 10.0F}}});
+    NodeDescriptor combine{"combine_vector", 1, "Combine Vector", "Test",
+        {{"x", "X", SocketContract::Numeric, SocketDirection::Input, true},
+         {"y", "Y", SocketContract::Numeric, SocketDirection::Input, true},
+         {"value", "Vector", SocketContract::VectorNumeric, SocketDirection::Output}}, {}};
+    combine.sockets.back().typePolicy = SocketDescriptor::TypePolicy::VectorPromotion;
+    combine.sockets.back().typeInputs = {"x", "y"};
+    combine.lowerable = true;
+    add(result, std::move(combine));
     add(result, {"image", 1, "Image", "Test",
         {{"out", "Out", ValueType::ScalarField, SocketDirection::Output}}, {}});
     add(result, {"math", 1, "Math", "Test",
@@ -468,13 +476,13 @@ TEST_CASE("built-in discrete reaction exposes a stable dynamic interface") {
     REQUIRE(descriptor->stateful);
     REQUIRE(std::ranges::count_if(descriptor->sockets, [](const auto& socket) {
         return socket.direction == SocketDirection::Input;
-    }) == 10);
+    }) == 11);
     REQUIRE(std::ranges::count_if(descriptor->sockets, [](const auto& socket) {
         return socket.direction == SocketDirection::Output;
     }) == 3);
-    REQUIRE(descriptor->sockets[10].label == "Image");
-    REQUIRE(descriptor->sockets[11].label == "Chemical A");
-    REQUIRE(descriptor->sockets[12].label == "Chemical B");
+    REQUIRE(descriptor->sockets[11].label == "Image");
+    REQUIRE(descriptor->sockets[12].label == "Chemical A");
+    REQUIRE(descriptor->sockets[13].label == "Chemical B");
     Graph persisted;
     persisted.subgraphs().push_back(builtInSubgraphs().front());
     const auto serialized = serializeProject(persisted);
@@ -757,7 +765,7 @@ TEST_CASE("legacy previous-state channel wiring is flagged and remains invalid")
                                             &NodeRecord::type);
     REQUIRE(previous != definition.body.nodes().end());
     auto outgoing = std::ranges::find_if(definition.body.links(), [&](const LinkRecord& link) {
-        return link.fromNode == previous->id && link.fromSocket == "state";
+        return link.fromNode == previous->id && link.fromSocket == "value";
     });
     REQUIRE(outgoing != definition.body.links().end());
     outgoing->fromSocket = "a";

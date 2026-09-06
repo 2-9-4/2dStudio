@@ -8,7 +8,7 @@
 namespace reaction {
 
 enum class SubgraphExecution { Pipeline, Simulation };
-enum class SubgraphInterfaceKind { Input, Slider, Output };
+enum class SubgraphInterfaceKind { Input, Output };
 
 struct SubgraphInterfaceItem {
     std::string key;

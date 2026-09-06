@@ -160,30 +160,29 @@ SubgraphDefinition discreteReaction() {
     result.category = "Simulation";
     result.execution = SubgraphExecution::Simulation;
     result.immutable = true;
-    // Kept empty for backwards-compatible loading of the original RG endpoint
-    // template. Newly authored simulations use stateSlots below.
+    result.stateSlots = {{"chemicals", "Chemicals", ValueType::VectorField}};
     result.interface = {
         {"feedMultiplier", "Feed Multiplier", SubgraphInterfaceKind::Input,
          SocketContract::Numeric, true, 1.0F},
         {"killMultiplier", "Kill Multiplier", SubgraphInterfaceKind::Input,
          SocketContract::Numeric, true, 1.0F},
         {"seed", "Seed", SubgraphInterfaceKind::Input, ValueType::ScalarField, true},
-        {"feed", "Feed", SubgraphInterfaceKind::Slider, ValueType::Float, false,
+        {"feed", "Feed", SubgraphInterfaceKind::Input, ValueType::Float, true,
          .055F, 0.0F, .1F},
-        {"kill", "Kill", SubgraphInterfaceKind::Slider, ValueType::Float, false,
+        {"kill", "Kill", SubgraphInterfaceKind::Input, ValueType::Float, true,
          .062F, 0.0F, .1F},
-        {"diffA", "Diffusion A", SubgraphInterfaceKind::Slider, ValueType::Float, false,
+        {"diffA", "Diffusion A", SubgraphInterfaceKind::Input, ValueType::Float, true,
          1.0F, 0.0F, 2.0F},
-        {"diffB", "Diffusion B", SubgraphInterfaceKind::Slider, ValueType::Float, false,
+        {"diffB", "Diffusion B", SubgraphInterfaceKind::Input, ValueType::Float, true,
          .5F, 0.0F, 2.0F},
-        {"structureScale", "Structure Scale", SubgraphInterfaceKind::Slider,
-         ValueType::Float, false, 1.0F, .25F, 8.0F},
-        {"dt", "Timestep", SubgraphInterfaceKind::Slider, ValueType::Float, false,
+        {"structureScale", "Structure Scale", SubgraphInterfaceKind::Input,
+         ValueType::Float, true, 1.0F, .25F, 8.0F},
+        {"dt", "Timestep", SubgraphInterfaceKind::Input, ValueType::Float, true,
          1.0F, .01F, 2.0F},
-        {"iterations", "Iterations", SubgraphInterfaceKind::Slider, ValueType::Float,
-         false, 8.0F, 1.0F, 64.0F, Control::Integer, "iterations"},
-        {"autoReset", "Auto Reset", SubgraphInterfaceKind::Slider, ValueType::Float,
-         false, 0.0F, 0.0F, 1.0F, Control::Boolean, "autoReset"},
+        {"iterations", "Iterations", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 8.0F, 1.0F, 64.0F, Control::Integer, "iterations"},
+        {"autoReset", "Auto Reset", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 1.0F, Control::Boolean, "autoReset"},
         {"image", "Image", SubgraphInterfaceKind::Output, ValueType::ScalarField},
         {"a", "Chemical A", SubgraphInterfaceKind::Output, ValueType::ScalarField},
         {"b", "Chemical B", SubgraphInterfaceKind::Output, ValueType::ScalarField},
@@ -219,20 +218,22 @@ SubgraphDefinition discreteReaction() {
     const auto initialA = math(body, "Initial Chemical A", 1, {2000, 40}, {{"a", 1.0F}});
     link(body, halfSeed, "result", initialA, "b");
     const auto initialState = addNode(body, "simulation_initial_state", "Initial Simulation State",
-                                      {2200, 100});
-    link(body, initialA, "result", initialState, "a");
-    link(body, initialSeed, "result", initialState, "b");
+                                      {2420, 100}, {{"slot", 0.0F}});
+    const auto initialChemicals = addNode(body, "combine_vector", "Initial Chemicals", {2200, 100});
+    link(body, initialA, "result", initialChemicals, "x");
+    link(body, initialSeed, "result", initialChemicals, "y");
+    link(body, initialChemicals, "value", initialState, "value");
 
     const auto previous = addNode(body, "simulation_previous_state", "Previous Simulation State",
-                                  {0, 460});
+                                  {0, 460}, {{"slot", 0.0F}});
     const auto channels = addNode(body, "simulation_channel", "Previous State Channels",
                                   {220, 660});
-    link(body, previous, "state", channels, "state");
+    link(body, previous, "value", channels, "state");
     const auto scale = input(body, "structureScale", "Structure Scale", {0, 720});
     const auto laplacian = addNode(body, "laplacian", "State Laplacian", {220, 400});
     const auto laplacianChannels = addNode(body, "simulation_channel", "Laplacian Channels",
                                            {440, 460});
-    link(body, previous, "state", laplacian, "value");
+    link(body, previous, "value", laplacian, "value");
     link(body, scale, "value", laplacian, "scale");
     link(body, laplacian, "result", laplacianChannels, "state");
 
@@ -307,16 +308,21 @@ SubgraphDefinition discreteReaction() {
     const auto bNext = math(body, "Next Chemical B", 10, {1760, 700}, {{"b", 0.0F}, {"c", 1.0F}});
     link(body, aNextUnclamped, "result", aNext, "a");
     link(body, bNextUnclamped, "result", bNext, "a");
-    const auto nextState = addNode(body, "simulation_next_state", "Next Simulation State", {1980, 580});
-    link(body, aNext, "result", nextState, "a");
-    link(body, bNext, "result", nextState, "b");
+    const auto nextChemicals = addNode(body, "combine_vector", "Next Chemicals", {1980, 580});
+    link(body, aNext, "result", nextChemicals, "x");
+    link(body, bNext, "result", nextChemicals, "y");
+    const auto nextState = addNode(body, "simulation_next_state", "Next Simulation State",
+                                   {2200, 580}, {{"slot", 0.0F}});
+    link(body, nextChemicals, "value", nextState, "value");
+    const auto nextChannels = addNode(body, "simulation_channel", "Next State Channels", {2420, 580});
+    link(body, nextState, "value", nextChannels, "state");
 
     const auto outputImage = addNode(body, "subgraph_output", "Image Output", {2200, 500}, {{"key", "image"}});
     const auto outputA = addNode(body, "subgraph_output", "Chemical A Output", {2200, 620}, {{"key", "a"}});
     const auto outputB = addNode(body, "subgraph_output", "Chemical B Output", {2200, 740}, {{"key", "b"}});
-    link(body, nextState, "b", outputImage, "value");
-    link(body, nextState, "a", outputA, "value");
-    link(body, nextState, "b", outputB, "value");
+    link(body, nextChannels, "b", outputImage, "value");
+    link(body, nextChannels, "a", outputA, "value");
+    link(body, nextChannels, "b", outputB, "value");
 
     return result;
 }
@@ -336,7 +342,7 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
         if (item.key.empty() || !interfaceKeys.insert(item.key).second)
             errors.push_back("Subgraph interface keys must be non-empty and unique");
         interfaceByKey[item.key] = &item;
-        if (item.kind == SubgraphInterfaceKind::Slider &&
+        if (item.kind == SubgraphInterfaceKind::Input && fixedType(item.contract) == ValueType::Float &&
             (item.minimum > item.maximum || item.defaultValue < item.minimum ||
              item.defaultValue > item.maximum))
             errors.push_back("Subgraph slider '" + item.label + "' has an invalid range");
@@ -560,7 +566,16 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
             const auto* source = nodes.contains(incoming->fromNode) ? nodes[incoming->fromNode] : nullptr;
             const bool genericNext = source && source->type == "simulation_next_state" &&
                 incoming->fromSocket == "value";
-            if ((!definition.stateSlots.empty() && !genericNext) ||
+            const bool genericChannel = source && source->type == "simulation_channel" &&
+                (incoming->fromSocket == "a" || incoming->fromSocket == "b") &&
+                std::ranges::any_of(definition.body.links(), [&](const LinkRecord& link) {
+                    return link.toNode == source->id && link.toSocket == "state" &&
+                        std::ranges::any_of(definition.body.nodes(), [&](const NodeRecord& node) {
+                            return node.id == link.fromNode && node.type == "simulation_next_state" &&
+                                link.fromSocket == "value";
+                        });
+                });
+            if ((!definition.stateSlots.empty() && !genericNext && !genericChannel) ||
                 (definition.stateSlots.empty() && incoming->fromNode != nextStateId))
                 errors.push_back("Simulation outputs must expose a Next Simulation State value");
         }
@@ -587,22 +602,18 @@ NodeDescriptor describeSubgraph(const SubgraphDefinition& definition) {
     NodeDescriptor result{"subgraph", definition.version, definition.name, definition.category, {}, {}};
     for (const auto& item : definition.interface) {
         if (item.kind == SubgraphInterfaceKind::Input) {
+            // A Float input is a normal socket with a local parameter value
+            // while disconnected. Do not split this into a second "control"
+            // interface category.
+            if (fixedType(item.contract) == ValueType::Float)
+                result.parameters.push_back({item.key, item.label, item.defaultValue,
+                                             item.minimum, item.maximum, item.control});
             result.sockets.push_back({item.key, item.label, item.contract,
-                                      SocketDirection::Input, item.optional});
+                                      SocketDirection::Input,
+                                      item.optional || fixedType(item.contract) == ValueType::Float});
         } else if (item.kind == SubgraphInterfaceKind::Output) {
             result.sockets.push_back({item.key, item.label, item.contract,
                                       SocketDirection::Output});
-        } else {
-            result.parameters.push_back({item.key, item.label, item.defaultValue,
-                                         item.minimum, item.maximum, item.control});
-            // Slider controls double as optional inputs, mirroring slider-style
-            // parameters on built-in nodes. Sockets stay in interface order so the
-            // runtime's input layout matches SimulationSubgraphNode::bindInterface.
-            if (item.control == ParameterDescriptor::Control::Float ||
-                item.control == ParameterDescriptor::Control::Integer) {
-                result.sockets.push_back({item.key, item.label, ValueType::Float,
-                                          SocketDirection::Input, true});
-            }
         }
     }
     result.timeDependent = definition.execution == SubgraphExecution::Simulation;

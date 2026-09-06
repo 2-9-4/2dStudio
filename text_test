@@ -1104,11 +1104,11 @@
           "control": "float",
           "default": 0.054999999701976776,
           "key": "feed",
-          "kind": "slider",
+          "kind": "input",
           "label": "Feed",
           "maximum": 0.10000000149011612,
           "minimum": 0.0,
-          "optional": false,
+          "optional": true,
           "role": "",
           "type": "float"
         },
@@ -1116,11 +1116,11 @@
           "control": "float",
           "default": 0.06199999898672104,
           "key": "kill",
-          "kind": "slider",
+          "kind": "input",
           "label": "Kill",
           "maximum": 0.10000000149011612,
           "minimum": 0.0,
-          "optional": false,
+          "optional": true,
           "role": "",
           "type": "float"
         },
@@ -1128,11 +1128,11 @@
           "control": "float",
           "default": 1.0,
           "key": "diffA",
-          "kind": "slider",
+          "kind": "input",
           "label": "Diffusion A",
           "maximum": 2.0,
           "minimum": 0.0,
-          "optional": false,
+          "optional": true,
           "role": "",
           "type": "float"
         },
@@ -1140,11 +1140,11 @@
           "control": "float",
           "default": 0.5,
           "key": "diffB",
-          "kind": "slider",
+          "kind": "input",
           "label": "Diffusion B",
           "maximum": 2.0,
           "minimum": 0.0,
-          "optional": false,
+          "optional": true,
           "role": "",
           "type": "float"
         },
@@ -1152,11 +1152,11 @@
           "control": "float",
           "default": 1.0,
           "key": "structureScale",
-          "kind": "slider",
+          "kind": "input",
           "label": "Structure Scale",
           "maximum": 8.0,
           "minimum": 0.25,
-          "optional": false,
+          "optional": true,
           "role": "",
           "type": "float"
         },
@@ -1164,11 +1164,11 @@
           "control": "float",
           "default": 1.0,
           "key": "dt",
-          "kind": "slider",
+          "kind": "input",
           "label": "Timestep",
           "maximum": 2.0,
           "minimum": 0.009999999776482582,
-          "optional": false,
+          "optional": true,
           "role": "",
           "type": "float"
         },
@@ -1176,11 +1176,11 @@
           "control": "integer",
           "default": 8.0,
           "key": "iterations",
-          "kind": "slider",
+          "kind": "input",
           "label": "Iterations",
           "maximum": 64.0,
           "minimum": 1.0,
-          "optional": false,
+          "optional": true,
           "role": "iterations",
           "type": "float"
         },
@@ -1188,11 +1188,11 @@
           "control": "boolean",
           "default": 0.0,
           "key": "autoReset",
-          "kind": "slider",
+          "kind": "input",
           "label": "Auto Reset",
           "maximum": 1.0,
           "minimum": 0.0,
-          "optional": false,
+          "optional": true,
           "role": "autoReset",
           "type": "float"
         },
@@ -1351,8 +1351,8 @@
           },
           "id": 21,
           "to": {
-            "node": 17,
-            "socket": "a"
+            "node": 57,
+            "socket": "x"
           }
         },
         {
@@ -1362,14 +1362,14 @@
           },
           "id": 22,
           "to": {
-            "node": 17,
-            "socket": "b"
+            "node": 57,
+            "socket": "y"
           }
         },
         {
           "from": {
             "node": 18,
-            "socket": "state"
+            "socket": "value"
           },
           "id": 23,
           "to": {
@@ -1380,7 +1380,7 @@
         {
           "from": {
             "node": 18,
-            "socket": "state"
+            "socket": "value"
           },
           "id": 24,
           "to": {
@@ -1824,8 +1824,8 @@
           },
           "id": 64,
           "to": {
-            "node": 50,
-            "socket": "a"
+            "node": 58,
+            "socket": "x"
           }
         },
         {
@@ -1835,13 +1835,13 @@
           },
           "id": 65,
           "to": {
-            "node": 50,
-            "socket": "b"
+            "node": 58,
+            "socket": "y"
           }
         },
         {
           "from": {
-            "node": 50,
+            "node": 59,
             "socket": "b"
           },
           "id": 66,
@@ -1852,7 +1852,7 @@
         },
         {
           "from": {
-            "node": 50,
+            "node": 59,
             "socket": "a"
           },
           "id": 67,
@@ -1863,7 +1863,7 @@
         },
         {
           "from": {
-            "node": 50,
+            "node": 59,
             "socket": "b"
           },
           "id": 68,
@@ -1914,6 +1914,39 @@
           "to": {
             "node": 8,
             "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 57,
+            "socket": "value"
+          },
+          "id": 73,
+          "to": {
+            "node": 17,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 58,
+            "socket": "value"
+          },
+          "id": 74,
+          "to": {
+            "node": 50,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 50,
+            "socket": "value"
+          },
+          "id": 75,
+          "to": {
+            "node": 59,
+            "socket": "state"
           }
         }
       ],
@@ -2054,7 +2087,9 @@
         {
           "id": 17,
           "label": "Initial Simulation State",
-          "parameters": {},
+          "parameters": {
+            "slot": 0.0
+          },
           "position": [
             3892.0,
             2891.0
@@ -2065,7 +2100,9 @@
         {
           "id": 18,
           "label": "Previous Simulation State",
-          "parameters": {},
+          "parameters": {
+            "slot": 0.0
+          },
           "position": [
             0.0,
             443.0
@@ -2478,7 +2515,9 @@
         {
           "id": 50,
           "label": "Next Simulation State",
-          "parameters": {},
+          "parameters": {
+            "slot": 0.0
+          },
           "position": [
             3484.0,
             1474.0
@@ -2561,6 +2600,46 @@
           ],
           "type": "threshold",
           "typeVersion": 1
+        },
+        {
+          "id": 57,
+          "label": "Initial Chemicals",
+          "parameters": {},
+          "position": [
+            3892.0,
+            2891.0
+          ],
+          "type": "combine_vector",
+          "typeVersion": 1
+        },
+        {
+          "id": 58,
+          "label": "Next Chemicals",
+          "parameters": {},
+          "position": [
+            3484.0,
+            1474.0
+          ],
+          "type": "combine_vector",
+          "typeVersion": 1
+        },
+        {
+          "id": 59,
+          "label": "Next State Channels",
+          "parameters": {},
+          "position": [
+            3704.0,
+            1474.0
+          ],
+          "type": "simulation_channel",
+          "typeVersion": 1
+        }
+      ],
+      "stateSlots": [
+        {
+          "key": "chemicals",
+          "label": "Chemicals",
+          "type": "vector_field"
         }
       ],
       "version": 1
