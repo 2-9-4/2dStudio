@@ -31,6 +31,7 @@ public:
     }
 
     std::string shader(bool initialization) {
+        if (!definition_.stateSlots.empty()) return stateSlotShader(initialization);
         const auto* endpoint = endpointFor(initialization ? "initial" : "next");
         if (!endpoint) throw std::runtime_error("Simulation subgraph is missing a state endpoint");
         helpers_.clear(); helperNames_.clear(); statements_.str({}); statements_.clear();
@@ -162,14 +163,65 @@ private:
         return it == nodes.end() ? nullptr : &*it;
     }
 
+    const NodeRecord* endpointFor(std::string_view role, std::size_t slot) const {
+        const std::string type = role == "initial" ? "simulation_initial_state"
+                                                    : "simulation_next_state";
+        const auto& nodes = definition_.body.nodes();
+        const auto it = std::ranges::find_if(nodes, [&](const NodeRecord& node) {
+            return node.type == type && static_cast<std::size_t>(std::max(
+                0, static_cast<int>(node.parameters.value("slot", 0.0F)))) == slot;
+        });
+        return it == nodes.end() ? nullptr : &*it;
+    }
+
+    std::string stateSlotShader(bool initialization) {
+        helpers_.clear(); helperNames_.clear(); statements_.str({}); statements_.clear();
+        mainValues_.clear(); usedInterfaces_.clear(); frames_.clear();
+        std::vector<ShaderValue> values;
+        for (std::size_t slot = 0; slot < definition_.stateSlots.size(); ++slot) {
+            const auto* endpoint = endpointFor(initialization ? "initial" : "next", slot);
+            if (!endpoint) throw std::runtime_error("Simulation subgraph is missing a state slot endpoint");
+            values.push_back(lowerInput(*endpoint, "value", "uv", 0.0F));
+        }
+        std::ostringstream source;
+        source << "#version 430\nlayout(local_size_x=16,local_size_y=16)in;\n";
+        for (std::size_t slot = 0; slot < definition_.stateSlots.size(); ++slot) {
+            const auto width = componentCount(definition_.stateSlots[slot].type);
+            const char* layout = width == 1 ? "r16f" : width == 2 ? "rg16f" : "rgba16f";
+            source << "layout(" << layout << ",binding=" << slot << ")writeonly uniform image2D stateOut"
+                   << slot << ";\nlayout(binding=" << slot << ")uniform sampler2D stateIn" << slot << ";\n";
+        }
+        declareInterface(source, static_cast<int>(definition_.stateSlots.size()));
+        for (std::size_t slot = 0; slot < definition_.stateSlots.size(); ++slot)
+            source << "vec4 sampleState" << slot << "(vec2 q){return texture(stateIn" << slot << ",fract(q));}\n";
+        source << "vec2 pixelSize;\n";
+        for (const auto& helper : helpers_) source << helper.source;
+        source << "void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(stateOut0);"
+               << "if(any(greaterThanEqual(p,s)))return;vec2 uv=(vec2(p)+0.5)/vec2(s);pixelSize=1.0/vec2(s);\n"
+               << statements_.str();
+        for (std::size_t slot = 0; slot < values.size(); ++slot) {
+            const auto width = componentCount(definition_.stateSlots[slot].type);
+            source << "imageStore(stateOut" << slot << ",p,";
+            if (width == 1) source << "vec4(" << values[slot].name << ",0.0,0.0,1.0)";
+            else if (width == 2) source << "vec4(" << values[slot].name << ",0.0,1.0)";
+            else source << values[slot].name;
+            source << ");\n";
+        }
+        source << "}";
+        return source.str();
+    }
+
     void declareInterface(std::ostringstream& out, int firstBinding) const {
         int binding = firstBinding;
         for (const auto& item : definition_.interface) {
             const auto name = identifier(item.key);
             if (item.kind == SubgraphInterfaceKind::Input) {
-                if (usedInterfaces_.contains(item.key))
+                if (usedInterfaces_.contains(item.key)) {
+                    const auto width = componentCount(fixedType(item.contract).value_or(ValueType::Float));
                     out << "layout(binding=" << binding << ")uniform sampler2D in_" << name << ";\n"
-                        << "uniform int mode_" << name << ";uniform float value_" << name << ";\n";
+                        << "uniform int mode_" << name << ";uniform "
+                        << (width == 2 ? "vec2" : "float") << " value_" << name << ";\n";
+                }
                 ++binding;
             } else if (item.kind == SubgraphInterfaceKind::Slider &&
                        usedInterfaces_.contains(item.key)) {
@@ -203,6 +255,14 @@ private:
             throw std::runtime_error("Unknown simulation node: " + std::to_string(id));
         const auto& node = *found->second;
         if (node.type == "simulation_previous_state") {
+            if (!definition_.stateSlots.empty()) {
+                const int slot = std::clamp(static_cast<int>(node.parameters.value("slot", 0.0F)), 0,
+                    static_cast<int>(definition_.stateSlots.size()) - 1);
+                const auto width = componentCount(definition_.stateSlots[static_cast<std::size_t>(slot)].type);
+                const std::string sample = "sampleState" + std::to_string(slot) + "(" + uv + ")";
+                const std::string expression = width == 1 ? sample + ".r" : width == 2 ? sample + ".rg" : sample;
+                return materialize(node, socket, uv, inferredType(id, socket), expression);
+            }
             if (socket != "state") throw std::runtime_error("Unknown previous-state socket");
             return materialize(node, socket, uv, ShaderValueType::Vec2,
                                "sampleState(" + uv + ")");
@@ -224,15 +284,21 @@ private:
             else {
                 const auto fallback = std::to_string(node.parameters.value(
                     "default", item ? item->defaultValue : 0.0F));
-                expression = "(mode_" + name + "==2?texture(in_" + name + "," + uv +
+                const auto width = item ? componentCount(fixedType(item->contract).value_or(ValueType::Float)) : 1;
+                if (width == 1) expression = "(mode_" + name + "==2?texture(in_" + name + "," + uv +
                     ").r:(mode_" + name + "==1?value_" + name + ":" + fallback + "))";
+                else if (width == 2) expression = "(mode_" + name + "==2?texture(in_" + name + "," + uv +
+                    ").rg:(mode_" + name + "==1?value_" + name + ":vec2(" + fallback + ")))";
+                else expression = "(mode_" + name + "==2?texture(in_" + name + "," + uv +
+                    "):vec4(mode_" + name + "==1?value_" + name + ":" + fallback + "))";
             }
-            return materialize(node, socket, uv, ShaderValueType::Scalar,
+            return materialize(node, socket, uv, inferredType(id, socket),
                                std::move(expression));
         }
         if (node.type == "simulation_initial_state" ||
             node.type == "simulation_next_state")
-            return lowerInput(node, socket == "b" ? "b" : "a", uv);
+            return lowerInput(node, !definition_.stateSlots.empty() ? "value" :
+                              (socket == "b" ? "b" : "a"), uv);
         if (node.type == "subgraph_output") return lowerInput(node, "value", uv);
 
         auto instance = registry_.create(node.type);
@@ -336,6 +402,8 @@ public:
     SimulationSubgraphNode(SubgraphDefinition definition, const NodeRegistry& registry)
         : definition_(std::move(definition)), descriptor_(describeSubgraph(definition_)),
           registry_(registry) {
+        const auto slotCount = std::max<std::size_t>(definition_.stateSlots.size(), 1);
+        state_.resize(slotCount);
         const auto& bodyNodes = definition_.body.nodes();
         const auto& bodyLinks = definition_.body.links();
         const auto next = std::ranges::find(bodyNodes, std::string("simulation_next_state"),
@@ -353,12 +421,23 @@ public:
             const bool channelB = next != bodyNodes.end() && mapping != bodyLinks.end() &&
                                   mapping->fromNode == next->id && mapping->fromSocket == "b";
             outputChannels_.push_back(channelB ? 1 : 0);
+            int stateSlot = 0;
+            if (!definition_.stateSlots.empty() && mapping != bodyLinks.end()) {
+                const auto source = std::ranges::find_if(bodyNodes, [&](const NodeRecord& node) {
+                    return node.id == mapping->fromNode && node.type == "simulation_next_state" &&
+                           mapping->fromSocket == "value";
+                });
+                if (source != bodyNodes.end()) stateSlot = std::clamp(
+                    static_cast<int>(source->parameters.value("slot", 0.0F)), 0,
+                    static_cast<int>(definition_.stateSlots.size()) - 1);
+            }
+            outputSlots_.push_back(stateSlot);
         }
         requiredOutputs_.assign(outputChannels_.size(), true);
         output_.assign(outputChannels_.size(), 0);
     }
     ~SimulationSubgraphNode() override {
-        if (state_[0]) glDeleteTextures(2, state_.data());
+        for (const auto& slot : state_) if (slot[0]) glDeleteTextures(2, slot.data());
         for (const auto texture : output_) if (texture) glDeleteTextures(1, &texture);
         if (collapseBuffer_) glDeleteBuffers(1, &collapseBuffer_);
     }
@@ -393,8 +472,10 @@ public:
             outputProgram_ = gpu.compileComputeCached(outputShader(), definition_.name + " / output");
         const auto initialize = [&] {
             glUseProgram(initProgram_);
-            glBindImageTexture(0, state_[0], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RG16F);
-            bindInterface(initProgram_, inputs, 1, initializationInterfaces_);
+            for (std::size_t slot = 0; slot < state_.size(); ++slot)
+                glBindImageTexture(static_cast<GLuint>(slot), state_[slot][0], 0, GL_FALSE, 0,
+                                   GL_WRITE_ONLY, stateFormat(slot));
+            bindInterface(initProgram_, inputs, static_cast<int>(state_.size()), initializationInterfaces_);
             gpu.dispatch(initProgram_, context.width, context.height);
             index_ = 0; resetPending_ = false;
         };
@@ -404,9 +485,12 @@ public:
             for (int iteration = 0; iteration < iterations; ++iteration) {
                 const int next = 1 - index_;
                 glUseProgram(stepProgram_);
-                bindTexture(0, state_[index_]);
-                glBindImageTexture(0, state_[next], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RG16F);
-                bindInterface(stepProgram_, inputs, 1, updateInterfaces_);
+                for (std::size_t slot = 0; slot < state_.size(); ++slot) {
+                    bindTexture(static_cast<int>(slot), state_[slot][index_]);
+                    glBindImageTexture(static_cast<GLuint>(slot), state_[slot][next], 0, GL_FALSE, 0,
+                                       GL_WRITE_ONLY, stateFormat(slot));
+                }
+                bindInterface(stepProgram_, inputs, static_cast<int>(state_.size()), updateInterfaces_);
                 gpu.dispatch(stepProgram_, context.width, context.height);
                 index_ = next;
             }
@@ -416,13 +500,15 @@ public:
             glBindBuffer(GL_SHADER_STORAGE_BUFFER, collapseBuffer_);
             glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(zero), &zero);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, collapseBuffer_);
-            glUseProgram(collapseProgram_); bindTexture(0, state_[index_]);
+            glUseProgram(collapseProgram_); bindTexture(0, state_[0][index_]);
             uniform(collapseProgram_, "threshold", .001F);
             gpu.dispatch(collapseProgram_, context.width, context.height);
             GLuint active = 0; glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(active), &active);
             if (active == 0) initialize();
         }
-        glUseProgram(outputProgram_); bindTexture(0, state_[index_]);
+        glUseProgram(outputProgram_);
+        for (std::size_t slot = 0; slot < state_.size(); ++slot)
+            bindTexture(static_cast<int>(slot), state_[slot][index_]);
         for (std::size_t output = 0; output < output_.size(); ++output)
             if (requiredOutputs_[output]) {
                 glBindImageTexture(static_cast<GLuint>(output), output_[output], 0, GL_FALSE, 0,
@@ -454,27 +540,48 @@ private:
         std::ostringstream source;
         source << "#version 430\nlayout(local_size_x=16,local_size_y=16)in;\n"
                << "layout(binding=0)uniform sampler2D stateIn;\n";
+        if (!definition_.stateSlots.empty()) {
+            source.str({}); source.clear();
+            source << "#version 430\nlayout(local_size_x=16,local_size_y=16)in;\n";
+            for (std::size_t slot = 0; slot < state_.size(); ++slot)
+                source << "layout(binding=" << slot << ")uniform sampler2D stateIn" << slot << ";\n";
+        }
         for (std::size_t output = 0; output < requiredOutputs_.size(); ++output)
             if (requiredOutputs_[output])
                 source << "layout(rgba16f,binding=" << output
                        << ")writeonly uniform image2D out" << output << ";\n";
-        source << "void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=textureSize(stateIn,0);"
-               << "if(any(greaterThanEqual(p,s)))return;vec2 q=texelFetch(stateIn,p,0).rg;\n";
+        source << "void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=textureSize("
+               << (definition_.stateSlots.empty() ? "stateIn" : "stateIn0") << ",0);"
+               << "if(any(greaterThanEqual(p,s)))return;";
         for (std::size_t output = 0; output < requiredOutputs_.size(); ++output) {
             if (!requiredOutputs_[output]) continue;
-            const char channel = outputChannels_[output] == 1 ? 'y' : 'x';
-            source << "imageStore(out" << output << ",p,vec4(q." << channel << ",q."
-                   << channel << ",q." << channel << ",1.0));\n";
+            if (definition_.stateSlots.empty()) {
+                const char channel = outputChannels_[output] == 1 ? 'y' : 'x';
+                source << "vec2 q=texelFetch(stateIn,p,0).rg;imageStore(out" << output << ",p,vec4(q."
+                       << channel << ",q." << channel << ",q." << channel << ",1.0));\n";
+            } else {
+                const auto slot = static_cast<std::size_t>(outputSlots_[output]);
+                const auto width = componentCount(definition_.stateSlots[slot].type);
+                source << "vec4 q" << output << "=texelFetch(stateIn" << slot << ",p,0);imageStore(out"
+                       << output << ",p,";
+                if (width == 1) source << "vec4(q" << output << ".r,q" << output << ".r,q" << output << ".r,1.0)";
+                else if (width == 2) source << "vec4(q" << output << ".rg,0.0,1.0)";
+                else source << "q" << output;
+                source << ");\n";
+            }
         }
         source << "}";
         return source.str();
     }
 
     void ensureResources(GpuRuntime& gpu, int width, int height) {
-        const bool resized = width_ != width || height_ != height || !state_[0];
+        const bool resized = width_ != width || height_ != height || !state_[0][0];
         if (resized) {
-            if (state_[0]) glDeleteTextures(2, state_.data());
-            for (auto& texture : state_) texture = gpu.createTexture(width, height, GL_RG16F);
+            for (std::size_t slot = 0; slot < state_.size(); ++slot) {
+                if (state_[slot][0]) glDeleteTextures(2, state_[slot].data());
+                state_[slot][0] = gpu.createTexture(width, height, stateFormat(slot));
+                state_[slot][1] = gpu.createTexture(width, height, stateFormat(slot));
+            }
             width_ = width; height_ = height; resetPending_ = true;
         }
         for (std::size_t output = 0; output < output_.size(); ++output) {
@@ -492,6 +599,15 @@ private:
         }
     }
 
+    GLenum stateFormat(std::size_t slot) const {
+        if (definition_.stateSlots.empty()) return GL_RG16F;
+        switch (componentCount(definition_.stateSlots[slot].type)) {
+        case 1: return GL_R16F;
+        case 2: return GL_RG16F;
+        default: return GL_RGBA16F;
+        }
+    }
+
     void bindInterface(GLuint program, std::span<const Value> inputs, int firstTexture,
                        const std::unordered_set<std::string>& used) {
         std::size_t inputIndex = 0; int textureUnit = firstTexture;
@@ -506,13 +622,19 @@ private:
                 int mode = 0; float scalar = item.defaultValue;
                 if (value) {
                     if (const auto* number = std::get_if<float>(value)) { mode = 1; scalar = *number; }
+                    else if (const auto* vector = std::get_if<Vec2>(value)) {
+                        mode = 1;
+                        glUniform2f(glGetUniformLocation(program, ("value_" + name).c_str()),
+                                    vector->x, vector->y);
+                    }
                     else if (const auto* image = std::get_if<ImageHandle>(value); image && *image) {
                         mode = 2; bindTexture(textureUnit, image->texture);
                         uniform(program, ("in_" + name).c_str(), textureUnit);
                     }
                 }
                 uniform(program, ("mode_" + name).c_str(), mode);
-                uniform(program, ("value_" + name).c_str(), scalar);
+                if (!value || !std::holds_alternative<Vec2>(*value))
+                    uniform(program, ("value_" + name).c_str(), scalar);
                 ++textureUnit; ++inputIndex;
             } else if (item.kind == SubgraphInterfaceKind::Slider) {
                 if (inputIndex < inputs.size() &&
@@ -533,7 +655,8 @@ private:
     NodeDescriptor descriptor_;
     const NodeRegistry& registry_;
     std::vector<int> outputChannels_;
-    std::array<GLuint, 2> state_{};
+    std::vector<int> outputSlots_;
+    std::vector<std::array<GLuint, 2>> state_;
     std::vector<GLuint> output_;
     std::vector<bool> requiredOutputs_;
     std::unordered_set<std::string> initializationInterfaces_;

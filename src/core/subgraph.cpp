@@ -28,6 +28,20 @@ const SubgraphInterfaceItem* interfaceItem(const SubgraphDefinition& definition,
     return found == definition.interface.end() ? nullptr : &*found;
 }
 
+const SimulationStateSlot* stateSlot(const SubgraphDefinition& definition,
+                                     const NodeRecord& node) {
+    if (!node.parameters.is_object() || definition.stateSlots.empty()) return nullptr;
+    const int index = std::clamp(static_cast<int>(node.parameters.value("slot", 0.0F)), 0,
+                                 static_cast<int>(definition.stateSlots.size()) - 1);
+    return &definition.stateSlots[static_cast<std::size_t>(index)];
+}
+
+std::vector<std::string> stateSlotLabels(const SubgraphDefinition& definition) {
+    std::vector<std::string> result;
+    for (const auto& slot : definition.stateSlots) result.push_back(slot.label);
+    return result;
+}
+
 const NodeDescriptor* intrinsicDescriptor(const SubgraphDefinition& definition,
                                           const NodeRecord& node,
                                           NodeDescriptor& storage) {
@@ -50,6 +64,14 @@ const NodeDescriptor* intrinsicDescriptor(const SubgraphDefinition& definition,
         return &storage;
     }
     if (node.type == "simulation_previous_state") {
+        if (const auto* slot = stateSlot(definition, node)) {
+            storage = {"simulation_previous_state", 2, "Previous State", "Simulation",
+                       {{"value", "Value", slot->type, SocketDirection::Output}},
+                       {{"slot", "State Slot", node.parameters.value("slot", 0.0F), 0.0F,
+                         static_cast<float>(definition.stateSlots.size() - 1), Control::Enum,
+                         stateSlotLabels(definition)}}};
+            return &storage;
+        }
         storage = {"simulation_previous_state", 1, "Previous Simulation State", "Simulation",
                    {{"state", "State", ValueType::VectorField, SocketDirection::Output}}, {}};
         return &storage;
@@ -62,12 +84,29 @@ const NodeDescriptor* intrinsicDescriptor(const SubgraphDefinition& definition,
         return &storage;
     }
     if (node.type == "simulation_initial_state") {
+        if (const auto* slot = stateSlot(definition, node)) {
+            storage = {"simulation_initial_state", 2, "Initial State", "Simulation",
+                       {{"value", "Value", slot->type, SocketDirection::Input}},
+                       {{"slot", "State Slot", node.parameters.value("slot", 0.0F), 0.0F,
+                         static_cast<float>(definition.stateSlots.size() - 1), Control::Enum,
+                         stateSlotLabels(definition)}}};
+            return &storage;
+        }
         storage = {"simulation_initial_state", 1, "Initial Simulation State", "Simulation",
                    {{"a", "Chemical A", SocketContract::Numeric, SocketDirection::Input},
                     {"b", "Chemical B", SocketContract::Numeric, SocketDirection::Input}}, {}};
         return &storage;
     }
     if (node.type == "simulation_next_state") {
+        if (const auto* slot = stateSlot(definition, node)) {
+            storage = {"simulation_next_state", 2, "Next State", "Simulation",
+                       {{"value", "Value", slot->type, SocketDirection::Input},
+                        {"value", "Value", slot->type, SocketDirection::Output}},
+                       {{"slot", "State Slot", node.parameters.value("slot", 0.0F), 0.0F,
+                         static_cast<float>(definition.stateSlots.size() - 1), Control::Enum,
+                         stateSlotLabels(definition)}}};
+            return &storage;
+        }
         storage = {"simulation_next_state", 1, "Next Simulation State", "Simulation",
                    {{"a", "Chemical A", SocketContract::Numeric, SocketDirection::Input},
                     {"b", "Chemical B", SocketContract::Numeric, SocketDirection::Input},
@@ -121,6 +160,8 @@ SubgraphDefinition discreteReaction() {
     result.category = "Simulation";
     result.execution = SubgraphExecution::Simulation;
     result.immutable = true;
+    // Kept empty for backwards-compatible loading of the original RG endpoint
+    // template. Newly authored simulations use stateSlots below.
     result.interface = {
         {"feedMultiplier", "Feed Multiplier", SubgraphInterfaceKind::Input,
          SocketContract::Numeric, true, 1.0F},
@@ -313,6 +354,16 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
     int previousStates = 0;
     int initialStates = 0;
     int nextStates = 0;
+    std::vector<int> previousBySlot(definition.stateSlots.size());
+    std::vector<int> initialBySlot(definition.stateSlots.size());
+    std::vector<int> nextBySlot(definition.stateSlots.size());
+    std::unordered_set<std::string> stateKeys;
+    for (const auto& slot : definition.stateSlots) {
+        if (slot.key.empty() || !stateKeys.insert(slot.key).second)
+            errors.push_back("Simulation state slot keys must be non-empty and unique");
+        if (!isFieldType(slot.type))
+            errors.push_back("Simulation state slot '" + slot.label + "' must be a field type");
+    }
     std::unordered_map<std::string, int> outputEndpoints;
     for (const auto& node : definition.body.nodes()) {
         if (node.id == 0 || !nodeIds.insert(node.id).second) {
@@ -324,6 +375,16 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
         if (node.type == "simulation_previous_state") ++previousStates;
         if (node.type == "simulation_initial_state") ++initialStates;
         if (node.type == "simulation_next_state") ++nextStates;
+        if (!definition.stateSlots.empty() &&
+            (node.type == "simulation_previous_state" || node.type == "simulation_initial_state" ||
+             node.type == "simulation_next_state")) {
+            const int slot = static_cast<int>(node.parameters.value("slot", -1.0F));
+            if (slot < 0 || slot >= static_cast<int>(definition.stateSlots.size())) {
+                errors.push_back("Simulation state endpoint selects a missing state slot");
+            } else if (node.type == "simulation_previous_state") ++previousBySlot[slot];
+            else if (node.type == "simulation_initial_state") ++initialBySlot[slot];
+            else ++nextBySlot[slot];
+        }
         if (node.type == "subgraph_input" || node.type == "subgraph_output") {
             const auto key = node.parameters.is_object()
                 ? node.parameters.value("key", std::string{}) : std::string{};
@@ -358,9 +419,16 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
     }
 
     if (definition.execution == SubgraphExecution::Simulation) {
-        if (previousStates != 1) errors.push_back("A simulation subgraph needs exactly one previous-state node");
-        if (initialStates != 1) errors.push_back("A simulation subgraph needs exactly one initial-state endpoint");
-        if (nextStates != 1) errors.push_back("A simulation subgraph needs exactly one next-state endpoint");
+        if (definition.stateSlots.empty()) {
+            if (previousStates != 1) errors.push_back("A simulation subgraph needs exactly one previous-state node");
+            if (initialStates != 1) errors.push_back("A simulation subgraph needs exactly one initial-state endpoint");
+            if (nextStates != 1) errors.push_back("A simulation subgraph needs exactly one next-state endpoint");
+        } else for (std::size_t slot = 0; slot < definition.stateSlots.size(); ++slot) {
+            const auto& label = definition.stateSlots[slot].label;
+            if (previousBySlot[slot] != 1) errors.push_back("State '" + label + "' needs exactly one Previous State node");
+            if (initialBySlot[slot] != 1) errors.push_back("State '" + label + "' needs exactly one Initial State node");
+            if (nextBySlot[slot] != 1) errors.push_back("State '" + label + "' needs exactly one Next State node");
+        }
     }
     for (const auto& item : definition.interface) {
         if (item.kind == SubgraphInterfaceKind::Output && outputEndpoints[item.key] != 1)
@@ -488,8 +556,14 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
         const auto incoming = std::ranges::find_if(definition.body.links(), [&](const auto& candidate) {
             return candidate.toNode == node.id && candidate.toSocket == "value";
         });
-        if (incoming != definition.body.links().end() && incoming->fromNode != nextStateId)
-            errors.push_back("Simulation outputs must expose a Next Simulation State channel");
+        if (incoming != definition.body.links().end()) {
+            const auto* source = nodes.contains(incoming->fromNode) ? nodes[incoming->fromNode] : nullptr;
+            const bool genericNext = source && source->type == "simulation_next_state" &&
+                incoming->fromSocket == "value";
+            if ((!definition.stateSlots.empty() && !genericNext) ||
+                (definition.stateSlots.empty() && incoming->fromNode != nextStateId))
+                errors.push_back("Simulation outputs must expose a Next Simulation State value");
+        }
     }
 
     return errors;

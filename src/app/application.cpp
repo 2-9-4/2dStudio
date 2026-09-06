@@ -1696,6 +1696,22 @@ void Application::renderSubgraphEditor() {
                 item.key.c_str());
             char label[128]{}; std::snprintf(label, sizeof(label), "%s", item.label.c_str());
             if (ImGui::InputText("Label", label, sizeof(label))) { item.label = label; changed = true; }
+            if (item.kind != SubgraphInterfaceKind::Slider) {
+                constexpr std::array<ValueType, 5> interfaceTypes{
+                    ValueType::Float, ValueType::Vec2, ValueType::ScalarField,
+                    ValueType::VectorField, ValueType::ColorImage};
+                int typeIndex = 0;
+                const auto fixed = fixedType(item.contract).value_or(ValueType::Float);
+                for (std::size_t type = 0; type < interfaceTypes.size(); ++type)
+                    if (interfaceTypes[type] == fixed) typeIndex = static_cast<int>(type);
+                const char* names[] = {"Float", "Vector", "Scalar Field", "Vector Field", "Color Image"};
+                const int first = item.kind == SubgraphInterfaceKind::Output ? 2 : 0;
+                if (ImGui::Combo("Type", &typeIndex, names, 5)) {
+                    if (typeIndex < first) typeIndex = first;
+                    item.contract = exactContract(interfaceTypes[static_cast<std::size_t>(typeIndex)]);
+                    changed = executionChanged = true;
+                }
+            }
             if (item.kind == SubgraphInterfaceKind::Slider) {
                 if (ImGui::DragFloat("Default", &item.defaultValue, .001F,
                                      item.minimum, item.maximum)) {
@@ -1712,6 +1728,54 @@ void Application::renderSubgraphEditor() {
             }
             ImGui::Separator();
             ImGui::PopID();
+        }
+        if (ImGui::Button("Add input")) {
+            const auto key = "input" + std::to_string(definition->interface.size() + 1);
+            definition->interface.push_back({key, "Input", SubgraphInterfaceKind::Input,
+                                             ValueType::ScalarField, true});
+            changed = executionChanged = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Add output")) {
+            const auto key = "output" + std::to_string(definition->interface.size() + 1);
+            definition->interface.push_back({key, "Output", SubgraphInterfaceKind::Output,
+                                             ValueType::ScalarField});
+            changed = executionChanged = true;
+        }
+        ImGui::SeparatorText("Simulation State");
+        constexpr std::array<ValueType, 3> stateTypes{
+            ValueType::ScalarField, ValueType::VectorField, ValueType::ColorImage};
+        for (std::size_t index = 0; index < definition->stateSlots.size(); ++index) {
+            auto& slot = definition->stateSlots[index];
+            ImGui::PushID("state"); ImGui::PushID(static_cast<int>(index));
+            char label[128]{}; std::snprintf(label, sizeof(label), "%s", slot.label.c_str());
+            if (ImGui::InputText("Name", label, sizeof(label))) { slot.label = label; changed = true; }
+            int typeIndex = 0;
+            for (std::size_t type = 0; type < stateTypes.size(); ++type)
+                if (slot.type == stateTypes[type]) typeIndex = static_cast<int>(type);
+            const char* typeNames[] = {"Scalar Field", "Vector Field", "Color Image"};
+            if (ImGui::Combo("Type", &typeIndex, typeNames, 3)) {
+                slot.type = stateTypes[static_cast<std::size_t>(typeIndex)];
+                changed = executionChanged = true;
+            }
+            ImGui::TextDisabled("Key: %s", slot.key.c_str());
+            ImGui::Separator();
+            ImGui::PopID(); ImGui::PopID();
+        }
+        if (ImGui::Button("Add state slot")) {
+            const auto index = definition->stateSlots.size() + 1;
+            definition->stateSlots.push_back({"state" + std::to_string(index),
+                                              "State " + std::to_string(index), ValueType::ScalarField});
+            const float slot = static_cast<float>(index - 1);
+            int endpoint = 0;
+            for (const auto* type : {"simulation_previous_state", "simulation_initial_state",
+                                     "simulation_next_state"}) {
+                const auto id = body.addNode(type, {120.0F + slot * 240.0F,
+                                                    120.0F + static_cast<float>(endpoint++) * 140.0F});
+                body.findNode(id)->parameters = {{"slot", slot}};
+                positionedSubgraph_[id] = false;
+            }
+            changed = executionChanged = true;
         }
         if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();

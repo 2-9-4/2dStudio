@@ -1,6 +1,6 @@
 {
   "activeOutput": 4,
-  "formatVersion": 3,
+  "formatVersion": 4,
   "links": [
     {
       "from": {
@@ -64,8 +64,8 @@
       },
       "id": 80,
       "to": {
-        "node": 5,
-        "socket": "value"
+        "node": 91,
+        "socket": "color"
       }
     },
     {
@@ -220,6 +220,17 @@
       "to": {
         "node": 4,
         "socket": "image"
+      }
+    },
+    {
+      "from": {
+        "node": 91,
+        "socket": "value"
+      },
+      "id": 316,
+      "to": {
+        "node": 5,
+        "socket": "value"
       }
     }
   ],
@@ -897,8 +908,8 @@
         "structureScale": 0.25
       },
       "position": [
-        4480.0,
-        152.0
+        4472.0,
+        151.0
       ],
       "subgraphId": "project.reaction_diffusion.49.1",
       "type": "subgraph",
@@ -1030,6 +1041,16 @@
       ],
       "type": "vector_math",
       "typeVersion": 1
+    },
+    {
+      "id": 91,
+      "parameters": {},
+      "position": [
+        219.0,
+        224.0
+      ],
+      "type": "color_r",
+      "typeVersion": 1
     }
   ],
   "project": {
@@ -1077,7 +1098,7 @@
           "minimum": 0.0,
           "optional": true,
           "role": "",
-          "type": "image2d"
+          "type": "scalar_field"
         },
         {
           "control": "float",
@@ -1185,7 +1206,7 @@
           "minimum": 0.0,
           "optional": false,
           "role": "",
-          "type": "image2d"
+          "type": "scalar_field"
         },
         {
           "control": "float",
@@ -1197,7 +1218,7 @@
           "minimum": 0.0,
           "optional": false,
           "role": "",
-          "type": "image2d"
+          "type": "scalar_field"
         },
         {
           "control": "float",
@@ -1209,7 +1230,7 @@
           "minimum": 0.0,
           "optional": false,
           "role": "",
-          "type": "image2d"
+          "type": "scalar_field"
         }
       ],
       "links": [

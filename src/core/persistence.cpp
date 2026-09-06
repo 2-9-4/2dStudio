@@ -25,6 +25,13 @@ SocketContract socketContract(const std::string& value) {
     return SocketContract::FloatOnly;
 }
 
+std::optional<ValueType> persistedValueType(std::string_view value) {
+    for (const auto type : {ValueType::Float, ValueType::Vec2, ValueType::ScalarField,
+                            ValueType::VectorField, ValueType::ColorImage})
+        if (toString(type) == value) return type;
+    return std::nullopt;
+}
+
 nlohmann::json serializeNode(const NodeRecord& node) {
     auto value = node.missing && node.preservedJson.is_object()
         ? node.preservedJson
@@ -446,6 +453,9 @@ nlohmann::json serializeSubgraph(const SubgraphDefinition& definition) {
             {"default", item.defaultValue}, {"minimum", item.minimum}, {"maximum", item.maximum},
             {"control", control}, {"role", item.role}});
     }
+    nlohmann::json stateSlots = nlohmann::json::array();
+    for (const auto& slot : definition.stateSlots)
+        stateSlots.push_back({{"key", slot.key}, {"label", slot.label}, {"type", toString(slot.type)}});
     nlohmann::json nodes = nlohmann::json::array();
     for (const auto& node : definition.body.nodes()) nodes.push_back(serializeNode(node));
     nlohmann::json links = nlohmann::json::array();
@@ -453,7 +463,7 @@ nlohmann::json serializeSubgraph(const SubgraphDefinition& definition) {
     return {{"id", definition.id}, {"version", definition.version}, {"name", definition.name},
             {"category", definition.category},
             {"execution", definition.execution == SubgraphExecution::Simulation ? "simulation" : "pipeline"},
-            {"interface", std::move(interface)}, {"nodes", std::move(nodes)},
+            {"interface", std::move(interface)}, {"stateSlots", std::move(stateSlots)}, {"nodes", std::move(nodes)},
             {"links", std::move(links)}};
 }
 
@@ -491,6 +501,14 @@ SubgraphDefinition deserializeSubgraph(const nlohmann::json& value,
                        ParameterDescriptor::Control::Float;
         item.role = entry.value("role", std::string{});
         result.interface.push_back(std::move(item));
+    }
+    for (const auto& entry : value.value("stateSlots", nlohmann::json::array())) {
+        SimulationStateSlot slot;
+        slot.key = entry.at("key").get<std::string>();
+        slot.label = entry.value("label", slot.key);
+        const auto type = entry.value("type", std::string("scalar_field"));
+        slot.type = persistedValueType(type).value_or(ValueType::ScalarField);
+        result.stateSlots.push_back(std::move(slot));
     }
     if (value.contains("nodes")) {
         const auto& nodes = value.at("nodes");

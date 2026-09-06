@@ -43,6 +43,14 @@ struct SubgraphInterfaceItem {
                                 minimumValue, maximumValue, controlValue, std::move(roleValue)) {}
 };
 
+// Simulation state is deliberately separate from the public interface.  Keys,
+// like interface keys, are serialized identities; labels are presentation only.
+struct SimulationStateSlot {
+    std::string key;
+    std::string label;
+    ValueType type = ValueType::ScalarField;
+};
+
 struct NodeRecord {
     NodeId id = 0;
     std::string type;
@@ -98,6 +106,7 @@ struct SubgraphDefinition {
     SubgraphExecution execution = SubgraphExecution::Pipeline;
     bool immutable = false;
     std::vector<SubgraphInterfaceItem> interface;
+    std::vector<SimulationStateSlot> stateSlots;
     GraphBody body;
 };
 
