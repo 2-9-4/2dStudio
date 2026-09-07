@@ -173,7 +173,9 @@ Subgraph instances use the node type `subgraph` and a stable `subgraphId`. Their
 
 There is no separate public “control” interface kind. Every public value is an Input or Output.
 A Float input carries optional default/range/widget metadata and renders as a local slider (or
-integer/boolean control) while unwired; wiring its socket overrides that local value. Older project
+integer/boolean/dropdown control) while unwired; wiring its socket overrides that local value. A
+dropdown stores and lowers its zero-based selected value as a Float; its labels are serialized on
+the interface record and are editable in **Subgraph Settings**. Older project
 files containing `kind: "slider"` are migrated to these optional Float inputs on load.
 
 `SubgraphDefinition::body` is a `GraphBody`, the same node-and-link storage used by the root `Graph`. It contains normal `NodeRecord` and `LinkRecord` values and uses the same `addNode`, `removeNode`, `addLink`, and `removeLink` behavior. IDs are local to the body and remain stable when nodes are inserted, removed, or reordered. Links identify descriptor socket keys rather than array positions, and adding a link to an occupied input replaces the previous link.

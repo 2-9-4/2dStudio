@@ -721,7 +721,7 @@ private:
                     continue;
                 }
                 const Value* value = inputIndex < inputs.size() ? &inputs[inputIndex] : nullptr;
-                int mode = 0; float scalar = item.defaultValue;
+                int mode = 0; float scalar = parameter(parameters_, item.key.c_str(), item.defaultValue);
                 if (value) {
                     if (const auto* number = std::get_if<float>(value)) { mode = 1; scalar = *number; }
                     else if (const auto* vector = std::get_if<Vec2>(value)) {

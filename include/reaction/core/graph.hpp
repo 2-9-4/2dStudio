@@ -20,6 +20,9 @@ struct SubgraphInterfaceItem {
     float minimum = 0.0F;
     float maximum = 1.0F;
     ParameterDescriptor::Control control = ParameterDescriptor::Control::Float;
+    // Enum inputs expose their zero-based selected value as a Float inside a
+    // simulation body. Labels are presentation metadata, like parameter enums.
+    std::vector<std::string> enumOptions;
     std::string role;
 
     SubgraphInterfaceItem() = default;

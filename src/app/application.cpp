@@ -570,6 +570,8 @@ bool renderNodeBody(NodeRecord& node, const NodeDescriptor& descriptor,
         changeReported = true;
     if (node.type == "table" && node_widgets::renderTableEditor(node))
         changeReported = true;
+    if (node.type == "integer_mask" && node_widgets::renderIntegerMaskEditor(node))
+        changeReported = true;
     if (node.type == "image" && node_widgets::renderImagePicker(node))
         changeReported = true;
     if (columnExtras && columnExtras()) changeReported = true;
@@ -1714,6 +1716,47 @@ void Application::renderSubgraphEditor() {
             }
             if (item.kind == SubgraphInterfaceKind::Input &&
                 fixedType(item.contract) == ValueType::Float) {
+                int control = static_cast<int>(item.control);
+                const char* controlNames[] = {"Float", "Integer", "Boolean", "Dropdown"};
+                if (ImGui::Combo("Control", &control, controlNames, 4)) {
+                    item.control = static_cast<ParameterDescriptor::Control>(control);
+                    if (item.control == ParameterDescriptor::Control::Enum && item.enumOptions.empty())
+                        item.enumOptions.push_back("Option 1");
+                    item.minimum = 0.0F;
+                    item.maximum = item.control == ParameterDescriptor::Control::Enum
+                        ? static_cast<float>(item.enumOptions.size() - 1) : item.maximum;
+                    item.defaultValue = std::clamp(item.defaultValue, item.minimum, item.maximum);
+                    changed = executionChanged = true;
+                }
+                if (item.control == ParameterDescriptor::Control::Enum) {
+                    ImGui::TextUnformatted("Dropdown labels (value = zero-based selection)");
+                    for (std::size_t option = 0; option < item.enumOptions.size(); ++option) {
+                        ImGui::PushID(static_cast<int>(option));
+                        char text[128]{};
+                        std::snprintf(text, sizeof(text), "%s", item.enumOptions[option].c_str());
+                        if (ImGui::InputText("Label", text, sizeof(text))) {
+                            item.enumOptions[option] = text;
+                            changed = true;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Remove") && item.enumOptions.size() > 1) {
+                            item.enumOptions.erase(item.enumOptions.begin() +
+                                                   static_cast<std::ptrdiff_t>(option));
+                            item.maximum = static_cast<float>(item.enumOptions.size() - 1);
+                            item.defaultValue = std::min(item.defaultValue, item.maximum);
+                            changed = executionChanged = true;
+                            ImGui::PopID();
+                            break;
+                        }
+                        ImGui::PopID();
+                    }
+                    if (ImGui::Button("Add dropdown option")) {
+                        item.enumOptions.push_back("Option " +
+                                                   std::to_string(item.enumOptions.size() + 1));
+                        item.maximum = static_cast<float>(item.enumOptions.size() - 1);
+                        changed = executionChanged = true;
+                    }
+                }
                 if (ImGui::DragFloat("Default", &item.defaultValue, .001F,
                                      item.minimum, item.maximum)) {
                     changed = true; executionChanged = true;

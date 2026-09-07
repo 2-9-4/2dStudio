@@ -498,11 +498,12 @@ nlohmann::json serializeSubgraph(const SubgraphDefinition& definition) {
     for (const auto& item : definition.interface) {
         const char* kind = item.kind == SubgraphInterfaceKind::Input ? "input" : "output";
         const char* control = item.control == ParameterDescriptor::Control::Integer ? "integer" :
-                              item.control == ParameterDescriptor::Control::Boolean ? "boolean" : "float";
+                              item.control == ParameterDescriptor::Control::Boolean ? "boolean" :
+                              item.control == ParameterDescriptor::Control::Enum ? "enum" : "float";
         interface.push_back({{"key", item.key}, {"label", item.label}, {"kind", kind},
             {"type", toString(item.contract)}, {"optional", item.optional},
             {"default", item.defaultValue}, {"minimum", item.minimum}, {"maximum", item.maximum},
-            {"control", control}, {"role", item.role}});
+            {"control", control}, {"options", item.enumOptions}, {"role", item.role}});
     }
     nlohmann::json stateSlots = nlohmann::json::array();
     for (const auto& slot : definition.stateSlots)
@@ -551,7 +552,11 @@ SubgraphDefinition deserializeSubgraph(const nlohmann::json& value,
         const auto control = entry.value("control", std::string("float"));
         item.control = control == "integer" ? ParameterDescriptor::Control::Integer :
                        control == "boolean" ? ParameterDescriptor::Control::Boolean :
+                       control == "enum" ? ParameterDescriptor::Control::Enum :
                        ParameterDescriptor::Control::Float;
+        if (entry.contains("options") && entry["options"].is_array())
+            for (const auto& option : entry["options"])
+                if (option.is_string()) item.enumOptions.push_back(option.get<std::string>());
         item.role = entry.value("role", std::string{});
         result.interface.push_back(std::move(item));
     }

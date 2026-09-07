@@ -504,6 +504,11 @@ TEST_CASE("generic cellular automata is an editable Life-like scalar simulation"
         {{"mask", "Mask", ValueType::Float, SocketDirection::Input, true},
          {"bit", "Bit", SocketContract::Numeric, SocketDirection::Input, true},
          {"result", "Result", SocketContract::Numeric, SocketDirection::Output}}, {}});
+    NodeDescriptor table{"table", 1, "Table", "Math",
+        {{"index", "Index", SocketContract::Numeric, SocketDirection::Input, true},
+         {"result", "Result", SocketContract::Numeric, SocketDirection::Output}}, {}};
+    table.lowerable = true;
+    add(nodes, std::move(table));
     const auto builtIn = std::ranges::find_if(builtInSubgraphs(), [](const SubgraphDefinition& definition) {
         return definition.id == "builtin.cellular_automata.generic";
     });
@@ -515,15 +520,24 @@ TEST_CASE("generic cellular automata is an editable Life-like scalar simulation"
     const auto descriptor = describeSubgraph(*builtIn);
     REQUIRE(descriptor.stateful);
     REQUIRE(descriptor.timeDependent);
-    REQUIRE(descriptor.sockets.size() == 6);
+    REQUIRE(descriptor.sockets.size() == 7);
     REQUIRE(descriptor.sockets[0].key == "initialState");
     REQUIRE(descriptor.sockets[1].key == "birthMask");
     REQUIRE(descriptor.sockets[2].key == "survivalMask");
-    REQUIRE(descriptor.sockets[3].key == "reset");
-    REQUIRE(descriptor.sockets[4].key == "iterations");
-    REQUIRE(descriptor.sockets[5].key == "state");
+    REQUIRE(descriptor.sockets[3].key == "preset");
+    REQUIRE(descriptor.sockets[4].key == "reset");
+    REQUIRE(descriptor.sockets[5].key == "iterations");
+    REQUIRE(descriptor.sockets[6].key == "state");
     REQUIRE(descriptor.parameters[0].defaultValue == 8.0F);
     REQUIRE(descriptor.parameters[1].defaultValue == 12.0F);
+    REQUIRE(descriptor.parameters[2].control == ParameterDescriptor::Control::Enum);
+    REQUIRE(descriptor.parameters[2].enumOptions.front() == "Custom");
+
+    Graph persisted;
+    persisted.subgraphs().push_back(*builtIn);
+    const auto serialized = serializeProject(persisted);
+    REQUIRE(serialized["subgraphs"][0]["interface"][3]["control"] == "enum");
+    REQUIRE(serialized["subgraphs"][0]["interface"][3]["options"][2] == "HighLife");
 
     const auto convolution = std::ranges::find(builtIn->body.nodes(), "convolution",
                                                 &NodeRecord::type);
@@ -531,6 +545,7 @@ TEST_CASE("generic cellular automata is an editable Life-like scalar simulation"
     REQUIRE(convolution->parameters["kernel"] == nlohmann::json::array(
         {1.0F, 1.0F, 1.0F, 1.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F}));
     REQUIRE(std::ranges::count(builtIn->body.nodes(), "bit_test", &NodeRecord::type) == 2);
+    REQUIRE(std::ranges::count(builtIn->body.nodes(), "table", &NodeRecord::type) == 3);
     REQUIRE(std::ranges::any_of(builtIn->body.nodes(), [](const NodeRecord& node) {
         return node.type == "select";
     }));

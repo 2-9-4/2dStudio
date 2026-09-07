@@ -360,12 +360,17 @@ SubgraphDefinition genericCellularAutomata() {
          true, 8.0F, 0.0F, 16777215.0F, Control::Integer},
         {"survivalMask", "Survival Mask", SubgraphInterfaceKind::Input, ValueType::Float,
          true, 12.0F, 0.0F, 16777215.0F, Control::Integer},
+        {"preset", "Rule Preset", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 7.0F, Control::Enum},
         {"reset", "Reset", SubgraphInterfaceKind::Input, ValueType::Float,
          true, 0.0F, 0.0F, 1.0F, Control::Boolean},
         {"iterations", "Iterations Per Step", SubgraphInterfaceKind::Input, ValueType::Float,
          true, 1.0F, 1.0F, 64.0F, Control::Integer, "iterations"},
         {"state", "State", SubgraphInterfaceKind::Output, ValueType::ScalarField},
     };
+    result.interface[3].enumOptions = {"Custom", "Conway's Life", "HighLife", "Seeds",
+                                       "Day & Night", "Maze", "Replicator",
+                                       "Life without Death"};
 
     auto& body = result.body;
     const auto initialInput = input(body, "initialState", "Initial State Input", {0, 40});
@@ -386,23 +391,41 @@ SubgraphDefinition genericCellularAutomata() {
              {1.0F, 1.0F, 1.0F, 1.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F})}});
     link(body, binary, "result", neighbors, "image");
 
-    const auto birthMask = input(body, "birthMask", "Birth Mask", {700, 220});
-    const auto survivalMask = input(body, "survivalMask", "Survival Mask", {700, 500});
-    const auto birth = addNode(body, "bit_test", "Birth Rule", {930, 260});
-    const auto survive = addNode(body, "bit_test", "Survival Rule", {930, 500});
-    link(body, birthMask, "value", birth, "mask");
+    const auto birthMask = input(body, "birthMask", "Custom Birth Mask", {700, 120});
+    const auto survivalMask = input(body, "survivalMask", "Custom Survival Mask", {700, 600});
+    const auto preset = input(body, "preset", "Rule Preset", {700, 360});
+    const auto customGate = addNode(body, "table", "Is Custom Preset", {930, 120},
+        {{"values", nlohmann::json::array({1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F})}});
+    const auto presetBirth = addNode(body, "table", "Preset Birth Masks", {930, 280},
+        {{"values", nlohmann::json::array({8.0F, 8.0F, 72.0F, 4.0F, 460.0F, 8.0F, 170.0F, 8.0F})}});
+    const auto presetSurvival = addNode(body, "table", "Preset Survival Masks", {930, 500},
+        {{"values", nlohmann::json::array({12.0F, 12.0F, 12.0F, 0.0F, 472.0F, 62.0F, 170.0F, 511.0F})}});
+    link(body, preset, "value", customGate, "index");
+    link(body, preset, "value", presetBirth, "index");
+    link(body, preset, "value", presetSurvival, "index");
+    const auto selectedBirth = addNode(body, "select", "Selected Birth Mask", {1170, 220});
+    const auto selectedSurvival = addNode(body, "select", "Selected Survival Mask", {1170, 500});
+    link(body, customGate, "result", selectedBirth, "condition");
+    link(body, birthMask, "value", selectedBirth, "ifTrue");
+    link(body, presetBirth, "result", selectedBirth, "ifFalse");
+    link(body, customGate, "result", selectedSurvival, "condition");
+    link(body, survivalMask, "value", selectedSurvival, "ifTrue");
+    link(body, presetSurvival, "result", selectedSurvival, "ifFalse");
+    const auto birth = addNode(body, "bit_test", "Birth Rule", {1420, 260});
+    const auto survive = addNode(body, "bit_test", "Survival Rule", {1420, 500});
+    link(body, selectedBirth, "result", birth, "mask");
     link(body, neighbors, "image", birth, "bit");
-    link(body, survivalMask, "value", survive, "mask");
+    link(body, selectedSurvival, "result", survive, "mask");
     link(body, neighbors, "image", survive, "bit");
 
-    const auto nextValue = addNode(body, "select", "Birth or Survival", {1180, 380});
+    const auto nextValue = addNode(body, "select", "Birth or Survival", {1660, 380});
     link(body, binary, "result", nextValue, "condition");
     link(body, survive, "result", nextValue, "ifTrue");
     link(body, birth, "result", nextValue, "ifFalse");
-    const auto next = addNode(body, "simulation_next_state", "Next State", {1430, 380},
+    const auto next = addNode(body, "simulation_next_state", "Next State", {1900, 380},
                               {{"slot", 0.0F}});
     link(body, nextValue, "result", next, "value");
-    const auto output = addNode(body, "subgraph_output", "State Output", {1670, 380},
+    const auto output = addNode(body, "subgraph_output", "State Output", {2140, 380},
                                 {{"key", "state"}});
     link(body, next, "value", output, "value");
     return result;
@@ -427,6 +450,11 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
             (item.minimum > item.maximum || item.defaultValue < item.minimum ||
              item.defaultValue > item.maximum))
             errors.push_back("Subgraph slider '" + item.label + "' has an invalid range");
+        if (item.kind == SubgraphInterfaceKind::Input &&
+            item.control == ParameterDescriptor::Control::Enum &&
+            (fixedType(item.contract) != ValueType::Float || item.enumOptions.empty() ||
+             item.minimum != 0.0F || item.maximum != static_cast<float>(item.enumOptions.size() - 1)))
+            errors.push_back("Subgraph dropdown '" + item.label + "' needs Float values and ordered labels");
         if (item.kind == SubgraphInterfaceKind::Output &&
             !std::ranges::any_of(acceptedTypes(item.contract), isFieldType))
             errors.push_back("Subgraph outputs must resolve to a field type");
@@ -689,7 +717,8 @@ NodeDescriptor describeSubgraph(const SubgraphDefinition& definition) {
             // interface category.
             if (fixedType(item.contract) == ValueType::Float)
                 result.parameters.push_back({item.key, item.label, item.defaultValue,
-                                             item.minimum, item.maximum, item.control});
+                                             item.minimum, item.maximum, item.control,
+                                             item.enumOptions});
             result.sockets.push_back({item.key, item.label, item.contract,
                                       SocketDirection::Input,
                                       item.optional || fixedType(item.contract) == ValueType::Float});

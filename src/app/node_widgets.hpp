@@ -50,6 +50,7 @@ void renderEnumSelector(const ParameterDescriptor& parameter, NodeRecord& node,
                         PopupState& popup);
 bool renderConvolutionEditor(NodeRecord& node, PopupState& popup);
 bool renderTableEditor(NodeRecord& node);
+bool renderIntegerMaskEditor(NodeRecord& node);
 bool renderImagePicker(NodeRecord& node);
 
 // Must be called while the node editor is suspended. Popups use ImGui screen

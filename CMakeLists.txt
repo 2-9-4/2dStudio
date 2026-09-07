@@ -85,6 +85,7 @@ if(REACTION_BUILD_APP)
         src/gpu/hash_node.cpp
         src/gpu/table_node.cpp
         src/gpu/bit_test_node.cpp
+        src/gpu/integer_mask_node.cpp
         # Keep new node families as separate files; append their sources here.
         # Shared procedural helpers are header-only in procedural_node_support.hpp.
         )

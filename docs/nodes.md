@@ -39,6 +39,10 @@ submodes, and the special nodes available inside simulation subgraphs.
   tested per pixel and produces a scalar field of exact `0` or `1`. Inputs are rounded; invalid
   values are safe and masks support independently addressable bits `0..23`.
 
+- **Integer Mask** (`integer_mask`) — Produces a Float-backed integer mask for Bit Test and
+  similar nodes. Its editor accepts a decimal value, shows all 24 supported bits, and lets you
+  toggle each bit directly.
+
 - **Table** (`table`) — Maps a Numeric **Index** through an editable scalar table. **Sampling**
   selects nearest or linear interpolation; **Address** selects clamp, repeat, or mirror;
   **Index Units** selects direct table positions or normalized 0–1 positions. Its output follows
@@ -167,8 +171,9 @@ submodes, and the special nodes available inside simulation subgraphs.
   **Survival Mask** values; bit *n* enables a birth or survival at *n* Moore neighbors.
   The defaults are Conway's Life (`B3/S23`, masks `8` and `12`). **Reset** reinitializes
   from Initial State, and **Iterations Per Step** controls update dispatches per frame.
-  Useful mask pairs include HighLife `72/12`, Seeds `4/0`, Day & Night `460/472`, Maze
-  `8/62`, Replicator `170/170`, and Life without Death `8/511`.
+  **Rule Preset** is a dropdown whose zero-based Float is consumed inside by Table nodes; choose
+  Custom to respect the editable mask inputs. It includes Conway's Life, HighLife, Seeds, Day &
+  Night, Maze, Replicator, and Life without Death.
 
 ## Simulation-subgraph-only nodes
 

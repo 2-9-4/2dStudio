@@ -167,6 +167,34 @@ bool renderTableEditor(NodeRecord& node) {
     return changed;
 }
 
+bool renderIntegerMaskEditor(NodeRecord& node) {
+    constexpr int maximumBit = 23;
+    constexpr int maximumMask = (1 << (maximumBit + 1)) - 1;
+    int value = std::clamp(static_cast<int>(node.parameters.value("value", 0.0F)), 0, maximumMask);
+    bool changed = false;
+    ImGui::SetNextItemWidth(150);
+    if (ImGui::InputInt("Decimal", &value)) {
+        value = std::clamp(value, 0, maximumMask);
+        changed = true;
+    }
+    std::string bits;
+    bits.reserve(maximumBit + 1);
+    for (int bit = maximumBit; bit >= 0; --bit) bits += (value & (1 << bit)) ? '1' : '0';
+    ImGui::TextUnformatted(bits.c_str());
+    for (int bit = maximumBit; bit >= 0; --bit) {
+        ImGui::PushID(bit);
+        if (ImGui::SmallButton((value & (1 << bit)) ? "1" : "0")) {
+            value ^= 1 << bit;
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Bit %d", bit);
+        ImGui::PopID();
+        if (bit != 0) ImGui::SameLine(0.0F, 1.0F);
+    }
+    if (changed) node.parameters["value"] = static_cast<float>(value);
+    return changed;
+}
+
 bool renderPopup(PopupState& popup, GraphBody& graph) {
     if (popup.kind == PopupKind::None) return false;
     const char* name = popupName(popup.kind);
