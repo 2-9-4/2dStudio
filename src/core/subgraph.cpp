@@ -2,6 +2,7 @@
 #include "reaction/core/vector_math.hpp"
 
 #include <algorithm>
+#include <array>
 #include <functional>
 #include <queue>
 #include <unordered_map>
@@ -431,6 +432,104 @@ SubgraphDefinition genericCellularAutomata() {
     return result;
 }
 
+SubgraphDefinition floodFill() {
+    SubgraphDefinition result;
+    result.id = "builtin.flood_fill";
+    result.name = "Flood Fill";
+    result.category = "Simulation";
+    result.execution = SubgraphExecution::Simulation;
+    result.immutable = true;
+    result.stateSlots = {{"region", "Region", ValueType::ScalarField}};
+    result.interface = {
+        {"passableMask", "Passable Mask", SubgraphInterfaceKind::Input,
+         ValueType::ScalarField},
+        {"seedMask", "Seed Mask", SubgraphInterfaceKind::Input, ValueType::ScalarField},
+        {"initialState", "Initial State", SubgraphInterfaceKind::Input,
+         ValueType::ScalarField, true},
+        {"connectivity", "Connectivity", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 1.0F, Control::Enum},
+        {"reset", "Reset", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 1.0F, Control::Boolean},
+        {"region", "Region", SubgraphInterfaceKind::Output, ValueType::ScalarField},
+    };
+    result.interface[3].enumOptions = {"4", "8"};
+
+    auto& body = result.body;
+    const auto passable = input(body, "passableMask", "Passable Mask", {0, 40});
+    const auto seed = input(body, "seedMask", "Seed Mask", {0, 160});
+    const auto initialInput = input(body, "initialState", "Initial State Input", {0, 280});
+    // With no explicit initial region, initialize exactly from Seed Mask.  A
+    // connected Initial State is a reset-time override, still clipped below.
+    const auto initialSeeds = addNode(body, "select", "Initial State or Seeds", {260, 180});
+    link(body, initialInput, "connected", initialSeeds, "condition");
+    link(body, initialInput, "value", initialSeeds, "ifTrue");
+    link(body, seed, "value", initialSeeds, "ifFalse");
+    const auto initialValue = math(body, "Initial Region", 2, {500, 180});
+    link(body, passable, "value", initialValue, "a");
+    link(body, initialSeeds, "result", initialValue, "b");
+    const auto initial = addNode(body, "simulation_initial_state", "Initial State",
+                                 {740, 180}, {{"slot", 0.0F}});
+    link(body, initialValue, "result", initial, "value");
+
+    const auto previous = addNode(body, "simulation_previous_state", "Previous Region",
+                                  {0, 600}, {{"slot", 0.0F}});
+    const std::array<std::pair<const char*, Vec2>, 8> offsets{{
+        {"North", {0.0F, -1.0F}}, {"South", {0.0F, 1.0F}},
+        {"West", {-1.0F, 0.0F}}, {"East", {1.0F, 0.0F}},
+        {"Northwest", {-1.0F, -1.0F}}, {"Northeast", {1.0F, -1.0F}},
+        {"Southwest", {-1.0F, 1.0F}}, {"Southeast", {1.0F, 1.0F}},
+    }};
+    std::array<NodeId, 8> samples{};
+    for (std::size_t index = 0; index < offsets.size(); ++index) {
+        const auto offset = vector(body, std::string(offsets[index].first) + " Offset",
+                                   {220, 480.0F + static_cast<float>(index) * 110.0F},
+                                   offsets[index].second.x, offsets[index].second.y);
+        samples[index] = addNode(body, "state_input_sample_offset",
+            std::string(offsets[index].first) + " Previous State", {460,
+            480.0F + static_cast<float>(index) * 110.0F},
+            {{"sampling", 0.0F}, {"addressMode", 0.0F}});
+        link(body, previous, "value", samples[index], "source");
+        link(body, offset, "value", samples[index], "offset");
+    }
+    const auto maximum = [&](NodeId first, NodeId second, std::string label, Vec2 position) {
+        const auto node = math(body, std::move(label), 6, position);
+        link(body, first, "sampled", node, "a");
+        link(body, second, "sampled", node, "b");
+        return node;
+    };
+    const auto axialNS = maximum(samples[0], samples[1], "North/South Reached", {700, 520});
+    const auto axialEW = maximum(samples[2], samples[3], "East/West Reached", {700, 680});
+    const auto axial = math(body, "4-Connected Neighbors", 6, {940, 600});
+    link(body, axialNS, "result", axial, "a");
+    link(body, axialEW, "result", axial, "b");
+    const auto diagonalNWNE = maximum(samples[4], samples[5], "North Diagonals Reached", {700, 960});
+    const auto diagonalSWSE = maximum(samples[6], samples[7], "South Diagonals Reached", {700, 1120});
+    const auto diagonals = math(body, "Diagonal Neighbors", 6, {940, 1040});
+    link(body, diagonalNWNE, "result", diagonals, "a");
+    link(body, diagonalSWSE, "result", diagonals, "b");
+    const auto allNeighbors = math(body, "8-Connected Neighbors", 6, {1180, 820});
+    link(body, axial, "result", allNeighbors, "a");
+    link(body, diagonals, "result", allNeighbors, "b");
+    const auto connectivity = input(body, "connectivity", "Connectivity", {1180, 1020});
+    const auto selectedNeighbors = addNode(body, "select", "Selected Neighbors", {1420, 820});
+    link(body, connectivity, "value", selectedNeighbors, "condition");
+    link(body, allNeighbors, "result", selectedNeighbors, "ifTrue");
+    link(body, axial, "result", selectedNeighbors, "ifFalse");
+    const auto reached = math(body, "Reached Region", 6, {1660, 760});
+    link(body, previous, "value", reached, "a");
+    link(body, selectedNeighbors, "result", reached, "b");
+    const auto nextValue = math(body, "Passable Reached Region", 2, {1900, 760});
+    link(body, passable, "value", nextValue, "a");
+    link(body, reached, "result", nextValue, "b");
+    const auto next = addNode(body, "simulation_next_state", "Next Region", {2140, 760},
+                              {{"slot", 0.0F}});
+    link(body, nextValue, "result", next, "value");
+    const auto output = addNode(body, "subgraph_output", "Region Output", {2380, 760},
+                                {{"key", "region"}});
+    link(body, next, "value", output, "value");
+    return result;
+}
+
 std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definition,
                                                const NodeRegistry& registry) {
     std::vector<std::string> errors;
@@ -697,7 +796,7 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
 
 const std::vector<SubgraphDefinition>& builtInSubgraphs() {
     static const std::vector<SubgraphDefinition> values{
-        discreteReaction(), genericCellularAutomata()};
+        discreteReaction(), genericCellularAutomata(), floodFill()};
     return values;
 }
 

@@ -223,6 +223,24 @@ TEST_CASE("generic cellular automata lowers its scalar Moore-neighborhood rule")
     REQUIRE_NOTHROW(gpu.compileCompute(update, "Generic Cellular Automata / update"));
 }
 
+TEST_CASE("flood fill lowers its four and eight-connected offset neighborhoods") {
+    const auto definition = std::ranges::find_if(builtInSubgraphs(), [](const SubgraphDefinition& item) {
+        return item.id == "builtin.flood_fill";
+    });
+    REQUIRE(definition != builtInSubgraphs().end());
+    const auto initialization = generateSimulationShader(*definition, true);
+    const auto update = generateSimulationShader(*definition, false);
+    REQUIRE(initialization.find("in_seedMask") != std::string::npos);
+    REQUIRE(initialization.find("in_passableMask") != std::string::npos);
+    REQUIRE(update.find("in_connectivity") != std::string::npos);
+    REQUIRE(std::ranges::count(definition->body.nodes(), "state_input_sample_offset",
+                               &NodeRecord::type) == 8);
+
+    HiddenContext context;
+    GpuRuntime gpu;
+    REQUIRE_NOTHROW(gpu.compileCompute(update, "Flood Fill / update"));
+}
+
 TEST_CASE("simulation shader uses the central widest-edge coercion") {
     NodeRegistry registry;
     registerBuiltInNodes(registry);

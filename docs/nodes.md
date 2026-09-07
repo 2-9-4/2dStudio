@@ -175,6 +175,11 @@ submodes, and the special nodes available inside simulation subgraphs.
   Custom to respect the editable mask inputs. It includes Conway's Life, HighLife, Seeds, Day &
   Night, Maze, Replicator, and Life without Death.
 
+- **Flood Fill** — An editable scalar region-grow simulation. **Passable Mask** limits the
+  region, and **Seed Mask** starts it; an optional **Initial State** overrides the seed mask
+  on reset. **Connectivity** selects 4- or 8-connected propagation, and **Reset** restarts the
+  fill. Its **Region** output expands through passable pixels over successive simulation steps.
+
 ## Simulation-subgraph-only nodes
 
 These nodes are scoped to a simulation body and are not ordinary root-graph nodes:

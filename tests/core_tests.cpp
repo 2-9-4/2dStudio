@@ -551,6 +551,43 @@ TEST_CASE("generic cellular automata is an editable Life-like scalar simulation"
     }));
 }
 
+TEST_CASE("flood fill is an editable scalar region simulation") {
+    auto nodes = registry();
+    NodeDescriptor offsetSample{"state_input_sample_offset", 1,
+        "State/Input Sample at Offset", "Coordinates",
+        {{"source", "Source", SocketContract::AnyField, SocketDirection::Input},
+         {"offset", "Offset Pixels", SocketContract::VectorNumeric, SocketDirection::Input, true},
+         {"sampled", "Sampled", SocketContract::AnyField, SocketDirection::Output}}, {}};
+    offsetSample.sockets[0].requiresImage = true;
+    offsetSample.sockets[2].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+    offsetSample.sockets[2].typeInputs = {"source"};
+    offsetSample.neighborhoodSocket = "source";
+    offsetSample.lowerable = true;
+    add(nodes, std::move(offsetSample));
+
+    const auto builtIn = std::ranges::find_if(builtInSubgraphs(), [](const SubgraphDefinition& definition) {
+        return definition.id == "builtin.flood_fill";
+    });
+    REQUIRE(builtIn != builtInSubgraphs().end());
+    const auto errors = validateSubgraph(*builtIn, nodes);
+    INFO(nlohmann::json(errors).dump());
+    REQUIRE(errors.empty());
+
+    const auto descriptor = describeSubgraph(*builtIn);
+    REQUIRE(descriptor.stateful);
+    REQUIRE(descriptor.sockets.size() == 6);
+    REQUIRE(descriptor.sockets[0].key == "passableMask");
+    REQUIRE(descriptor.sockets[1].key == "seedMask");
+    REQUIRE(descriptor.sockets[2].key == "initialState");
+    REQUIRE(descriptor.sockets[2].optional);
+    REQUIRE(descriptor.sockets[3].key == "connectivity");
+    REQUIRE(descriptor.parameters[0].control == ParameterDescriptor::Control::Enum);
+    REQUIRE(descriptor.parameters[0].enumOptions == std::vector<std::string>{"4", "8"});
+    REQUIRE(descriptor.sockets[5].key == "region");
+    REQUIRE(std::ranges::count(builtIn->body.nodes(), "state_input_sample_offset",
+                               &NodeRecord::type) == 8);
+}
+
 TEST_CASE("built-in discrete reaction uses Vector Math for its seed distance") {
     const auto& body = builtInSubgraphs().front().body;
     const auto distance = std::ranges::find_if(body.nodes(), [](const NodeRecord& node) {
