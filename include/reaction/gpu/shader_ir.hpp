@@ -93,6 +93,23 @@ public:
                                               std::string_view uvExpression,
                                               std::string_view parameterKey,
                                               float fallback) = 0;
+    // Samples an image input at a caller-controlled normalized coordinate. The
+    // coordinate must already have its address mode applied. `nearest` selects
+    // texel-center sampling; false uses the input texture's linear filter.
+    // This is deliberately separate from inputAt(): neighborhood nodes retain
+    // their historical wrapped-coordinate behavior.
+    [[nodiscard]] virtual ShaderValue inputSample(std::string_view socket,
+                                                  std::string_view uvExpression,
+                                                  std::string_view parameterKey,
+                                                  float fallback,
+                                                  bool nearest) {
+        if (nearest) {
+            const auto coordinate = "(floor((" + std::string(uvExpression) +
+                ")/pixelSize)+vec2(0.5))*pixelSize";
+            return inputAt(socket, coordinate, parameterKey, fallback);
+        }
+        return inputAt(socket, uvExpression, parameterKey, fallback);
+    }
     // Samples an image input at an integer-pixel offset clamped to the texture
     // bounds, reproducing texelFetch semantics inside generated regions. Region
     // builders override this with an exact texelFetch; contexts that only see

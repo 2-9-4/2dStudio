@@ -44,7 +44,7 @@ public:
                << "layout(binding=0)uniform sampler2D stateIn;\n";
         declareInterface(source, 1);
         declareSimulationInfo(source);
-        source << "vec2 sampleState(vec2 q){return texture(stateIn,fract(q)).rg;}\n";
+        source << "vec2 sampleState(vec2 q){return texture(stateIn,q).rg;}\n";
         source << "vec2 pixelSize;\n";
         for (const auto& helper : helpers_) source << helper.source;
         source << "void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(stateOut);"
@@ -85,6 +85,15 @@ public:
                     toString(sourceType) + " to " + toString(targetType));
             return coerceShaderValue(std::move(value), *coercion);
         }
+        NodeDescriptor storage;
+        if (const auto* descriptor = resolveSubgraphBodyDescriptor(
+                definition_, *frameNode, registry_, storage);
+            descriptor && std::ranges::any_of(descriptor->sockets,
+                [&](const SocketDescriptor& candidate) {
+                    return candidate.direction == SocketDirection::Input &&
+                           candidate.key == socket && candidate.fieldDefault;
+                }))
+            return {ShaderValueType::Vec2, std::string(uvExpression), true};
         return parameter(parameterKey, fallback);
     }
 
@@ -193,7 +202,7 @@ private:
         declareInterface(source, static_cast<int>(definition_.stateSlots.size()));
         declareSimulationInfo(source);
         for (std::size_t slot = 0; slot < definition_.stateSlots.size(); ++slot)
-            source << "vec4 sampleState" << slot << "(vec2 q){return texture(stateIn" << slot << ",fract(q));}\n";
+            source << "vec4 sampleState" << slot << "(vec2 q){return texture(stateIn" << slot << ",q);}\n";
         source << "vec2 pixelSize;\n";
         for (const auto& helper : helpers_) source << helper.source;
         source << "void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(stateOut0);"

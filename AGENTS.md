@@ -47,3 +47,9 @@ are dispatch uniforms declared only when reachable; bind them for initialization
 update dispatch, and advance simulation time/step once per outer step rather than per iteration.
 
 update [AGENTS.md](AGENTS.md) and associated files with whatever required more reading to accomplish your task. REPORT ANY FOOTGUNS/EERGONOMIC ISSUES THAT CAUSED BUGS TO THE USER FOR LATER FIXING
+
+Arbitrary-coordinate field samplers use `ShaderLoweringContext::inputSample`; apply the node's
+address behavior before calling it and set the sampled source as both `requiresImage` and the
+`neighborhoodSocket`. This keeps the source materialized rather than attempting to sample an
+in-region SSA value. Simulation state samplers take raw normalized coordinates; each consumer,
+not the state accessor, owns wrapping/clamping semantics.

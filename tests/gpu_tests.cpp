@@ -452,6 +452,54 @@ TEST_CASE("convolution fuses with clamp sampling and specializes") {
     REQUIRE(normalized.source == originalSource);
 }
 
+TEST_CASE("texture samplers lower arbitrary-coordinate source reads") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    const auto* textureSample = registry.descriptor("texture_sample");
+    const auto* offsetSample = registry.descriptor("state_input_sample_offset");
+    REQUIRE(textureSample != nullptr);
+    REQUIRE(offsetSample != nullptr);
+    REQUIRE(textureSample->lowerable);
+    REQUIRE(offsetSample->lowerable);
+    REQUIRE(textureSample->sockets[0].requiresImage);
+    REQUIRE(offsetSample->sockets[0].requiresImage);
+    REQUIRE(offsetSample->neighborhoodSocket == "source");
+    REQUIRE(offsetSample->sockets[1].contract == SocketContract::VectorNumeric);
+    auto variantNode = registry.create("state_input_sample_offset");
+    variantNode->setParameters({{"sampling", 0.0F}, {"addressMode", 0.0F}});
+    const auto nearestClamp = variantNode->shaderVariantKey(variantNode->parameters());
+    variantNode->setParameters({{"sampling", 1.0F}, {"addressMode", 3.0F}});
+    REQUIRE(variantNode->shaderVariantKey(variantNode->parameters()) != nearestClamp);
+
+    Graph graph;
+    const auto source = graph.addNode("perlin");
+    const auto sample = graph.addNode("state_input_sample_offset");
+    const auto threshold = graph.addNode("threshold");
+    graph.findNode(sample)->parameters = {{"sampling", 0.0F}, {"addressMode", 2.0F}};
+    graph.addLink(source, "image", sample, "source");
+    graph.addLink(sample, "sampled", threshold, "value");
+    const auto compiled = graph.compile(registry);
+    REQUIRE(compiled.valid);
+    const auto regions = planShaderRegions(graph, registry, compiled, 16, 1024);
+    REQUIRE(regions.size() == 2);
+    REQUIRE(regions[0].nodes == std::vector<NodeId>{source});
+    REQUIRE(regions[1].nodes == std::vector<NodeId>{sample, threshold});
+    const auto generated = generateComputeShader(regions[1], {threshold});
+    REQUIRE(generated.source.find("texelFetch(inputImage_") != std::string::npos);
+    REQUIRE(generated.source.find("pixelSize") != std::string::npos);
+    REQUIRE(generated.source.find("floor((uv+") != std::string::npos);
+
+    Graph textureGraph;
+    const auto textureSource = textureGraph.addNode("perlin");
+    const auto texture = textureGraph.addNode("texture_sample");
+    textureGraph.addLink(textureSource, "image", texture, "source");
+    const auto textureCompiled = textureGraph.compile(registry);
+    REQUIRE(textureCompiled.valid);
+    const auto textureRegions = planShaderRegions(textureGraph, registry, textureCompiled, 16, 1024);
+    REQUIRE(textureRegions.size() == 2);
+    const auto textureGenerated = generateComputeShader(textureRegions[1], {texture});
+    REQUIRE(textureGenerated.source.find("clamp(uv,vec2(0.0),vec2(1.0))") != std::string::npos);
+}
+
 TEST_CASE("convolution iterations above one stay a materialized boundary") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph;

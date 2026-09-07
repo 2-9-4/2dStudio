@@ -177,6 +177,8 @@ public:
         }
         if (socketRequiresImage(socket))
             typedError("Input '" + std::string(socket) + "' requires a field image");
+        if (socketFieldDefault(socket))
+            return {ShaderValueType::Vec2, std::string(uvExpression), true};
         const std::string key = "parameter:" + std::to_string(currentNode_->id) + ":" +
                                 std::string(parameterKey);
         return requireInput(key, ShaderInputKind::Float, ShaderValueType::Scalar, 0, {},
@@ -206,6 +208,36 @@ public:
         ShaderValue result{type, sampledTexel(uniformName, "clamp(ivec2(" +
             std::string(pixelExpression) + "),ivec2(0),textureSize(" + uniformName +
             ",0)-ivec2(1))", type), true};
+        nodeHasFieldDependency_ = true;
+        return result;
+    }
+
+    ShaderValue inputSample(std::string_view socket, std::string_view uvExpression,
+                            std::string_view parameterKey, float fallback,
+                            bool nearest) override {
+        const auto* link = inputLink(graph_, currentNode_->id, socket);
+        if (link && regionNodes_.contains(link->fromNode))
+            throw std::runtime_error("Sampled input crosses an in-region value");
+        if (!link) {
+            typedError("Input '" + std::string(socket) + "' requires a field image");
+            return parameter(parameterKey, fallback);
+        }
+        const auto kind = boundaryKind(link->fromNode, link->fromSocket);
+        if (kind != ShaderInputKind::Field) {
+            typedError("Input '" + std::string(socket) + "' requires a field image");
+            return inputAt(socket, uvExpression, parameterKey, fallback);
+        }
+        const auto type = semanticType(link->fromNode, link->fromSocket, socket);
+        const std::string key = "source:" + std::to_string(link->fromNode) + ":" +
+                                link->fromSocket;
+        (void)requireInput(key, kind, type, link->fromNode, link->fromSocket,
+                           0, {}, fallback);
+        const auto& uniformName = region_->inputs[requirements_.at(key)].uniformName;
+        const auto coordinate = std::string(uvExpression);
+        ShaderValue result{type, nearest
+            ? sampledTexel(uniformName, "ivec2(floor(" + coordinate + "*vec2(textureSize(" +
+                uniformName + ",0))))", type)
+            : sampled(uniformName, coordinate, type), true};
         nodeHasFieldDependency_ = true;
         return result;
     }
@@ -287,6 +319,14 @@ private:
             currentDescriptor_->sockets, [&](const SocketDescriptor& candidate) {
                 return candidate.direction == SocketDirection::Input &&
                        candidate.key == socket && candidate.requiresImage;
+            });
+    }
+
+    bool socketFieldDefault(std::string_view socket) const {
+        return currentDescriptor_ && std::ranges::any_of(
+            currentDescriptor_->sockets, [&](const SocketDescriptor& candidate) {
+                return candidate.direction == SocketDirection::Input &&
+                       candidate.key == socket && candidate.fieldDefault;
             });
     }
 

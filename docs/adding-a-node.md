@@ -226,6 +226,11 @@ or a field; node code does not dispatch on that category.
 Mark UV-dependent generators with `NodeDescriptor::producedField`. Mark neighborhood/source
 sockets with `SocketDescriptor::requiresImage` (and `neighborhoodSocket` when the edge must split
 regions). `inputAt` and `inputTexel` then reject constant legs with an attributed typed error.
+Use `inputSample` for a field sampled at a caller-controlled normalized coordinate: it is the
+typed arbitrary-coordinate counterpart to `inputTexel`, preserving selected nearest/linear
+filtering while the node applies clamp/repeat/mirror/border semantics. Mark that source socket
+`requiresImage` and as the node's `neighborhoodSocket`, so a sampled producer is materialized
+before the sampling region rather than incorrectly read from an in-region SSA value.
 
 Numeric controls remain uniforms so interactive edits do not recompile. Parameters that change
 shader structure belong in `shaderVariantKey`. If only some settings lower correctly, implement

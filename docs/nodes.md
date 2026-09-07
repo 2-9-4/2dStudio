@@ -134,7 +134,13 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **Image Invert** (`invert`) — Accepts Any Field and preserves its semantic type. Scalar and
   vector inputs are inverted component-wise; Color Image RGB is inverted while alpha is preserved.
 - **Texture Sample** (`texture_sample`) — Samples an Any Field at Vector Numeric coordinates and
-  preserves the sampled field's scalar, vector, or color identity.
+  preserves the sampled field's scalar, vector, or color identity. Sampling selects nearest or
+  linear filtering; Address selects clamp, repeat, mirror, or a supplied border value.
+- **State/Input Sample at Offset** (`state_input_sample_offset`) — Samples an Any Field at the
+  canvas coordinate plus **Offset Pixels** times Pixel Size. Offset Pixels accepts a Float2 or
+  Vector Field and defaults to `(0,0)`; Sampling selects nearest or linear filtering and Address
+  selects clamp, repeat, mirror, or a zero border. This is useful in simulation bodies for
+  readable neighborhoods such as North `(0,-1)` and East `(1,0)`.
 - **Float Preview** (`float_preview`) — Materializes/displays a scalar value in the editor
   while allowing an optional input connection to override its fallback value.
 
@@ -183,6 +189,6 @@ These nodes are scoped to a simulation body and are not ordinary root-graph node
 
 The editable simulation canvas also permits lowerable ordinary registered nodes, including
 **Float**, **Math**, **Bit Test / Integer Mask**, **Threshold**, **Select**, **Canvas Coordinates**,
-**Laplacian**, and **Convolution**. Convolution exposes its preset/kernel editor there but is
+**Laplacian**, **Texture Sample**, and **State/Input Sample at Offset**. Convolution exposes its preset/kernel editor there but is
 single-pass only; its root-graph multi-pass **Iterations** control is unavailable. Nested
 subgraphs and arbitrary pipeline subgraphs are not currently supported.
