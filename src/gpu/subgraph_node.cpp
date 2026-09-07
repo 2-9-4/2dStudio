@@ -97,6 +97,15 @@ public:
         return parameter(parameterKey, fallback);
     }
 
+    ShaderValue inputTexel(std::string_view socket, std::string_view pixelExpression,
+                           std::string_view parameterKey, float fallback) override {
+        // Convolution and other neighborhood nodes pass integer pixel coordinates.
+        // Simulation state accessors are normalized-coordinate samplers, so translate
+        // the pixel center here instead of passing an ivec2 to texture().
+        const auto uv = "((vec2(" + std::string(pixelExpression) + ")+vec2(0.5))*pixelSize)";
+        return inputAt(socket, uv, parameterKey, fallback);
+    }
+
     ShaderValue parameter(std::string_view key, float fallback) override {
         const auto& node = *frames_.back().node;
         if (inputLink(node.id, key))
@@ -548,6 +557,21 @@ public:
             gpu.dispatch(initProgram_, context.width, context.height);
             index_ = 0; resetPending_ = false; resetSinceLastStep_ = true;
         };
+        // A public Float input named "reset" is a standard simulation trigger.
+        // It is intentionally evaluated outside the body: reset selects the
+        // initialization dispatch rather than becoming an update-shader value.
+        std::size_t inputIndex = 0;
+        for (const auto& item : definition_.interface) {
+            if (item.kind != SubgraphInterfaceKind::Input) continue;
+            if (item.key == "reset") {
+                float reset = parameter(parameters_, "reset", item.defaultValue);
+                if (inputIndex < inputs.size())
+                    if (const auto* value = std::get_if<float>(&inputs[inputIndex])) reset = *value;
+                if (reset > 0.5F) resetPending_ = true;
+                break;
+            }
+            ++inputIndex;
+        }
         if (resetPending_) initialize();
         if (context.playing) {
             const int iterations = std::clamp(static_cast<int>(parameter(parameters_, "iterations", 8)), 1, 64);

@@ -162,6 +162,14 @@ submodes, and the special nodes available inside simulation subgraphs.
   **Chemical B**—are Scalar Fields. Unlike the monolithic node, its internal computation is
   visible and can be edited using the supported subgraph nodes below.
 
+- **Generic Cellular Automata** — An editable scalar-state simulation for Life-like rules.
+  Connect a binary **Initial State**, then set Float-backed integer **Birth Mask** and
+  **Survival Mask** values; bit *n* enables a birth or survival at *n* Moore neighbors.
+  The defaults are Conway's Life (`B3/S23`, masks `8` and `12`). **Reset** reinitializes
+  from Initial State, and **Iterations Per Step** controls update dispatches per frame.
+  Useful mask pairs include HighLife `72/12`, Seeds `4/0`, Day & Night `460/472`, Maze
+  `8/62`, Replicator `170/170`, and Life without Death `8/511`.
+
 ## Simulation-subgraph-only nodes
 
 These nodes are scoped to a simulation body and are not ordinary root-graph nodes:

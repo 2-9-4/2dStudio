@@ -491,6 +491,51 @@ TEST_CASE("built-in discrete reaction exposes a stable dynamic interface") {
     REQUIRE(graph.compile(nodes).valid);
 }
 
+TEST_CASE("generic cellular automata is an editable Life-like scalar simulation") {
+    auto nodes = registry();
+    NodeDescriptor convolutionDescriptor{"convolution", 1, "Convolution", "Filter",
+        {{"image", "Image", SocketContract::AnyField, SocketDirection::Input},
+         {"image", "Image", SocketContract::AnyField, SocketDirection::Output}}, {}};
+    convolutionDescriptor.lowerable = true;
+    convolutionDescriptor.sockets[1].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+    convolutionDescriptor.sockets[1].typeInputs = {"image"};
+    add(nodes, std::move(convolutionDescriptor));
+    add(nodes, {"bit_test", 1, "Bit Test / Integer Mask", "Math",
+        {{"mask", "Mask", ValueType::Float, SocketDirection::Input, true},
+         {"bit", "Bit", SocketContract::Numeric, SocketDirection::Input, true},
+         {"result", "Result", SocketContract::Numeric, SocketDirection::Output}}, {}});
+    const auto builtIn = std::ranges::find_if(builtInSubgraphs(), [](const SubgraphDefinition& definition) {
+        return definition.id == "builtin.cellular_automata.generic";
+    });
+    REQUIRE(builtIn != builtInSubgraphs().end());
+    const auto errors = validateSubgraph(*builtIn, nodes);
+    INFO(nlohmann::json(errors).dump());
+    REQUIRE(errors.empty());
+
+    const auto descriptor = describeSubgraph(*builtIn);
+    REQUIRE(descriptor.stateful);
+    REQUIRE(descriptor.timeDependent);
+    REQUIRE(descriptor.sockets.size() == 6);
+    REQUIRE(descriptor.sockets[0].key == "initialState");
+    REQUIRE(descriptor.sockets[1].key == "birthMask");
+    REQUIRE(descriptor.sockets[2].key == "survivalMask");
+    REQUIRE(descriptor.sockets[3].key == "reset");
+    REQUIRE(descriptor.sockets[4].key == "iterations");
+    REQUIRE(descriptor.sockets[5].key == "state");
+    REQUIRE(descriptor.parameters[0].defaultValue == 8.0F);
+    REQUIRE(descriptor.parameters[1].defaultValue == 12.0F);
+
+    const auto convolution = std::ranges::find(builtIn->body.nodes(), "convolution",
+                                                &NodeRecord::type);
+    REQUIRE(convolution != builtIn->body.nodes().end());
+    REQUIRE(convolution->parameters["kernel"] == nlohmann::json::array(
+        {1.0F, 1.0F, 1.0F, 1.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F}));
+    REQUIRE(std::ranges::count(builtIn->body.nodes(), "bit_test", &NodeRecord::type) == 2);
+    REQUIRE(std::ranges::any_of(builtIn->body.nodes(), [](const NodeRecord& node) {
+        return node.type == "select";
+    }));
+}
+
 TEST_CASE("built-in discrete reaction uses Vector Math for its seed distance") {
     const auto& body = builtInSubgraphs().front().body;
     const auto distance = std::ranges::find_if(body.nodes(), [](const NodeRecord& node) {

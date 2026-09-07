@@ -2,7 +2,9 @@
 
 1. Launch `reaction_studio` on an OpenGL 4.3-capable desktop and confirm both windows open.
 2. Confirm the default noise-driven reaction-diffusion graph animates and the preview matches the Output node thumbnail.
-3. Right-click the canvas and confirm Simulation lists both monolithic and discrete reaction diffusion nodes.
+3. Right-click the canvas and confirm Simulation lists monolithic and discrete reaction diffusion plus Generic Cellular Automata.
+
+- Add Generic Cellular Automata, connect a binary Scalar Field to Initial State, and confirm its default masks are 8/12 (Conway's `B3/S23`). Press Tab and confirm its body contains a scalar Previous State, zero-center 3×3 Convolution, two Bit Test nodes, Select, and Next State. Toggle Reset and confirm it reinitializes from Initial State.
 4. Add and select the discrete node, confirm its Image/Chemical A/Chemical B outputs and integer/boolean controls, then press Tab. Confirm it opens an editable, full-size node canvas with descriptive node and pin names rather than an inspector-only expression view.
 5. Right-click the subgraph canvas and add Float, Math, Threshold, Select, Canvas Coordinates, and Laplacian nodes. Confirm they have the same names, pins, controls, and operation selector as their root-graph versions. Delete the temporary Threshold node and confirm its incident links, if any, disappear with it.
 6. Connect the new Float output to a compatible Math input, then drag a different output onto that occupied input. Confirm the old link is replaced. Select and delete the replacement link, reconnect the intended source, and confirm links can run in either screen direction without an insertion-order restriction.

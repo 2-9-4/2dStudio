@@ -345,6 +345,69 @@ SubgraphDefinition discreteReaction() {
     return result;
 }
 
+SubgraphDefinition genericCellularAutomata() {
+    SubgraphDefinition result;
+    result.id = "builtin.cellular_automata.generic";
+    result.name = "Generic Cellular Automata";
+    result.category = "Simulation";
+    result.execution = SubgraphExecution::Simulation;
+    result.immutable = true;
+    result.stateSlots = {{"state", "State", ValueType::ScalarField}};
+    result.interface = {
+        {"initialState", "Initial State", SubgraphInterfaceKind::Input,
+         ValueType::ScalarField},
+        {"birthMask", "Birth Mask", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 8.0F, 0.0F, 16777215.0F, Control::Integer},
+        {"survivalMask", "Survival Mask", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 12.0F, 0.0F, 16777215.0F, Control::Integer},
+        {"reset", "Reset", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 1.0F, Control::Boolean},
+        {"iterations", "Iterations Per Step", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 1.0F, 1.0F, 64.0F, Control::Integer, "iterations"},
+        {"state", "State", SubgraphInterfaceKind::Output, ValueType::ScalarField},
+    };
+
+    auto& body = result.body;
+    const auto initialInput = input(body, "initialState", "Initial State Input", {0, 40});
+    const auto initial = addNode(body, "simulation_initial_state", "Initial State",
+                                 {260, 40}, {{"slot", 0.0F}});
+    link(body, initialInput, "value", initial, "value");
+
+    const auto previous = addNode(body, "simulation_previous_state", "Previous State",
+                                  {0, 360}, {{"slot", 0.0F}});
+    const auto binary = addNode(body, "threshold", "Binary Current State", {230, 360},
+                                {{"threshold", 0.5F}});
+    link(body, previous, "value", binary, "value");
+
+    // Eight unit-weight taps and a zero center form the Moore-neighborhood sum.
+    const auto neighbors = addNode(body, "convolution", "Moore Neighborhood Count", {480, 360},
+        {{"kernelSize", 3.0F}, {"normalize", 0.0F}, {"operation", 0.0F},
+         {"iterations", 1.0F}, {"kernel", nlohmann::json::array(
+             {1.0F, 1.0F, 1.0F, 1.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F})}});
+    link(body, binary, "result", neighbors, "image");
+
+    const auto birthMask = input(body, "birthMask", "Birth Mask", {700, 220});
+    const auto survivalMask = input(body, "survivalMask", "Survival Mask", {700, 500});
+    const auto birth = addNode(body, "bit_test", "Birth Rule", {930, 260});
+    const auto survive = addNode(body, "bit_test", "Survival Rule", {930, 500});
+    link(body, birthMask, "value", birth, "mask");
+    link(body, neighbors, "image", birth, "bit");
+    link(body, survivalMask, "value", survive, "mask");
+    link(body, neighbors, "image", survive, "bit");
+
+    const auto nextValue = addNode(body, "select", "Birth or Survival", {1180, 380});
+    link(body, binary, "result", nextValue, "condition");
+    link(body, survive, "result", nextValue, "ifTrue");
+    link(body, birth, "result", nextValue, "ifFalse");
+    const auto next = addNode(body, "simulation_next_state", "Next State", {1430, 380},
+                              {{"slot", 0.0F}});
+    link(body, nextValue, "result", next, "value");
+    const auto output = addNode(body, "subgraph_output", "State Output", {1670, 380},
+                                {{"key", "state"}});
+    link(body, next, "value", output, "value");
+    return result;
+}
+
 std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definition,
                                                const NodeRegistry& registry) {
     std::vector<std::string> errors;
@@ -605,7 +668,8 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
 } // namespace
 
 const std::vector<SubgraphDefinition>& builtInSubgraphs() {
-    static const std::vector<SubgraphDefinition> values{discreteReaction()};
+    static const std::vector<SubgraphDefinition> values{
+        discreteReaction(), genericCellularAutomata()};
     return values;
 }
 

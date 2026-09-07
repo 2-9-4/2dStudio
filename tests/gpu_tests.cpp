@@ -204,6 +204,25 @@ TEST_CASE("simulation shader prunes interfaces and lowers one vec2 state neighbo
     REQUIRE(neighborhoodSamples == 8);
 }
 
+TEST_CASE("generic cellular automata lowers its scalar Moore-neighborhood rule") {
+    const auto definition = std::ranges::find_if(builtInSubgraphs(), [](const SubgraphDefinition& item) {
+        return item.id == "builtin.cellular_automata.generic";
+    });
+    REQUIRE(definition != builtInSubgraphs().end());
+    const auto initialization = generateSimulationShader(*definition, true);
+    const auto update = generateSimulationShader(*definition, false);
+    REQUIRE(initialization.find("in_initialState") != std::string::npos);
+    REQUIRE(update.find("in_birthMask") != std::string::npos);
+    REQUIRE(update.find("in_survivalMask") != std::string::npos);
+    REQUIRE(update.find("uint bits=uint") != std::string::npos);
+    REQUIRE(update.find("convolutionKernel") != std::string::npos);
+    REQUIRE(update.find("vec2(p") != std::string::npos);
+
+    HiddenContext context;
+    GpuRuntime gpu;
+    REQUIRE_NOTHROW(gpu.compileCompute(update, "Generic Cellular Automata / update"));
+}
+
 TEST_CASE("simulation shader uses the central widest-edge coercion") {
     NodeRegistry registry;
     registerBuiltInNodes(registry);
