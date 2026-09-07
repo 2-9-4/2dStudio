@@ -721,7 +721,13 @@ private:
                     continue;
                 }
                 const Value* value = inputIndex < inputs.size() ? &inputs[inputIndex] : nullptr;
-                int mode = 0; float scalar = parameter(parameters_, item.key.c_str(), item.defaultValue);
+                // Boolean and Enum controls deliberately do not receive an
+                // auto-generated parameter input value. Their persisted local
+                // value must still select the uniform branch rather than the
+                // shader's interface-default branch.
+                int mode = parameters_.contains(item.key) && parameters_[item.key].is_number()
+                    ? 1 : 0;
+                float scalar = parameter(parameters_, item.key.c_str(), item.defaultValue);
                 if (value) {
                     if (const auto* number = std::get_if<float>(value)) { mode = 1; scalar = *number; }
                     else if (const auto* vector = std::get_if<Vec2>(value)) {
