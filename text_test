@@ -279,28 +279,6 @@
     },
     {
       "from": {
-        "node": 111,
-        "socket": "result"
-      },
-      "id": 357,
-      "to": {
-        "node": 109,
-        "socket": "y"
-      }
-    },
-    {
-      "from": {
-        "node": 112,
-        "socket": "time"
-      },
-      "id": 358,
-      "to": {
-        "node": 110,
-        "socket": "a"
-      }
-    },
-    {
-      "from": {
         "node": 112,
         "socket": "time"
       },
@@ -319,6 +297,83 @@
       "to": {
         "node": 107,
         "socket": "initialState"
+      }
+    },
+    {
+      "from": {
+        "node": 85,
+        "socket": "image"
+      },
+      "id": 361,
+      "to": {
+        "node": 113,
+        "socket": "initialState"
+      }
+    },
+    {
+      "from": {
+        "node": 111,
+        "socket": "result"
+      },
+      "id": 366,
+      "to": {
+        "node": 121,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 121,
+        "socket": "result"
+      },
+      "id": 367,
+      "to": {
+        "node": 109,
+        "socket": "y"
+      }
+    },
+    {
+      "from": {
+        "node": 7,
+        "socket": "image"
+      },
+      "id": 373,
+      "to": {
+        "node": 125,
+        "socket": "value"
+      }
+    },
+    {
+      "from": {
+        "node": 125,
+        "socket": "result"
+      },
+      "id": 376,
+      "to": {
+        "node": 126,
+        "socket": "whiteMask"
+      }
+    },
+    {
+      "from": {
+        "node": 126,
+        "socket": "distance"
+      },
+      "id": 378,
+      "to": {
+        "node": 127,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 127,
+        "socket": "result"
+      },
+      "id": 379,
+      "to": {
+        "node": 123,
+        "socket": "b"
       }
     }
   ],
@@ -1213,8 +1268,8 @@
         "operation": 9.0
       },
       "position": [
-        3015.0,
-        -162.0
+        2911.0,
+        -207.0
       ],
       "type": "math",
       "typeVersion": 1
@@ -1223,10 +1278,91 @@
       "id": 112,
       "parameters": {},
       "position": [
-        2590.0,
-        -323.0
+        2344.0,
+        -293.0
       ],
       "type": "time",
+      "typeVersion": 1
+    },
+    {
+      "id": 113,
+      "parameters": {
+        "growthCenter": 0.5299999713897705,
+        "growthWidth": 0.0010000000474974513,
+        "kernelScale": 1.5,
+        "reset": 0.0,
+        "timeStep": 0.10000000149011612
+      },
+      "position": [
+        4456.0,
+        -796.0
+      ],
+      "subgraphId": "project.reaction_diffusion.114.1",
+      "type": "subgraph",
+      "typeVersion": 1
+    },
+    {
+      "id": 121,
+      "parameters": {
+        "b": 6.28000020980835,
+        "operation": 2
+      },
+      "position": [
+        3543.0,
+        -274.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 123,
+      "parameters": {
+        "a": 1.0,
+        "operation": 3.0
+      },
+      "position": [
+        5144.0,
+        -1674.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 125,
+      "parameters": {},
+      "position": [
+        2222.0,
+        -987.0
+      ],
+      "type": "threshold",
+      "typeVersion": 1
+    },
+    {
+      "id": 126,
+      "parameters": {
+        "iterations": 16.0,
+        "maxDistance": 2048.0,
+        "reset": 0.0
+      },
+      "position": [
+        3992.0,
+        -1587.0
+      ],
+      "subgraphId": "project.reaction_diffusion.127.1",
+      "type": "subgraph",
+      "typeVersion": 1
+    },
+    {
+      "id": 127,
+      "parameters": {
+        "b": 0.03999999910593033,
+        "operation": 4
+      },
+      "position": [
+        4615.0,
+        -1610.0
+      ],
+      "type": "math",
       "typeVersion": 1
     }
   ],
@@ -5452,6 +5588,2922 @@
         {
           "key": "region",
           "label": "Region",
+          "type": "scalar_field"
+        }
+      ],
+      "version": 1
+    },
+    {
+      "category": "Simulation",
+      "execution": "simulation",
+      "id": "project.reaction_diffusion.114.1",
+      "interface": [
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "initialState",
+          "kind": "input",
+          "label": "Initial State",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "options": [],
+          "role": "",
+          "type": "scalar_field"
+        },
+        {
+          "control": "float",
+          "default": 4.0,
+          "key": "kernelScale",
+          "kind": "input",
+          "label": "Kernel Radius / Scale",
+          "maximum": 128.0,
+          "minimum": 0.009999999776482582,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.15000000596046448,
+          "key": "growthCenter",
+          "kind": "input",
+          "label": "Growth Center μ",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.014999999664723873,
+          "key": "growthWidth",
+          "kind": "input",
+          "label": "Growth Width σ",
+          "maximum": 1.0,
+          "minimum": 0.0010000000474974513,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.10000000149011612,
+          "key": "timeStep",
+          "kind": "input",
+          "label": "Time Step",
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "boolean",
+          "default": 0.0,
+          "key": "reset",
+          "kind": "input",
+          "label": "Reset",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "state",
+          "kind": "output",
+          "label": "State",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "options": [],
+          "role": "",
+          "type": "scalar_field"
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": 1,
+            "socket": "value"
+          },
+          "id": 1,
+          "to": {
+            "node": 2,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "value"
+          },
+          "id": 2,
+          "to": {
+            "node": 5,
+            "socket": "image"
+          }
+        },
+        {
+          "from": {
+            "node": 4,
+            "socket": "value"
+          },
+          "id": 3,
+          "to": {
+            "node": 5,
+            "socket": "scale"
+          }
+        },
+        {
+          "from": {
+            "node": 5,
+            "socket": "image"
+          },
+          "id": 4,
+          "to": {
+            "node": 7,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 6,
+            "socket": "value"
+          },
+          "id": 5,
+          "to": {
+            "node": 7,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 7,
+            "socket": "result"
+          },
+          "id": 6,
+          "to": {
+            "node": 9,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 8,
+            "socket": "value"
+          },
+          "id": 7,
+          "to": {
+            "node": 9,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 9,
+            "socket": "result"
+          },
+          "id": 8,
+          "to": {
+            "node": 10,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "result"
+          },
+          "id": 9,
+          "to": {
+            "node": 11,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 11,
+            "socket": "result"
+          },
+          "id": 10,
+          "to": {
+            "node": 12,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 12,
+            "socket": "result"
+          },
+          "id": 11,
+          "to": {
+            "node": 13,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 13,
+            "socket": "result"
+          },
+          "id": 12,
+          "to": {
+            "node": 14,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 15,
+            "socket": "value"
+          },
+          "id": 13,
+          "to": {
+            "node": 16,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 14,
+            "socket": "result"
+          },
+          "id": 14,
+          "to": {
+            "node": 16,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "value"
+          },
+          "id": 15,
+          "to": {
+            "node": 17,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 16,
+            "socket": "result"
+          },
+          "id": 16,
+          "to": {
+            "node": 17,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 17,
+            "socket": "result"
+          },
+          "id": 17,
+          "to": {
+            "node": 18,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "result"
+          },
+          "id": 18,
+          "to": {
+            "node": 19,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 19,
+            "socket": "value"
+          },
+          "id": 19,
+          "to": {
+            "node": 20,
+            "socket": "value"
+          }
+        }
+      ],
+      "name": "Lenia (Editable 4)",
+      "nodes": [
+        {
+          "id": 1,
+          "label": "Initial State Input",
+          "parameters": {
+            "key": "initialState"
+          },
+          "position": [
+            0.0,
+            120.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 2,
+          "label": "Initial State",
+          "parameters": {
+            "slot": 0.0
+          },
+          "position": [
+            250.0,
+            120.0
+          ],
+          "type": "simulation_initial_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 3,
+          "label": "Previous State",
+          "parameters": {
+            "slot": 0.0
+          },
+          "position": [
+            0.0,
+            520.0
+          ],
+          "type": "simulation_previous_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 4,
+          "label": "Kernel Radius / Scale",
+          "parameters": {
+            "key": "kernelScale"
+          },
+          "position": [
+            240.0,
+            390.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 5,
+          "label": "Neighborhood Potential",
+          "parameters": {
+            "iterations": 1.0,
+            "kernel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.003865920938551426,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.009392607025802135,
+              0.026831163093447685,
+              0.04854597523808479,
+              0.05874982103705406,
+              0.04854597523808479,
+              0.026831163093447685,
+              0.009392607025802135,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.021877838298678398,
+              0.08508560061454773,
+              0.19954387843608856,
+              0.3136194348335266,
+              0.36044779419898987,
+              0.3136194348335266,
+              0.19954387843608856,
+              0.08508560061454773,
+              0.021877838298678398,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.021877838298678398,
+              0.12126711755990982,
+              0.36044779419898987,
+              0.6514248251914978,
+              0.8385493755340576,
+              0.8928124308586121,
+              0.8385493755340576,
+              0.6514248251914978,
+              0.36044779419898987,
+              0.12126711755990982,
+              0.021877838298678398,
+              0.0,
+              0.0,
+              0.0,
+              0.009392607025802135,
+              0.08508560061454773,
+              0.36044779419898987,
+              0.7787072062492371,
+              0.9949601292610168,
+              0.9495887756347656,
+              0.8928125500679016,
+              0.9495887756347656,
+              0.9949601292610168,
+              0.7787072062492371,
+              0.36044779419898987,
+              0.08508560061454773,
+              0.009392607025802135,
+              0.0,
+              0.0,
+              0.026831163093447685,
+              0.19954387843608856,
+              0.6514248251914978,
+              0.9949601292610168,
+              0.815022349357605,
+              0.48456645011901855,
+              0.36044782400131226,
+              0.48456645011901855,
+              0.815022349357605,
+              0.9949601292610168,
+              0.6514248251914978,
+              0.19954387843608856,
+              0.026831163093447685,
+              0.0,
+              0.0,
+              0.04854597523808479,
+              0.3136194348335266,
+              0.8385493755340576,
+              0.9495887756347656,
+              0.48456645011901855,
+              0.13903659582138062,
+              0.05874982103705406,
+              0.13903659582138062,
+              0.48456645011901855,
+              0.9495887756347656,
+              0.8385493755340576,
+              0.3136194348335266,
+              0.04854597523808479,
+              0.0,
+              0.003865920938551426,
+              0.05874982103705406,
+              0.36044779419898987,
+              0.8928124308586121,
+              0.8928125500679016,
+              0.36044782400131226,
+              0.05874982103705406,
+              0.003865920938551426,
+              0.05874982103705406,
+              0.36044782400131226,
+              0.8928125500679016,
+              0.8928124308586121,
+              0.36044779419898987,
+              0.05874982103705406,
+              0.003865920938551426,
+              0.0,
+              0.04854597523808479,
+              0.3136194348335266,
+              0.8385493755340576,
+              0.9495887756347656,
+              0.48456645011901855,
+              0.13903659582138062,
+              0.05874982103705406,
+              0.13903659582138062,
+              0.48456645011901855,
+              0.9495887756347656,
+              0.8385493755340576,
+              0.3136194348335266,
+              0.04854597523808479,
+              0.0,
+              0.0,
+              0.026831163093447685,
+              0.19954387843608856,
+              0.6514248251914978,
+              0.9949601292610168,
+              0.815022349357605,
+              0.48456645011901855,
+              0.36044782400131226,
+              0.48456645011901855,
+              0.815022349357605,
+              0.9949601292610168,
+              0.6514248251914978,
+              0.19954387843608856,
+              0.026831163093447685,
+              0.0,
+              0.0,
+              0.009392607025802135,
+              0.08508560061454773,
+              0.36044779419898987,
+              0.7787072062492371,
+              0.9949601292610168,
+              0.9495887756347656,
+              0.8928125500679016,
+              0.9495887756347656,
+              0.9949601292610168,
+              0.7787072062492371,
+              0.36044779419898987,
+              0.08508560061454773,
+              0.009392607025802135,
+              0.0,
+              0.0,
+              0.0,
+              0.021877838298678398,
+              0.12126711755990982,
+              0.36044779419898987,
+              0.6514248251914978,
+              0.8385493755340576,
+              0.8928124308586121,
+              0.8385493755340576,
+              0.6514248251914978,
+              0.36044779419898987,
+              0.12126711755990982,
+              0.021877838298678398,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.021877838298678398,
+              0.08508560061454773,
+              0.19954387843608856,
+              0.3136194348335266,
+              0.36044779419898987,
+              0.3136194348335266,
+              0.19954387843608856,
+              0.08508560061454773,
+              0.021877838298678398,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.009392607025802135,
+              0.026831163093447685,
+              0.04854597523808479,
+              0.05874982103705406,
+              0.04854597523808479,
+              0.026831163093447685,
+              0.009392607025802135,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.003865920938551426,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "kernelSize": 15.0,
+            "normalize": 1.0,
+            "operation": 0.0,
+            "preset": "Annular Ring",
+            "scale": 4.0
+          },
+          "position": [
+            480.0,
+            520.0
+          ],
+          "type": "convolution",
+          "typeVersion": 1
+        },
+        {
+          "id": 6,
+          "label": "Growth Center μ",
+          "parameters": {
+            "key": "growthCenter"
+          },
+          "position": [
+            730.0,
+            320.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 7,
+          "label": "Potential − μ",
+          "parameters": {
+            "operation": 1.0
+          },
+          "position": [
+            730.0,
+            520.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 8,
+          "label": "Growth Width σ",
+          "parameters": {
+            "key": "growthWidth"
+          },
+          "position": [
+            970.0,
+            390.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 9,
+          "label": "(Potential − μ) / σ",
+          "parameters": {
+            "operation": 3.0
+          },
+          "position": [
+            970.0,
+            520.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 10,
+          "label": "Normalized Potential Squared",
+          "parameters": {
+            "b": 2.0,
+            "operation": 4.0
+          },
+          "position": [
+            1210.0,
+            520.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 11,
+          "label": "−0.5 × Squared",
+          "parameters": {
+            "b": -0.5,
+            "operation": 2.0
+          },
+          "position": [
+            1450.0,
+            520.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 12,
+          "label": "Exp Growth Bell",
+          "parameters": {
+            "operation": 17.0
+          },
+          "position": [
+            1690.0,
+            520.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 13,
+          "label": "2 × Exp Growth Bell",
+          "parameters": {
+            "b": 2.0,
+            "operation": 2.0
+          },
+          "position": [
+            1930.0,
+            520.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 14,
+          "label": "Growth",
+          "parameters": {
+            "b": 1.0,
+            "operation": 1.0
+          },
+          "position": [
+            2170.0,
+            520.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 15,
+          "label": "Time Step",
+          "parameters": {
+            "key": "timeStep"
+          },
+          "position": [
+            2170.0,
+            700.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 16,
+          "label": "Time Step × Growth",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            2410.0,
+            520.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 17,
+          "label": "Integrated State",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            2650.0,
+            520.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 18,
+          "label": "Clamp State",
+          "parameters": {
+            "b": 0.0,
+            "c": 1.0,
+            "operation": 10.0
+          },
+          "position": [
+            2890.0,
+            520.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 19,
+          "label": "Next State",
+          "parameters": {
+            "slot": 0.0
+          },
+          "position": [
+            3130.0,
+            520.0
+          ],
+          "type": "simulation_next_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 20,
+          "label": "State Output",
+          "parameters": {
+            "key": "state"
+          },
+          "position": [
+            3370.0,
+            520.0
+          ],
+          "type": "subgraph_output",
+          "typeVersion": 1
+        }
+      ],
+      "stateSlots": [
+        {
+          "key": "state",
+          "label": "State",
+          "type": "scalar_field"
+        }
+      ],
+      "version": 1
+    },
+    {
+      "category": "Simulation",
+      "execution": "simulation",
+      "id": "project.reaction_diffusion.127.1",
+      "interface": [
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "whiteMask",
+          "kind": "input",
+          "label": "White Mask",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "options": [],
+          "role": "",
+          "type": "scalar_field"
+        },
+        {
+          "control": "float",
+          "default": 2048.0,
+          "key": "maxDistance",
+          "kind": "input",
+          "label": "Maximum Distance",
+          "maximum": 65504.0,
+          "minimum": 1.0,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "integer",
+          "default": 16.0,
+          "key": "iterations",
+          "kind": "input",
+          "label": "Iterations per Frame",
+          "maximum": 64.0,
+          "minimum": 1.0,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "boolean",
+          "default": 0.0,
+          "key": "reset",
+          "kind": "input",
+          "label": "Reset",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "distance",
+          "kind": "output",
+          "label": "Distance (Pixels)",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "options": [],
+          "role": "",
+          "type": "scalar_field"
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": 1,
+            "socket": "value"
+          },
+          "id": 1,
+          "to": {
+            "node": 2,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 2,
+            "socket": "result"
+          },
+          "id": 2,
+          "to": {
+            "node": 5,
+            "socket": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 3,
+          "to": {
+            "node": 5,
+            "socket": "ifTrue"
+          }
+        },
+        {
+          "from": {
+            "node": 4,
+            "socket": "value"
+          },
+          "id": 4,
+          "to": {
+            "node": 5,
+            "socket": "ifFalse"
+          }
+        },
+        {
+          "from": {
+            "node": 5,
+            "socket": "result"
+          },
+          "id": 5,
+          "to": {
+            "node": 6,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 2,
+            "socket": "result"
+          },
+          "id": 6,
+          "to": {
+            "node": 8,
+            "socket": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": 7,
+            "socket": "value"
+          },
+          "id": 7,
+          "to": {
+            "node": 8,
+            "socket": "ifFalse"
+          }
+        },
+        {
+          "from": {
+            "node": 8,
+            "socket": "result"
+          },
+          "id": 8,
+          "to": {
+            "node": 9,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "value"
+          },
+          "id": 9,
+          "to": {
+            "node": 13,
+            "socket": "source"
+          }
+        },
+        {
+          "from": {
+            "node": 12,
+            "socket": "value"
+          },
+          "id": 10,
+          "to": {
+            "node": 13,
+            "socket": "offset"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "value"
+          },
+          "id": 11,
+          "to": {
+            "node": 15,
+            "socket": "source"
+          }
+        },
+        {
+          "from": {
+            "node": 14,
+            "socket": "value"
+          },
+          "id": 12,
+          "to": {
+            "node": 15,
+            "socket": "offset"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "value"
+          },
+          "id": 13,
+          "to": {
+            "node": 17,
+            "socket": "source"
+          }
+        },
+        {
+          "from": {
+            "node": 16,
+            "socket": "value"
+          },
+          "id": 14,
+          "to": {
+            "node": 17,
+            "socket": "offset"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "value"
+          },
+          "id": 15,
+          "to": {
+            "node": 19,
+            "socket": "source"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "value"
+          },
+          "id": 16,
+          "to": {
+            "node": 19,
+            "socket": "offset"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "value"
+          },
+          "id": 17,
+          "to": {
+            "node": 21,
+            "socket": "source"
+          }
+        },
+        {
+          "from": {
+            "node": 20,
+            "socket": "value"
+          },
+          "id": 18,
+          "to": {
+            "node": 21,
+            "socket": "offset"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "value"
+          },
+          "id": 19,
+          "to": {
+            "node": 23,
+            "socket": "source"
+          }
+        },
+        {
+          "from": {
+            "node": 22,
+            "socket": "value"
+          },
+          "id": 20,
+          "to": {
+            "node": 23,
+            "socket": "offset"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "value"
+          },
+          "id": 21,
+          "to": {
+            "node": 25,
+            "socket": "source"
+          }
+        },
+        {
+          "from": {
+            "node": 24,
+            "socket": "value"
+          },
+          "id": 22,
+          "to": {
+            "node": 25,
+            "socket": "offset"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "value"
+          },
+          "id": 23,
+          "to": {
+            "node": 27,
+            "socket": "source"
+          }
+        },
+        {
+          "from": {
+            "node": 26,
+            "socket": "value"
+          },
+          "id": 24,
+          "to": {
+            "node": 27,
+            "socket": "offset"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 25,
+          "to": {
+            "node": 28,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 13,
+            "socket": "sampled"
+          },
+          "id": 26,
+          "to": {
+            "node": 28,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 27,
+          "to": {
+            "node": 29,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "value"
+          },
+          "id": 28,
+          "to": {
+            "node": 29,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 28,
+            "socket": "result"
+          },
+          "id": 29,
+          "to": {
+            "node": 30,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 29,
+            "socket": "result"
+          },
+          "id": 30,
+          "to": {
+            "node": 30,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 30,
+            "socket": "result"
+          },
+          "id": 31,
+          "to": {
+            "node": 31,
+            "socket": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": 13,
+            "socket": "sampled"
+          },
+          "id": 32,
+          "to": {
+            "node": 31,
+            "socket": "ifTrue"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "value"
+          },
+          "id": 33,
+          "to": {
+            "node": 31,
+            "socket": "ifFalse"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 34,
+          "to": {
+            "node": 32,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 15,
+            "socket": "sampled"
+          },
+          "id": 35,
+          "to": {
+            "node": 32,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 36,
+          "to": {
+            "node": 33,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 31,
+            "socket": "result"
+          },
+          "id": 37,
+          "to": {
+            "node": 33,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 32,
+            "socket": "result"
+          },
+          "id": 38,
+          "to": {
+            "node": 34,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 33,
+            "socket": "result"
+          },
+          "id": 39,
+          "to": {
+            "node": 34,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 34,
+            "socket": "result"
+          },
+          "id": 40,
+          "to": {
+            "node": 35,
+            "socket": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": 15,
+            "socket": "sampled"
+          },
+          "id": 41,
+          "to": {
+            "node": 35,
+            "socket": "ifTrue"
+          }
+        },
+        {
+          "from": {
+            "node": 31,
+            "socket": "result"
+          },
+          "id": 42,
+          "to": {
+            "node": 35,
+            "socket": "ifFalse"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 43,
+          "to": {
+            "node": 36,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 17,
+            "socket": "sampled"
+          },
+          "id": 44,
+          "to": {
+            "node": 36,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 45,
+          "to": {
+            "node": 37,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 35,
+            "socket": "result"
+          },
+          "id": 46,
+          "to": {
+            "node": 37,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 36,
+            "socket": "result"
+          },
+          "id": 47,
+          "to": {
+            "node": 38,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 37,
+            "socket": "result"
+          },
+          "id": 48,
+          "to": {
+            "node": 38,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 38,
+            "socket": "result"
+          },
+          "id": 49,
+          "to": {
+            "node": 39,
+            "socket": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": 17,
+            "socket": "sampled"
+          },
+          "id": 50,
+          "to": {
+            "node": 39,
+            "socket": "ifTrue"
+          }
+        },
+        {
+          "from": {
+            "node": 35,
+            "socket": "result"
+          },
+          "id": 51,
+          "to": {
+            "node": 39,
+            "socket": "ifFalse"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 52,
+          "to": {
+            "node": 40,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 19,
+            "socket": "sampled"
+          },
+          "id": 53,
+          "to": {
+            "node": 40,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 54,
+          "to": {
+            "node": 41,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 39,
+            "socket": "result"
+          },
+          "id": 55,
+          "to": {
+            "node": 41,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 40,
+            "socket": "result"
+          },
+          "id": 56,
+          "to": {
+            "node": 42,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 41,
+            "socket": "result"
+          },
+          "id": 57,
+          "to": {
+            "node": 42,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 42,
+            "socket": "result"
+          },
+          "id": 58,
+          "to": {
+            "node": 43,
+            "socket": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": 19,
+            "socket": "sampled"
+          },
+          "id": 59,
+          "to": {
+            "node": 43,
+            "socket": "ifTrue"
+          }
+        },
+        {
+          "from": {
+            "node": 39,
+            "socket": "result"
+          },
+          "id": 60,
+          "to": {
+            "node": 43,
+            "socket": "ifFalse"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 61,
+          "to": {
+            "node": 44,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 21,
+            "socket": "sampled"
+          },
+          "id": 62,
+          "to": {
+            "node": 44,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 63,
+          "to": {
+            "node": 45,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 43,
+            "socket": "result"
+          },
+          "id": 64,
+          "to": {
+            "node": 45,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 44,
+            "socket": "result"
+          },
+          "id": 65,
+          "to": {
+            "node": 46,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 45,
+            "socket": "result"
+          },
+          "id": 66,
+          "to": {
+            "node": 46,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 46,
+            "socket": "result"
+          },
+          "id": 67,
+          "to": {
+            "node": 47,
+            "socket": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": 21,
+            "socket": "sampled"
+          },
+          "id": 68,
+          "to": {
+            "node": 47,
+            "socket": "ifTrue"
+          }
+        },
+        {
+          "from": {
+            "node": 43,
+            "socket": "result"
+          },
+          "id": 69,
+          "to": {
+            "node": 47,
+            "socket": "ifFalse"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 70,
+          "to": {
+            "node": 48,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 23,
+            "socket": "sampled"
+          },
+          "id": 71,
+          "to": {
+            "node": 48,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 72,
+          "to": {
+            "node": 49,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 47,
+            "socket": "result"
+          },
+          "id": 73,
+          "to": {
+            "node": 49,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 48,
+            "socket": "result"
+          },
+          "id": 74,
+          "to": {
+            "node": 50,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 49,
+            "socket": "result"
+          },
+          "id": 75,
+          "to": {
+            "node": 50,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 50,
+            "socket": "result"
+          },
+          "id": 76,
+          "to": {
+            "node": 51,
+            "socket": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": 23,
+            "socket": "sampled"
+          },
+          "id": 77,
+          "to": {
+            "node": 51,
+            "socket": "ifTrue"
+          }
+        },
+        {
+          "from": {
+            "node": 47,
+            "socket": "result"
+          },
+          "id": 78,
+          "to": {
+            "node": 51,
+            "socket": "ifFalse"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 79,
+          "to": {
+            "node": 52,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 25,
+            "socket": "sampled"
+          },
+          "id": 80,
+          "to": {
+            "node": 52,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 81,
+          "to": {
+            "node": 53,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 51,
+            "socket": "result"
+          },
+          "id": 82,
+          "to": {
+            "node": 53,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 52,
+            "socket": "result"
+          },
+          "id": 83,
+          "to": {
+            "node": 54,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 53,
+            "socket": "result"
+          },
+          "id": 84,
+          "to": {
+            "node": 54,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 54,
+            "socket": "result"
+          },
+          "id": 85,
+          "to": {
+            "node": 55,
+            "socket": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": 25,
+            "socket": "sampled"
+          },
+          "id": 86,
+          "to": {
+            "node": 55,
+            "socket": "ifTrue"
+          }
+        },
+        {
+          "from": {
+            "node": 51,
+            "socket": "result"
+          },
+          "id": 87,
+          "to": {
+            "node": 55,
+            "socket": "ifFalse"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 88,
+          "to": {
+            "node": 56,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 27,
+            "socket": "sampled"
+          },
+          "id": 89,
+          "to": {
+            "node": 56,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 90,
+          "to": {
+            "node": 57,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 55,
+            "socket": "result"
+          },
+          "id": 91,
+          "to": {
+            "node": 57,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 56,
+            "socket": "result"
+          },
+          "id": 92,
+          "to": {
+            "node": 58,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 57,
+            "socket": "result"
+          },
+          "id": 93,
+          "to": {
+            "node": 58,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 58,
+            "socket": "result"
+          },
+          "id": 94,
+          "to": {
+            "node": 59,
+            "socket": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": 27,
+            "socket": "sampled"
+          },
+          "id": 95,
+          "to": {
+            "node": 59,
+            "socket": "ifTrue"
+          }
+        },
+        {
+          "from": {
+            "node": 55,
+            "socket": "result"
+          },
+          "id": 96,
+          "to": {
+            "node": 59,
+            "socket": "ifFalse"
+          }
+        },
+        {
+          "from": {
+            "node": 2,
+            "socket": "result"
+          },
+          "id": 97,
+          "to": {
+            "node": 60,
+            "socket": "condition"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 98,
+          "to": {
+            "node": 60,
+            "socket": "ifTrue"
+          }
+        },
+        {
+          "from": {
+            "node": 59,
+            "socket": "result"
+          },
+          "id": 99,
+          "to": {
+            "node": 60,
+            "socket": "ifFalse"
+          }
+        },
+        {
+          "from": {
+            "node": 60,
+            "socket": "result"
+          },
+          "id": 100,
+          "to": {
+            "node": 61,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "coordinates"
+          },
+          "id": 101,
+          "to": {
+            "node": 62,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 60,
+            "socket": "result"
+          },
+          "id": 102,
+          "to": {
+            "node": 62,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 62,
+            "socket": "result"
+          },
+          "id": 103,
+          "to": {
+            "node": 63,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 7,
+            "socket": "value"
+          },
+          "id": 104,
+          "to": {
+            "node": 63,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 63,
+            "socket": "result"
+          },
+          "id": 105,
+          "to": {
+            "node": 64,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 64,
+            "socket": "value"
+          },
+          "id": 106,
+          "to": {
+            "node": 65,
+            "socket": "value"
+          }
+        }
+      ],
+      "name": "Distance from Nearest White Pixel (Editable 6)",
+      "nodes": [
+        {
+          "id": 1,
+          "label": "White Mask",
+          "parameters": {
+            "key": "whiteMask"
+          },
+          "position": [
+            0.0,
+            100.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 2,
+          "label": "White Pixel",
+          "parameters": {
+            "threshold": 0.9990000128746033
+          },
+          "position": [
+            220.0,
+            100.0
+          ],
+          "type": "threshold",
+          "typeVersion": 1
+        },
+        {
+          "id": 3,
+          "label": "Pixel Coordinates",
+          "parameters": {
+            "pixels": 1.0
+          },
+          "position": [
+            220.0,
+            240.0
+          ],
+          "type": "coordinates",
+          "typeVersion": 1
+        },
+        {
+          "id": 4,
+          "label": "No Seed Sentinel",
+          "parameters": {
+            "x": -65504.0,
+            "y": -65504.0
+          },
+          "position": [
+            220.0,
+            380.0
+          ],
+          "type": "vector",
+          "typeVersion": 1
+        },
+        {
+          "id": 5,
+          "label": "Initial Nearest Seed",
+          "parameters": {},
+          "position": [
+            480.0,
+            210.0
+          ],
+          "type": "select",
+          "typeVersion": 1
+        },
+        {
+          "id": 6,
+          "label": "Initial Nearest Seed",
+          "parameters": {
+            "slot": 0.0
+          },
+          "position": [
+            740.0,
+            210.0
+          ],
+          "type": "simulation_initial_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 7,
+          "label": "Maximum Distance",
+          "parameters": {
+            "key": "maxDistance"
+          },
+          "position": [
+            480.0,
+            370.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 8,
+          "label": "Initial Distance",
+          "parameters": {
+            "ifTrue": 0.0
+          },
+          "position": [
+            740.0,
+            370.0
+          ],
+          "type": "select",
+          "typeVersion": 1
+        },
+        {
+          "id": 9,
+          "label": "Initial Distance",
+          "parameters": {
+            "slot": 1.0
+          },
+          "position": [
+            980.0,
+            370.0
+          ],
+          "type": "simulation_initial_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 10,
+          "label": "Previous Nearest Seed",
+          "parameters": {
+            "slot": 0.0
+          },
+          "position": [
+            0.0,
+            700.0
+          ],
+          "type": "simulation_previous_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 11,
+          "label": "Previous Distance",
+          "parameters": {
+            "slot": 1.0
+          },
+          "position": [
+            0.0,
+            1860.0
+          ],
+          "type": "simulation_previous_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 12,
+          "label": "North Offset",
+          "parameters": {
+            "x": 0.0,
+            "y": -1.0
+          },
+          "position": [
+            220.0,
+            620.0
+          ],
+          "type": "vector",
+          "typeVersion": 1
+        },
+        {
+          "id": 13,
+          "label": "North Neighbor Seed",
+          "parameters": {
+            "addressMode": 0.0,
+            "sampling": 0.0
+          },
+          "position": [
+            460.0,
+            620.0
+          ],
+          "type": "state_input_sample_offset",
+          "typeVersion": 1
+        },
+        {
+          "id": 14,
+          "label": "South Offset",
+          "parameters": {
+            "x": 0.0,
+            "y": 1.0
+          },
+          "position": [
+            220.0,
+            760.0
+          ],
+          "type": "vector",
+          "typeVersion": 1
+        },
+        {
+          "id": 15,
+          "label": "South Neighbor Seed",
+          "parameters": {
+            "addressMode": 0.0,
+            "sampling": 0.0
+          },
+          "position": [
+            460.0,
+            760.0
+          ],
+          "type": "state_input_sample_offset",
+          "typeVersion": 1
+        },
+        {
+          "id": 16,
+          "label": "West Offset",
+          "parameters": {
+            "x": -1.0,
+            "y": 0.0
+          },
+          "position": [
+            220.0,
+            900.0
+          ],
+          "type": "vector",
+          "typeVersion": 1
+        },
+        {
+          "id": 17,
+          "label": "West Neighbor Seed",
+          "parameters": {
+            "addressMode": 0.0,
+            "sampling": 0.0
+          },
+          "position": [
+            460.0,
+            900.0
+          ],
+          "type": "state_input_sample_offset",
+          "typeVersion": 1
+        },
+        {
+          "id": 18,
+          "label": "East Offset",
+          "parameters": {
+            "x": 1.0,
+            "y": 0.0
+          },
+          "position": [
+            220.0,
+            1040.0
+          ],
+          "type": "vector",
+          "typeVersion": 1
+        },
+        {
+          "id": 19,
+          "label": "East Neighbor Seed",
+          "parameters": {
+            "addressMode": 0.0,
+            "sampling": 0.0
+          },
+          "position": [
+            460.0,
+            1040.0
+          ],
+          "type": "state_input_sample_offset",
+          "typeVersion": 1
+        },
+        {
+          "id": 20,
+          "label": "Northwest Offset",
+          "parameters": {
+            "x": -1.0,
+            "y": -1.0
+          },
+          "position": [
+            220.0,
+            1180.0
+          ],
+          "type": "vector",
+          "typeVersion": 1
+        },
+        {
+          "id": 21,
+          "label": "Northwest Neighbor Seed",
+          "parameters": {
+            "addressMode": 0.0,
+            "sampling": 0.0
+          },
+          "position": [
+            460.0,
+            1180.0
+          ],
+          "type": "state_input_sample_offset",
+          "typeVersion": 1
+        },
+        {
+          "id": 22,
+          "label": "Northeast Offset",
+          "parameters": {
+            "x": 1.0,
+            "y": -1.0
+          },
+          "position": [
+            220.0,
+            1320.0
+          ],
+          "type": "vector",
+          "typeVersion": 1
+        },
+        {
+          "id": 23,
+          "label": "Northeast Neighbor Seed",
+          "parameters": {
+            "addressMode": 0.0,
+            "sampling": 0.0
+          },
+          "position": [
+            460.0,
+            1320.0
+          ],
+          "type": "state_input_sample_offset",
+          "typeVersion": 1
+        },
+        {
+          "id": 24,
+          "label": "Southwest Offset",
+          "parameters": {
+            "x": -1.0,
+            "y": 1.0
+          },
+          "position": [
+            220.0,
+            1460.0
+          ],
+          "type": "vector",
+          "typeVersion": 1
+        },
+        {
+          "id": 25,
+          "label": "Southwest Neighbor Seed",
+          "parameters": {
+            "addressMode": 0.0,
+            "sampling": 0.0
+          },
+          "position": [
+            460.0,
+            1460.0
+          ],
+          "type": "state_input_sample_offset",
+          "typeVersion": 1
+        },
+        {
+          "id": 26,
+          "label": "Southeast Offset",
+          "parameters": {
+            "x": 1.0,
+            "y": 1.0
+          },
+          "position": [
+            220.0,
+            1600.0
+          ],
+          "type": "vector",
+          "typeVersion": 1
+        },
+        {
+          "id": 27,
+          "label": "Southeast Neighbor Seed",
+          "parameters": {
+            "addressMode": 0.0,
+            "sampling": 0.0
+          },
+          "position": [
+            460.0,
+            1600.0
+          ],
+          "type": "state_input_sample_offset",
+          "typeVersion": 1
+        },
+        {
+          "id": 28,
+          "label": "North Candidate Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            720.0,
+            620.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 29,
+          "label": "North Best Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            960.0,
+            620.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 30,
+          "label": "North Is Closer",
+          "parameters": {
+            "operation": 27.0
+          },
+          "position": [
+            1200.0,
+            620.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 31,
+          "label": "North Best Seed",
+          "parameters": {},
+          "position": [
+            1440.0,
+            620.0
+          ],
+          "type": "select",
+          "typeVersion": 1
+        },
+        {
+          "id": 32,
+          "label": "South Candidate Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            720.0,
+            760.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 33,
+          "label": "South Best Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            960.0,
+            760.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 34,
+          "label": "South Is Closer",
+          "parameters": {
+            "operation": 27.0
+          },
+          "position": [
+            1200.0,
+            760.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 35,
+          "label": "South Best Seed",
+          "parameters": {},
+          "position": [
+            1440.0,
+            760.0
+          ],
+          "type": "select",
+          "typeVersion": 1
+        },
+        {
+          "id": 36,
+          "label": "West Candidate Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            720.0,
+            900.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 37,
+          "label": "West Best Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            960.0,
+            900.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 38,
+          "label": "West Is Closer",
+          "parameters": {
+            "operation": 27.0
+          },
+          "position": [
+            1200.0,
+            900.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 39,
+          "label": "West Best Seed",
+          "parameters": {},
+          "position": [
+            1440.0,
+            900.0
+          ],
+          "type": "select",
+          "typeVersion": 1
+        },
+        {
+          "id": 40,
+          "label": "East Candidate Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            720.0,
+            1040.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 41,
+          "label": "East Best Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            960.0,
+            1040.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 42,
+          "label": "East Is Closer",
+          "parameters": {
+            "operation": 27.0
+          },
+          "position": [
+            1200.0,
+            1040.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 43,
+          "label": "East Best Seed",
+          "parameters": {},
+          "position": [
+            1440.0,
+            1040.0
+          ],
+          "type": "select",
+          "typeVersion": 1
+        },
+        {
+          "id": 44,
+          "label": "Northwest Candidate Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            720.0,
+            1180.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 45,
+          "label": "Northwest Best Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            960.0,
+            1180.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 46,
+          "label": "Northwest Is Closer",
+          "parameters": {
+            "operation": 27.0
+          },
+          "position": [
+            1200.0,
+            1180.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 47,
+          "label": "Northwest Best Seed",
+          "parameters": {},
+          "position": [
+            1440.0,
+            1180.0
+          ],
+          "type": "select",
+          "typeVersion": 1
+        },
+        {
+          "id": 48,
+          "label": "Northeast Candidate Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            720.0,
+            1320.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 49,
+          "label": "Northeast Best Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            960.0,
+            1320.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 50,
+          "label": "Northeast Is Closer",
+          "parameters": {
+            "operation": 27.0
+          },
+          "position": [
+            1200.0,
+            1320.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 51,
+          "label": "Northeast Best Seed",
+          "parameters": {},
+          "position": [
+            1440.0,
+            1320.0
+          ],
+          "type": "select",
+          "typeVersion": 1
+        },
+        {
+          "id": 52,
+          "label": "Southwest Candidate Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            720.0,
+            1460.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 53,
+          "label": "Southwest Best Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            960.0,
+            1460.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 54,
+          "label": "Southwest Is Closer",
+          "parameters": {
+            "operation": 27.0
+          },
+          "position": [
+            1200.0,
+            1460.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 55,
+          "label": "Southwest Best Seed",
+          "parameters": {},
+          "position": [
+            1440.0,
+            1460.0
+          ],
+          "type": "select",
+          "typeVersion": 1
+        },
+        {
+          "id": 56,
+          "label": "Southeast Candidate Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            720.0,
+            1600.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 57,
+          "label": "Southeast Best Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            960.0,
+            1600.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 58,
+          "label": "Southeast Is Closer",
+          "parameters": {
+            "operation": 27.0
+          },
+          "position": [
+            1200.0,
+            1600.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 59,
+          "label": "Southeast Best Seed",
+          "parameters": {},
+          "position": [
+            1440.0,
+            1600.0
+          ],
+          "type": "select",
+          "typeVersion": 1
+        },
+        {
+          "id": 60,
+          "label": "White Pixels Keep Their Seed",
+          "parameters": {},
+          "position": [
+            1680.0,
+            1180.0
+          ],
+          "type": "select",
+          "typeVersion": 1
+        },
+        {
+          "id": 61,
+          "label": "Next Nearest Seed",
+          "parameters": {
+            "slot": 0.0
+          },
+          "position": [
+            1920.0,
+            1180.0
+          ],
+          "type": "simulation_next_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 62,
+          "label": "Euclidean Distance",
+          "parameters": {
+            "operation": 23.0
+          },
+          "position": [
+            1920.0,
+            1340.0
+          ],
+          "type": "vector_math",
+          "typeVersion": 1
+        },
+        {
+          "id": 63,
+          "label": "Capped Distance",
+          "parameters": {
+            "operation": 5.0
+          },
+          "position": [
+            2160.0,
+            1340.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 64,
+          "label": "Next Distance",
+          "parameters": {
+            "slot": 1.0
+          },
+          "position": [
+            2400.0,
+            1340.0
+          ],
+          "type": "simulation_next_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 65,
+          "label": "Distance Output",
+          "parameters": {
+            "key": "distance"
+          },
+          "position": [
+            2640.0,
+            1340.0
+          ],
+          "type": "subgraph_output",
+          "typeVersion": 1
+        }
+      ],
+      "stateSlots": [
+        {
+          "key": "nearestSeed",
+          "label": "Nearest White Seed",
+          "type": "vector_field"
+        },
+        {
+          "key": "distance",
+          "label": "Distance",
           "type": "scalar_field"
         }
       ],

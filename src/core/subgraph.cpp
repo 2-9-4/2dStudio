@@ -532,6 +532,130 @@ SubgraphDefinition floodFill() {
     return result;
 }
 
+SubgraphDefinition distanceFromNearestWhitePixel() {
+    SubgraphDefinition result;
+    result.id = "builtin.distance_from_nearest_white_pixel";
+    result.name = "Distance from Nearest White Pixel";
+    result.category = "Simulation";
+    result.execution = SubgraphExecution::Simulation;
+    result.immutable = true;
+    result.stateSlots = {
+        {"nearestSeed", "Nearest White Seed", ValueType::VectorField},
+        {"distance", "Distance", ValueType::ScalarField},
+    };
+    result.interface = {
+        {"whiteMask", "White Mask", SubgraphInterfaceKind::Input, ValueType::ScalarField},
+        {"maxDistance", "Maximum Distance", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 2048.0F, 1.0F, 65504.0F},
+        {"iterations", "Iterations per Frame", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 16.0F, 1.0F, 64.0F, Control::Integer},
+        {"reset", "Reset", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 1.0F, Control::Boolean},
+        {"distance", "Distance (Pixels)", SubgraphInterfaceKind::Output,
+         ValueType::ScalarField},
+    };
+
+    auto& body = result.body;
+    const auto whiteMask = input(body, "whiteMask", "White Mask", {0, 100});
+    // Treat only a fully white mask pixel as a seed. Convert a color input to
+    // a scalar mask explicitly before entering this subgraph.
+    const auto white = addNode(body, "threshold", "White Pixel", {220, 100},
+                               {{"threshold", 0.999F}});
+    link(body, whiteMask, "value", white, "value");
+    const auto coordinates = addNode(body, "coordinates", "Pixel Coordinates", {220, 240},
+                                     {{"pixels", 1.0F}});
+    // The sentinel is deliberately far outside every practical canvas. It
+    // represents "no seed has reached this pixel" without a third state slot.
+    const auto noSeed = vector(body, "No Seed Sentinel", {220, 380}, -65504.0F, -65504.0F);
+    const auto initialSeed = addNode(body, "select", "Initial Nearest Seed", {480, 210});
+    link(body, white, "result", initialSeed, "condition");
+    link(body, coordinates, "coordinates", initialSeed, "ifTrue");
+    link(body, noSeed, "value", initialSeed, "ifFalse");
+    const auto initialSeedState = addNode(body, "simulation_initial_state", "Initial Nearest Seed",
+                                          {740, 210}, {{"slot", 0.0F}});
+    link(body, initialSeed, "result", initialSeedState, "value");
+    const auto maxDistance = input(body, "maxDistance", "Maximum Distance", {480, 370});
+    const auto initialDistance = addNode(body, "select", "Initial Distance", {740, 370},
+                                         {{"ifTrue", 0.0F}});
+    link(body, white, "result", initialDistance, "condition");
+    link(body, maxDistance, "value", initialDistance, "ifFalse");
+    const auto initialDistanceState = addNode(body, "simulation_initial_state", "Initial Distance",
+                                              {980, 370}, {{"slot", 1.0F}});
+    link(body, initialDistance, "result", initialDistanceState, "value");
+
+    const auto previous = addNode(body, "simulation_previous_state", "Previous Nearest Seed",
+                                  {0, 700}, {{"slot", 0.0F}});
+    // This slot is output-only, but every simulation state slot has the same
+    // explicit Previous/Initial/Next boundary contract.
+    (void)addNode(body, "simulation_previous_state", "Previous Distance", {0, 1860},
+                  {{"slot", 1.0F}});
+    const std::array<std::pair<const char*, Vec2>, 8> offsets{{
+        {"North", {0.0F, -1.0F}}, {"South", {0.0F, 1.0F}},
+        {"West", {-1.0F, 0.0F}}, {"East", {1.0F, 0.0F}},
+        {"Northwest", {-1.0F, -1.0F}}, {"Northeast", {1.0F, -1.0F}},
+        {"Southwest", {-1.0F, 1.0F}}, {"Southeast", {1.0F, 1.0F}},
+    }};
+    std::array<NodeId, 8> samples{};
+    for (std::size_t index = 0; index < offsets.size(); ++index) {
+        const auto offset = vector(body, std::string(offsets[index].first) + " Offset",
+                                   {220, 620.0F + static_cast<float>(index) * 140.0F},
+                                   offsets[index].second.x, offsets[index].second.y);
+        samples[index] = addNode(body, "state_input_sample_offset",
+            std::string(offsets[index].first) + " Neighbor Seed",
+            {460, 620.0F + static_cast<float>(index) * 140.0F},
+            {{"sampling", 0.0F}, {"addressMode", 0.0F}});
+        link(body, previous, "value", samples[index], "source");
+        link(body, offset, "value", samples[index], "offset");
+    }
+    NodeId bestSeed = previous;
+    for (std::size_t index = 0; index < samples.size(); ++index) {
+        const auto candidateDistance = vectorMath(
+            body, std::string(offsets[index].first) + " Candidate Distance",
+            VectorMathOperation::Distance, {720, 620.0F + static_cast<float>(index) * 140.0F});
+        link(body, coordinates, "coordinates", candidateDistance, "a");
+        link(body, samples[index], "sampled", candidateDistance, "b");
+        const auto bestDistance = vectorMath(
+            body, std::string(offsets[index].first) + " Best Distance",
+            VectorMathOperation::Distance, {960, 620.0F + static_cast<float>(index) * 140.0F});
+        link(body, coordinates, "coordinates", bestDistance, "a");
+        link(body, bestSeed, index == 0 ? "value" : "result", bestDistance, "b");
+        // Step(edge, value) is one when the candidate is no farther away.
+        const auto chooseCandidate = math(body, std::string(offsets[index].first) + " Is Closer",
+                                          static_cast<int>(MathOperation::Step),
+                                          {1200, 620.0F + static_cast<float>(index) * 140.0F});
+        link(body, candidateDistance, "result", chooseCandidate, "a");
+        link(body, bestDistance, "result", chooseCandidate, "b");
+        const auto selected = addNode(body, "select", std::string(offsets[index].first) + " Best Seed",
+                                      {1440, 620.0F + static_cast<float>(index) * 140.0F});
+        link(body, chooseCandidate, "result", selected, "condition");
+        link(body, samples[index], "sampled", selected, "ifTrue");
+        link(body, bestSeed, index == 0 ? "value" : "result", selected, "ifFalse");
+        bestSeed = selected;
+    }
+    const auto pinnedSeed = addNode(body, "select", "White Pixels Keep Their Seed", {1680, 1180});
+    link(body, white, "result", pinnedSeed, "condition");
+    link(body, coordinates, "coordinates", pinnedSeed, "ifTrue");
+    link(body, bestSeed, "result", pinnedSeed, "ifFalse");
+    const auto nextSeed = addNode(body, "simulation_next_state", "Next Nearest Seed", {1920, 1180},
+                                  {{"slot", 0.0F}});
+    link(body, pinnedSeed, "result", nextSeed, "value");
+    const auto exactDistance = vectorMath(body, "Euclidean Distance", VectorMathOperation::Distance,
+                                          {1920, 1340});
+    link(body, coordinates, "coordinates", exactDistance, "a");
+    link(body, pinnedSeed, "result", exactDistance, "b");
+    const auto cappedDistance = math(body, "Capped Distance", static_cast<int>(MathOperation::Minimum),
+                                     {2160, 1340});
+    link(body, exactDistance, "result", cappedDistance, "a");
+    link(body, maxDistance, "value", cappedDistance, "b");
+    const auto nextDistance = addNode(body, "simulation_next_state", "Next Distance", {2400, 1340},
+                                      {{"slot", 1.0F}});
+    link(body, cappedDistance, "result", nextDistance, "value");
+    const auto output = addNode(body, "subgraph_output", "Distance Output", {2640, 1340},
+                                {{"key", "distance"}});
+    link(body, nextDistance, "value", output, "value");
+    return result;
+}
+
 nlohmann::json leniaKernel(int size = 15) {
     nlohmann::json values = nlohmann::json::array();
     const float radius = static_cast<float>(size / 2);
@@ -899,7 +1023,8 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
 
 const std::vector<SubgraphDefinition>& builtInSubgraphs() {
     static const std::vector<SubgraphDefinition> values{
-        discreteReaction(), genericCellularAutomata(), floodFill(), lenia()};
+        discreteReaction(), genericCellularAutomata(), floodFill(),
+        distanceFromNearestWhitePixel(), lenia()};
     return values;
 }
 

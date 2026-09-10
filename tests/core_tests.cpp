@@ -58,14 +58,18 @@ NodeRegistry registry() {
         {{"value", "Value", SocketContract::Numeric, SocketDirection::Input, true},
          {"result", "Result", SocketContract::Numeric, SocketDirection::Output}},
         {{"value", "Value", .5F, 0, 1}, {"threshold", "Threshold", .5F, 0, 1}}});
-    add(result, {"select", 1, "Select", "Test",
+    NodeDescriptor select{"select", 1, "Select", "Test",
         {{"condition", "Condition", SocketContract::Numeric, SocketDirection::Input, true},
-         {"ifTrue", "If True", SocketContract::Numeric, SocketDirection::Input, true},
-         {"ifFalse", "If False", SocketContract::Numeric, SocketDirection::Input, true},
-         {"result", "Result", SocketContract::Numeric, SocketDirection::Output}},
+         {"ifTrue", "If True", SocketContract::AnyImageValue, SocketDirection::Input, true},
+         {"ifFalse", "If False", SocketContract::AnyImageValue, SocketDirection::Input, true},
+         {"result", "Result", SocketContract::AnyImageValue, SocketDirection::Output}},
         {{"condition", "Condition", 0.0F, -10.0F, 10.0F},
          {"ifTrue", "If True", 1.0F, -10.0F, 10.0F},
-         {"ifFalse", "If False", 0.0F, -10.0F, 10.0F}}});
+         {"ifFalse", "If False", 0.0F, -10.0F, 10.0F}}};
+    select.sockets.back().typePolicy = SocketDescriptor::TypePolicy::WidestValue;
+    select.sockets.back().typeInputs = {"ifTrue", "ifFalse"};
+    select.sockets.back().fieldInputs = {"condition", "ifTrue", "ifFalse"};
+    add(result, std::move(select));
     add(result, {"coordinates", 1, "Canvas Coordinates", "Input",
         {{"coordinates", "Coordinates", SocketContract::VectorNumeric, SocketDirection::Output}},
         {{"pixels", "Pixels", 0.0F, 0.0F, 1.0F,
@@ -588,6 +592,44 @@ TEST_CASE("flood fill is an editable scalar region simulation") {
     REQUIRE(descriptor.sockets[5].key == "region");
     REQUIRE(std::ranges::count(builtIn->body.nodes(), "state_input_sample_offset",
                                &NodeRecord::type) == 8);
+}
+
+TEST_CASE("distance from nearest white pixel is an editable Euclidean distance simulation") {
+    auto nodes = registry();
+    NodeDescriptor offsetSample{"state_input_sample_offset", 1,
+        "State/Input Sample at Offset", "Coordinates",
+        {{"source", "Source", SocketContract::AnyField, SocketDirection::Input},
+         {"offset", "Offset Pixels", SocketContract::VectorNumeric, SocketDirection::Input, true},
+         {"sampled", "Sampled", SocketContract::AnyField, SocketDirection::Output}}, {}};
+    offsetSample.sockets[0].requiresImage = true;
+    offsetSample.sockets[2].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+    offsetSample.sockets[2].typeInputs = {"source"};
+    offsetSample.neighborhoodSocket = "source";
+    offsetSample.lowerable = true;
+    add(nodes, std::move(offsetSample));
+
+    const auto builtIn = std::ranges::find_if(builtInSubgraphs(), [](const SubgraphDefinition& definition) {
+        return definition.id == "builtin.distance_from_nearest_white_pixel";
+    });
+    REQUIRE(builtIn != builtInSubgraphs().end());
+    const auto errors = validateSubgraph(*builtIn, nodes);
+    INFO(nlohmann::json(errors).dump());
+    REQUIRE(errors.empty());
+
+    const auto descriptor = describeSubgraph(*builtIn);
+    REQUIRE(descriptor.stateful);
+    REQUIRE(descriptor.sockets.size() == 5);
+    REQUIRE(descriptor.sockets[0].key == "whiteMask");
+    REQUIRE(descriptor.sockets[1].key == "maxDistance");
+    REQUIRE(descriptor.sockets[2].key == "iterations");
+    REQUIRE(descriptor.sockets[4].key == "distance");
+    REQUIRE(builtIn->stateSlots.size() == 2);
+    REQUIRE(builtIn->stateSlots[0].type == ValueType::VectorField);
+    REQUIRE(std::ranges::count(builtIn->body.nodes(), "state_input_sample_offset",
+                               &NodeRecord::type) == 8);
+    REQUIRE(std::ranges::count_if(builtIn->body.nodes(), [](const NodeRecord& node) {
+        return node.type == "select" && node.parameters.value("ifTrue", 1.0F) == 0.0F;
+    }) == 1);
 }
 
 TEST_CASE("Lenia is an editable scalar growth simulation") {
