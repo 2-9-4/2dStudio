@@ -11,7 +11,7 @@ namespace {
 
 constexpr std::array<const char*, kPresetCount> kNames = {
     "Custom", "Identity", "Box Blur", "Gaussian Blur", "Sharpen", "Edge Detect", "Emboss",
-    "Erosion", "Dilation"};
+    "Erosion", "Dilation", "Lenia Ring"};
 
 int validSize(int size) {
     return std::clamp(size | 1, kMinimumKernelSize, kMaximumKernelSize);
@@ -92,6 +92,18 @@ std::vector<float> generate(int preset, int size) {
         }
         kernel[center] = 1.0F;
         break;
+    case kLeniaRingPreset: // Smooth annular kernel for continuous Lenia automata.
+        for (int y = -radius; y <= radius; ++y) {
+            for (int x = -radius; x <= radius; ++x) {
+                const float distance = std::sqrt(static_cast<float>(x * x + y * y)) /
+                    static_cast<float>(radius);
+                kernel[static_cast<std::size_t>((y + radius) * size + x + radius)] =
+                    distance <= 1.0F
+                    ? std::exp(-0.5F * std::pow((distance - 0.5F) / 0.15F, 2.0F))
+                    : 0.0F;
+            }
+        }
+        break;
     default:
         kernel[center] = 1.0F;
         break;
@@ -141,7 +153,8 @@ void apply(nlohmann::json& parameters, int preset) {
     }
     const int size = kernelSize(parameters);
     write(parameters, generate(preset, size), size);
-    parameters["normalize"] = (preset == 2 || preset == 3) ? 1.0F : 0.0F;
+    parameters["normalize"] = (preset == 2 || preset == 3 || preset == kLeniaRingPreset)
+        ? 1.0F : 0.0F;
     parameters["bias"] = 0.0F;
     parameters["operation"] = preset == 7 ? 1.0F : preset == 8 ? 2.0F : 0.0F;
     parameters["preset"] = kNames[static_cast<std::size_t>(preset)];

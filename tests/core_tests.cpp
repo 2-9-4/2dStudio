@@ -622,6 +622,7 @@ TEST_CASE("Lenia is an editable scalar growth simulation") {
     REQUIRE(kernel != builtIn->body.nodes().end());
     REQUIRE(kernel->parameters["kernelSize"] == 15.0F);
     REQUIRE(kernel->parameters["kernel"].size() == 225);
+    REQUIRE(kernel->parameters["preset"] == "Lenia Ring");
     REQUIRE(std::ranges::any_of(builtIn->body.nodes(), [](const NodeRecord& node) {
         return node.type == "math" && node.parameters.value("operation", -1.0F) ==
             static_cast<float>(MathOperation::Exp);

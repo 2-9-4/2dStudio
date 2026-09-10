@@ -232,6 +232,17 @@
         "node": 5,
         "socket": "value"
       }
+    },
+    {
+      "from": {
+        "node": 85,
+        "socket": "image"
+      },
+      "id": 317,
+      "to": {
+        "node": 92,
+        "socket": "initialState"
+      }
     }
   ],
   "nodes": [
@@ -1055,28 +1066,18 @@
     {
       "id": 92,
       "parameters": {
-        "bias": 0.0,
-        "kernel": [
-          0.0,
-          1.0,
-          0.0,
-          1.0,
-          1.0,
-          1.0,
-          0.0,
-          1.0,
-          0.0
-        ],
-        "kernelSize": 3,
-        "normalize": 0.0,
-        "operation": 2.0,
-        "preset": "Dilation"
+        "growthCenter": 0.35199999809265137,
+        "growthWidth": 0.09690400213003159,
+        "kernelScale": 1.0,
+        "reset": 0.0,
+        "timeStep": 0.03200000151991844
       },
       "position": [
-        5582.0,
-        -253.0
+        4340.0,
+        -492.0
       ],
-      "type": "convolution",
+      "subgraphId": "project.reaction_diffusion.93.1",
+      "type": "subgraph",
       "typeVersion": 1
     }
   ],
@@ -2681,6 +2682,721 @@
           "key": "chemicals",
           "label": "Chemicals",
           "type": "vector_field"
+        }
+      ],
+      "version": 1
+    },
+    {
+      "category": "Simulation",
+      "execution": "simulation",
+      "id": "project.reaction_diffusion.93.1",
+      "interface": [
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "initialState",
+          "kind": "input",
+          "label": "Initial State",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "options": [],
+          "role": "",
+          "type": "scalar_field"
+        },
+        {
+          "control": "float",
+          "default": 4.0,
+          "key": "kernelScale",
+          "kind": "input",
+          "label": "Kernel Radius / Scale",
+          "maximum": 128.0,
+          "minimum": 0.009999999776482582,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.15000000596046448,
+          "key": "growthCenter",
+          "kind": "input",
+          "label": "Growth Center μ",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.014999999664723873,
+          "key": "growthWidth",
+          "kind": "input",
+          "label": "Growth Width σ",
+          "maximum": 1.0,
+          "minimum": 0.0010000000474974513,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.10000000149011612,
+          "key": "timeStep",
+          "kind": "input",
+          "label": "Time Step",
+          "maximum": 2.0,
+          "minimum": 0.0,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "boolean",
+          "default": 0.0,
+          "key": "reset",
+          "kind": "input",
+          "label": "Reset",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": true,
+          "options": [],
+          "role": "",
+          "type": "float"
+        },
+        {
+          "control": "float",
+          "default": 0.0,
+          "key": "state",
+          "kind": "output",
+          "label": "State",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "optional": false,
+          "options": [],
+          "role": "",
+          "type": "scalar_field"
+        }
+      ],
+      "links": [
+        {
+          "from": {
+            "node": 1,
+            "socket": "value"
+          },
+          "id": 1,
+          "to": {
+            "node": 2,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "value"
+          },
+          "id": 2,
+          "to": {
+            "node": 5,
+            "socket": "image"
+          }
+        },
+        {
+          "from": {
+            "node": 4,
+            "socket": "value"
+          },
+          "id": 3,
+          "to": {
+            "node": 5,
+            "socket": "scale"
+          }
+        },
+        {
+          "from": {
+            "node": 5,
+            "socket": "image"
+          },
+          "id": 4,
+          "to": {
+            "node": 7,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 6,
+            "socket": "value"
+          },
+          "id": 5,
+          "to": {
+            "node": 7,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 7,
+            "socket": "result"
+          },
+          "id": 6,
+          "to": {
+            "node": 9,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 8,
+            "socket": "value"
+          },
+          "id": 7,
+          "to": {
+            "node": 9,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 9,
+            "socket": "result"
+          },
+          "id": 8,
+          "to": {
+            "node": 10,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 10,
+            "socket": "result"
+          },
+          "id": 9,
+          "to": {
+            "node": 11,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 11,
+            "socket": "result"
+          },
+          "id": 10,
+          "to": {
+            "node": 12,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 12,
+            "socket": "result"
+          },
+          "id": 11,
+          "to": {
+            "node": 13,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 13,
+            "socket": "result"
+          },
+          "id": 12,
+          "to": {
+            "node": 14,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 15,
+            "socket": "value"
+          },
+          "id": 13,
+          "to": {
+            "node": 16,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 14,
+            "socket": "result"
+          },
+          "id": 14,
+          "to": {
+            "node": 16,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 3,
+            "socket": "value"
+          },
+          "id": 15,
+          "to": {
+            "node": 17,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 16,
+            "socket": "result"
+          },
+          "id": 16,
+          "to": {
+            "node": 17,
+            "socket": "b"
+          }
+        },
+        {
+          "from": {
+            "node": 17,
+            "socket": "result"
+          },
+          "id": 17,
+          "to": {
+            "node": 18,
+            "socket": "a"
+          }
+        },
+        {
+          "from": {
+            "node": 18,
+            "socket": "result"
+          },
+          "id": 18,
+          "to": {
+            "node": 19,
+            "socket": "value"
+          }
+        },
+        {
+          "from": {
+            "node": 19,
+            "socket": "value"
+          },
+          "id": 19,
+          "to": {
+            "node": 20,
+            "socket": "value"
+          }
+        }
+      ],
+      "name": "Lenia (Editable 2)",
+      "nodes": [
+        {
+          "id": 1,
+          "label": "Initial State Input",
+          "parameters": {
+            "key": "initialState"
+          },
+          "position": [
+            5106.0,
+            1030.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 2,
+          "label": "Initial State",
+          "parameters": {
+            "slot": 0.0
+          },
+          "position": [
+            5514.0,
+            1027.0
+          ],
+          "type": "simulation_initial_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 3,
+          "label": "Previous State",
+          "parameters": {
+            "slot": 0.0
+          },
+          "position": [
+            -12.0,
+            -837.0
+          ],
+          "type": "simulation_previous_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 4,
+          "label": "Kernel Radius / Scale",
+          "parameters": {
+            "key": "kernelScale"
+          },
+          "position": [
+            -20.0,
+            -659.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 5,
+          "label": "Neighborhood Potential",
+          "parameters": {
+            "bias": 0.0,
+            "iterations": 1.0,
+            "kernel": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.003865920938551426,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.003865920938551426,
+              0.031518734991550446,
+              0.09615901857614517,
+              0.1353352814912796,
+              0.09615901857614517,
+              0.031518734991550446,
+              0.003865920938551426,
+              0.0,
+              0.0,
+              0.0,
+              0.003865920938551426,
+              0.06724762916564941,
+              0.33741605281829834,
+              0.6771401762962341,
+              0.8007373213768005,
+              0.6771401762962341,
+              0.33741605281829834,
+              0.06724762916564941,
+              0.003865920938551426,
+              0.0,
+              0.0,
+              0.031518734991550446,
+              0.33741605281829834,
+              0.9085736274719238,
+              0.9399579763412476,
+              0.8007374405860901,
+              0.9399579763412476,
+              0.9085736274719238,
+              0.33741605281829834,
+              0.031518734991550446,
+              0.0,
+              0.0,
+              0.09615901857614517,
+              0.6771401762962341,
+              0.9399579763412476,
+              0.35065943002700806,
+              0.1353352814912796,
+              0.35065943002700806,
+              0.9399579763412476,
+              0.6771401762962341,
+              0.09615901857614517,
+              0.0,
+              0.003865920938551426,
+              0.1353352814912796,
+              0.8007373213768005,
+              0.8007374405860901,
+              0.1353352814912796,
+              0.003865920938551426,
+              0.1353352814912796,
+              0.8007374405860901,
+              0.8007373213768005,
+              0.1353352814912796,
+              0.003865920938551426,
+              0.0,
+              0.09615901857614517,
+              0.6771401762962341,
+              0.9399579763412476,
+              0.35065943002700806,
+              0.1353352814912796,
+              0.35065943002700806,
+              0.9399579763412476,
+              0.6771401762962341,
+              0.09615901857614517,
+              0.0,
+              0.0,
+              0.031518734991550446,
+              0.33741605281829834,
+              0.9085736274719238,
+              0.9399579763412476,
+              0.8007374405860901,
+              0.9399579763412476,
+              0.9085736274719238,
+              0.33741605281829834,
+              0.031518734991550446,
+              0.0,
+              0.0,
+              0.003865920938551426,
+              0.06724762916564941,
+              0.33741605281829834,
+              0.6771401762962341,
+              0.8007373213768005,
+              0.6771401762962341,
+              0.33741605281829834,
+              0.06724762916564941,
+              0.003865920938551426,
+              0.0,
+              0.0,
+              0.0,
+              0.003865920938551426,
+              0.031518734991550446,
+              0.09615901857614517,
+              0.1353352814912796,
+              0.09615901857614517,
+              0.031518734991550446,
+              0.003865920938551426,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.003865920938551426,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "kernelSize": 11,
+            "normalize": 1.0,
+            "operation": 0.0,
+            "preset": "Lenia Ring",
+            "scale": 4.0
+          },
+          "position": [
+            354.0,
+            -723.0
+          ],
+          "type": "convolution",
+          "typeVersion": 1
+        },
+        {
+          "id": 6,
+          "label": "Growth Center μ",
+          "parameters": {
+            "key": "growthCenter"
+          },
+          "position": [
+            744.0,
+            -563.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 7,
+          "label": "Potential − μ",
+          "parameters": {
+            "operation": 1.0
+          },
+          "position": [
+            936.0,
+            -618.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 8,
+          "label": "Growth Width σ",
+          "parameters": {
+            "key": "growthWidth"
+          },
+          "position": [
+            1080.0,
+            -227.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 9,
+          "label": "(Potential − μ) / σ",
+          "parameters": {
+            "operation": 3.0
+          },
+          "position": [
+            1304.0,
+            -274.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 10,
+          "label": "Normalized Potential Squared",
+          "parameters": {
+            "b": 2.0,
+            "operation": 4.0
+          },
+          "position": [
+            1656.0,
+            -266.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 11,
+          "label": "−0.5 × Squared",
+          "parameters": {
+            "b": -0.5,
+            "operation": 2.0
+          },
+          "position": [
+            2020.0,
+            -266.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 12,
+          "label": "Exp Growth Bell",
+          "parameters": {
+            "operation": 17.0
+          },
+          "position": [
+            2388.0,
+            -274.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 13,
+          "label": "2 × Exp Growth Bell",
+          "parameters": {
+            "b": 2.0,
+            "operation": 2.0
+          },
+          "position": [
+            2744.0,
+            -277.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 14,
+          "label": "Growth",
+          "parameters": {
+            "b": 1.0,
+            "operation": 1.0
+          },
+          "position": [
+            3080.0,
+            -277.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 15,
+          "label": "Time Step",
+          "parameters": {
+            "key": "timeStep"
+          },
+          "position": [
+            3292.0,
+            -387.0
+          ],
+          "type": "subgraph_input",
+          "typeVersion": 1
+        },
+        {
+          "id": 16,
+          "label": "Time Step × Growth",
+          "parameters": {
+            "operation": 2.0
+          },
+          "position": [
+            3496.0,
+            -298.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 17,
+          "label": "Integrated State",
+          "parameters": {
+            "operation": 0.0
+          },
+          "position": [
+            3864.0,
+            -866.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 18,
+          "label": "Clamp State",
+          "parameters": {
+            "b": 0.0,
+            "c": 1.0,
+            "operation": 10.0
+          },
+          "position": [
+            4200.0,
+            -882.0
+          ],
+          "type": "math",
+          "typeVersion": 1
+        },
+        {
+          "id": 19,
+          "label": "Next State",
+          "parameters": {
+            "slot": 0.0
+          },
+          "position": [
+            4584.0,
+            -883.0
+          ],
+          "type": "simulation_next_state",
+          "typeVersion": 1
+        },
+        {
+          "id": 20,
+          "label": "State Output",
+          "parameters": {
+            "key": "state"
+          },
+          "position": [
+            4920.0,
+            -867.0
+          ],
+          "type": "subgraph_output",
+          "typeVersion": 1
+        }
+      ],
+      "stateSlots": [
+        {
+          "key": "state",
+          "label": "State",
+          "type": "scalar_field"
         }
       ],
       "version": 1

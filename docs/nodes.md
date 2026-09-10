@@ -123,7 +123,8 @@ submodes, and the special nodes available inside simulation subgraphs.
   kernel, with optional weight normalization, bias, sampling `Scale`, and repeated `Iterations`. Its
   operation submodes are **Convolution** (weighted sum), **Erosion** (minimum over enabled
   kernel taps), and **Dilation** (maximum over enabled kernel taps). It accepts Any Field and
-  preserves Scalar Field, Vector Field, or Color Image identity.
+  preserves Scalar Field, Vector Field, or Color Image identity. The size-aware **Lenia Ring**
+  preset regenerates its normalized annular weights when Kernel Size changes.
 
   The preset menu provides:
 
@@ -187,7 +188,7 @@ submodes, and the special nodes available inside simulation subgraphs.
   fill. Its **Region** output expands through passable pixels over successive simulation steps.
 
 - **Lenia** — An editable continuous scalar-state simulation. It convolves **State** through a
-  normalized editable radial kernel, then applies an exponential growth curve controlled by
+  normalized editable **Lenia Ring** kernel preset, then applies an exponential growth curve controlled by
   **Growth Center μ** and **Growth Width σ**. **Kernel Radius / Scale** controls the kernel's
   sampling radius, **Time Step** controls integration, and the clamped **State** output stays in
   the 0–1 range. The default kernel is a 15×15 annular shape; its editable **Kernel size** and

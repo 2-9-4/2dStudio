@@ -140,4 +140,21 @@ TEST_CASE("morphology footprints are circular at every supported size") {
     }
 }
 
+TEST_CASE("Lenia Ring is normalized and regenerates when resized") {
+    nlohmann::json parameters = {{"kernelSize", 15}};
+    apply(parameters, kLeniaRingPreset);
+    const auto small = values(parameters, 15);
+    REQUIRE(parameters.at("preset") == "Lenia Ring");
+    REQUIRE(parameters.at("normalize") == 1.0F);
+    REQUIRE(parameters.at("operation") == 0.0F);
+    REQUIRE(small[7 * 15 + 7] > 0.0F);
+    REQUIRE(small[7 * 15 + 7] < small[7 * 15 + 11]);
+
+    resize(parameters, 31);
+    const auto large = values(parameters, 31);
+    REQUIRE(current(parameters) == kLeniaRingPreset);
+    REQUIRE(large.size() == 31U * 31U);
+    REQUIRE(large != small);
+}
+
 } // namespace reaction::convolution_presets

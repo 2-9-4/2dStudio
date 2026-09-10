@@ -583,7 +583,8 @@ SubgraphDefinition lenia() {
     // node; Kernel Scale is a live public input, so users can tune both.
     const auto potential = addNode(body, "convolution", "Neighborhood Potential", {480, 520},
         {{"kernelSize", 15.0F}, {"kernel", leniaKernel()}, {"normalize", 1.0F},
-         {"operation", 0.0F}, {"iterations", 1.0F}, {"scale", 4.0F}});
+         {"operation", 0.0F}, {"iterations", 1.0F}, {"scale", 4.0F},
+         {"preset", "Lenia Ring"}});
     link(body, previous, "value", potential, "image");
     link(body, kernelScale, "value", potential, "scale");
 
