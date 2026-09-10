@@ -75,7 +75,8 @@ bool renderConvolutionEditor(NodeRecord& node, PopupState& popup) {
 
     int size = convolution_presets::kernelSize(parameters);
     ImGui::SetNextItemWidth(150);
-    if (ImGui::SliderInt("Kernel size", &size, 3, 15, "%d")) {
+    if (ImGui::SliderInt("Kernel size", &size, convolution_presets::kMinimumKernelSize,
+                         convolution_presets::kMaximumKernelSize, "%d")) {
         size |= 1;
         convolution_presets::resize(parameters, size);
         changed = true;
@@ -84,6 +85,11 @@ bool renderConvolutionEditor(NodeRecord& node, PopupState& popup) {
     ImGui::Text("%d x %d", size, size);
     auto values = convolution_presets::values(parameters, size);
     ImGui::TextUnformatted("Kernel (center is the current pixel)");
+    // Large supported kernels remain editable without turning the entire node
+    // body into a several-thousand-row control list.
+    const float kernelHeight = std::min(260.0F, static_cast<float>(size) * 24.0F);
+    ImGui::BeginChild("Kernel weights", ImVec2(0.0F, kernelHeight), true,
+                      ImGuiWindowFlags_HorizontalScrollbar);
     for (int y = 0; y < size; ++y) {
         for (int x = 0; x < size; ++x) {
             if (x > 0) ImGui::SameLine(0, 2);
@@ -99,6 +105,7 @@ bool renderConvolutionEditor(NodeRecord& node, PopupState& popup) {
             ImGui::PopID();
         }
     }
+    ImGui::EndChild();
     bool normalize = parameters.value("normalize", 0.0F) > 0.5F;
     if (ImGui::Checkbox("Normalize weights", &normalize)) {
         parameters["normalize"] = normalize ? 1.0F : 0.0F;

@@ -1,5 +1,6 @@
 #include "nodes_internal.hpp"
 #include "node_support.hpp"
+#include "procedural_node_support.hpp"
 
 #include <algorithm>
 #include <array>
@@ -17,9 +18,6 @@ using node_support::TextureNode;
 using node_support::imageAt;
 using node_support::parameter;
 using node_support::uniform;
-std::string offsetTexel(const std::string& base, int x, int y) {
-    return base + "-ivec2(" + std::to_string(x) + "," + std::to_string(y) + ")";
-}
 constexpr int kMaximumKernelSize = 101;
 
 struct ConvolutionSpec {
@@ -115,7 +113,8 @@ public:
         auto result = NodeDescriptor{"convolution", 1, "Convolution", "Filter",
             {{"image", "Image", SocketContract::AnyField, SocketDirection::Input},
              {"image", "Image", SocketContract::AnyField, SocketDirection::Output}},
-            {{"iterations", "Iterations", 1.0F, 1.0F, 32.0F}}};
+            {{"iterations", "Iterations", 1.0F, 1.0F, 32.0F},
+             {"scale", "Scale", 1.0F, 0.01F, 128.0F}}};
         result.lowerable = true;
         result.neighborhoodSocket = "image";
         result.sockets[0].requiresImage = true;
@@ -135,6 +134,7 @@ public:
 
         const auto spec = convolutionSpec(parameters_);
         const auto bias = context.parameter("bias", 0.0F);
+        const auto scale = context.scalar("scale", "scale", 1.0F);
         const auto sourceType = context.inputTexel(
             "image", "p", "image", 0.0F).type;
         const auto typeName = glslType(sourceType);
@@ -157,11 +157,10 @@ public:
                     // Don't emit zero-weight texture accesses at all.
                     if (weight == 0.0F) continue;
 
-                    const auto tap = context.inputTexel(
-                        "image",
-                        offsetTexel("p", x, y),
-                        "image",
-                        0.0F).name;
+                    const auto coordinate = "uv-vec2(" + std::to_string(x) + "," +
+                        std::to_string(y) + ")*pixelSize*" + scale.name;
+                    const auto tap = context.inputSample("image", coordinate,
+                        "image", 0.0F, true).name;
 
                     source << "sum+="
                         << tap
@@ -191,11 +190,10 @@ public:
                     // For morphology, the kernel is just an enabled/disabled mask.
                     if (weight == 0.0F) continue;
 
-                    const auto tap = context.inputTexel(
-                        "image",
-                        offsetTexel("p", x, y),
-                        "image",
-                        0.0F).name;
+                    const auto coordinate = "uv-vec2(" + std::to_string(x) + "," +
+                        std::to_string(y) + ")*pixelSize*" + scale.name;
+                    const auto tap = context.inputSample("image", coordinate,
+                        "image", 0.0F, true).name;
 
                     source << "v="
                         << (erode ? "min" : "max")
@@ -232,6 +230,8 @@ public:
         }
         glUseProgram(program_);
         uniform(program_, "bias", parameter(parameters_, "bias", 0));
+        const auto scale = procedural::numericParameterInput(inputs, 2, parameters_, "scale", 1.0F);
+        uniform(program_, "scale", scale.constant);
         const int iterations = std::clamp(
             static_cast<int>(parameter(parameters_, "iterations", 1)), 1, 32);
         GLuint inputTexture = source.texture;
@@ -256,7 +256,7 @@ private:
             "layout(local_size_x=16,local_size_y=16)in;\n"
             "layout(rgba16f,binding=0)writeonly uniform image2D outImage;\n"
             "layout(binding=0)uniform sampler2D source;\n"
-            "uniform float bias;\n"
+            "uniform float bias,scale;\n"
             "void main(){\n"
             "ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(outImage);\n"
             "if(any(greaterThanEqual(p,s)))return;\n";
@@ -276,10 +276,8 @@ private:
                     if (weight == 0.0F) continue;
 
                     source
-                        << "sum+=texelFetch(source,"
-                        << "clamp(p-ivec2("
-                        << x << "," << y
-                        << "),ivec2(0),s-ivec2(1)),0)*"
+                        << "sum+=texelFetch(source,clamp(ivec2(floor(vec2(p)-vec2("
+                        << x << "," << y << ")*scale)),ivec2(0),s-ivec2(1)),0)*"
                         << glslFloat(weight)
                         << ";\n";
                 }
@@ -309,10 +307,8 @@ private:
                     source
                         << "v="
                         << (erode ? "min" : "max")
-                        << "(v,texelFetch(source,"
-                        << "clamp(p-ivec2("
-                        << x << "," << y
-                        << "),ivec2(0),s-ivec2(1)),0));\n";
+                        << "(v,texelFetch(source,clamp(ivec2(floor(vec2(p)-vec2("
+                        << x << "," << y << ")*scale)),ivec2(0),s-ivec2(1)),0));\n";
                 }
             }
 

@@ -1,4 +1,5 @@
 #include "reaction/core/layout.hpp"
+#include "reaction/core/math.hpp"
 #include "reaction/core/persistence.hpp"
 #include "reaction/core/vector_math.hpp"
 
@@ -495,7 +496,8 @@ TEST_CASE("generic cellular automata is an editable Life-like scalar simulation"
     auto nodes = registry();
     NodeDescriptor convolutionDescriptor{"convolution", 1, "Convolution", "Filter",
         {{"image", "Image", SocketContract::AnyField, SocketDirection::Input},
-         {"image", "Image", SocketContract::AnyField, SocketDirection::Output}}, {}};
+         {"image", "Image", SocketContract::AnyField, SocketDirection::Output}},
+        {{"scale", "Scale", 1.0F, 0.01F, 128.0F}}};
     convolutionDescriptor.lowerable = true;
     convolutionDescriptor.sockets[1].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
     convolutionDescriptor.sockets[1].typeInputs = {"image"};
@@ -586,6 +588,44 @@ TEST_CASE("flood fill is an editable scalar region simulation") {
     REQUIRE(descriptor.sockets[5].key == "region");
     REQUIRE(std::ranges::count(builtIn->body.nodes(), "state_input_sample_offset",
                                &NodeRecord::type) == 8);
+}
+
+TEST_CASE("Lenia is an editable scalar growth simulation") {
+    auto nodes = registry();
+    NodeDescriptor convolution{"convolution", 1, "Convolution", "Filter",
+        {{"image", "Image", SocketContract::AnyField, SocketDirection::Input},
+         {"image", "Image", SocketContract::AnyField, SocketDirection::Output}},
+        {{"scale", "Scale", 1.0F, 0.01F, 128.0F}}};
+    convolution.lowerable = true;
+    convolution.neighborhoodSocket = "image";
+    convolution.sockets[0].requiresImage = true;
+    convolution.sockets[1].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+    convolution.sockets[1].typeInputs = {"image"};
+    add(nodes, std::move(convolution));
+
+    const auto builtIn = std::ranges::find_if(builtInSubgraphs(), [](const SubgraphDefinition& definition) {
+        return definition.id == "builtin.lenia";
+    });
+    REQUIRE(builtIn != builtInSubgraphs().end());
+    const auto errors = validateSubgraph(*builtIn, nodes);
+    INFO(nlohmann::json(errors).dump());
+    REQUIRE(errors.empty());
+    const auto descriptor = describeSubgraph(*builtIn);
+    REQUIRE(descriptor.stateful);
+    REQUIRE(descriptor.sockets.size() == 7);
+    REQUIRE(descriptor.sockets[1].key == "kernelScale");
+    REQUIRE(descriptor.sockets[2].key == "growthCenter");
+    REQUIRE(descriptor.sockets[3].key == "growthWidth");
+    REQUIRE(descriptor.sockets[4].key == "timeStep");
+    REQUIRE(descriptor.sockets[6].key == "state");
+    const auto kernel = std::ranges::find(builtIn->body.nodes(), "convolution", &NodeRecord::type);
+    REQUIRE(kernel != builtIn->body.nodes().end());
+    REQUIRE(kernel->parameters["kernelSize"] == 15.0F);
+    REQUIRE(kernel->parameters["kernel"].size() == 225);
+    REQUIRE(std::ranges::any_of(builtIn->body.nodes(), [](const NodeRecord& node) {
+        return node.type == "math" && node.parameters.value("operation", -1.0F) ==
+            static_cast<float>(MathOperation::Exp);
+    }));
 }
 
 TEST_CASE("built-in discrete reaction uses Vector Math for its seed distance") {

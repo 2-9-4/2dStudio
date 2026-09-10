@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace reaction::convolution_presets {
@@ -42,10 +43,24 @@ std::vector<float> generate(int preset, int size) {
     case 3: { // Gaussian blur: outer product of the corresponding Pascal row.
         std::vector<float> row(static_cast<std::size_t>(size), 1.0F);
         const int order = size - 1;
-        for (int index = 1; index < size; ++index) {
-            row[static_cast<std::size_t>(index)] =
-                row[static_cast<std::size_t>(index - 1)] *
-                static_cast<float>(order - index + 1) / static_cast<float>(index);
+        if (size <= 31) {
+            for (int index = 1; index < size; ++index) {
+                row[static_cast<std::size_t>(index)] =
+                    row[static_cast<std::size_t>(index - 1)] *
+                    static_cast<float>(order - index + 1) / static_cast<float>(index);
+            }
+        } else {
+            // Raw Pascal outer products overflow float at larger editable
+            // sizes. Relative normalized binomial weights preserve the same
+            // Gaussian kernel once Convolution normalizes it.
+            const float peak = std::lgamma(static_cast<float>(order + 1)) -
+                2.0F * std::lgamma(static_cast<float>(order / 2 + 1));
+            for (int index = 0; index < size; ++index) {
+                const float logCoefficient = std::lgamma(static_cast<float>(order + 1)) -
+                    std::lgamma(static_cast<float>(index + 1)) -
+                    std::lgamma(static_cast<float>(order - index + 1));
+                row[static_cast<std::size_t>(index)] = std::exp(logCoefficient - peak);
+            }
         }
         for (int y = 0; y < size; ++y) {
             for (int x = 0; x < size; ++x) {

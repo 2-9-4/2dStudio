@@ -39,6 +39,14 @@ TEST_CASE("resizing regenerates the active convolution preset") {
     REQUIRE(large[112] > large.front());
 }
 
+TEST_CASE("convolution presets support the GPU maximum kernel size") {
+    nlohmann::json parameters = {{"kernelSize", kMaximumKernelSize}};
+    apply(parameters, 3);
+    REQUIRE(kernelSize(parameters) == kMaximumKernelSize);
+    REQUIRE(parameters.at("kernel").size() ==
+            static_cast<std::size_t>(kMaximumKernelSize * kMaximumKernelSize));
+}
+
 TEST_CASE("size-aware convolution kernels preserve their filter invariants") {
     for (int size = kMinimumKernelSize; size <= kMaximumKernelSize; size += 2) {
         nlohmann::json parameters = {{"kernelSize", size}};
@@ -66,7 +74,7 @@ TEST_CASE("size-aware convolution kernels preserve their filter invariants") {
         apply(parameters, 6);
         kernel = values(parameters, size);
         REQUIRE(kernel[center] == 1.0F);
-        REQUIRE(std::accumulate(kernel.begin(), kernel.end(), 0.0F) ==
+        REQUIRE(std::accumulate(kernel.begin(), kernel.end(), 0.0) ==
                 Catch::Approx(1.0F).margin(0.0001F));
     }
 }

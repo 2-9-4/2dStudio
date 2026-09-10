@@ -1,8 +1,10 @@
 #include "reaction/core/graph.hpp"
+#include "reaction/core/math.hpp"
 #include "reaction/core/vector_math.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <functional>
 #include <queue>
 #include <unordered_map>
@@ -530,6 +532,106 @@ SubgraphDefinition floodFill() {
     return result;
 }
 
+nlohmann::json leniaKernel(int size = 15) {
+    nlohmann::json values = nlohmann::json::array();
+    const float radius = static_cast<float>(size / 2);
+    for (int y = -size / 2; y <= size / 2; ++y) {
+        for (int x = -size / 2; x <= size / 2; ++x) {
+            const float distance = std::sqrt(static_cast<float>(x * x + y * y)) / radius;
+            // A smooth annular kernel is the conventional compact Lenia seed.
+            const float ring = distance <= 1.0F
+                ? std::exp(-0.5F * std::pow((distance - 0.5F) / 0.15F, 2.0F)) : 0.0F;
+            values.push_back(ring);
+        }
+    }
+    return values;
+}
+
+SubgraphDefinition lenia() {
+    SubgraphDefinition result;
+    result.id = "builtin.lenia";
+    result.name = "Lenia";
+    result.category = "Simulation";
+    result.execution = SubgraphExecution::Simulation;
+    result.immutable = true;
+    result.stateSlots = {{"state", "State", ValueType::ScalarField}};
+    result.interface = {
+        {"initialState", "Initial State", SubgraphInterfaceKind::Input, ValueType::ScalarField},
+        {"kernelScale", "Kernel Radius / Scale", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 4.0F, 0.01F, 128.0F},
+        {"growthCenter", "Growth Center μ", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.15F, 0.0F, 1.0F},
+        {"growthWidth", "Growth Width σ", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.015F, 0.001F, 1.0F},
+        {"timeStep", "Time Step", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.1F, 0.0F, 2.0F},
+        {"reset", "Reset", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 1.0F, Control::Boolean},
+        {"state", "State", SubgraphInterfaceKind::Output, ValueType::ScalarField},
+    };
+
+    auto& body = result.body;
+    const auto initialInput = input(body, "initialState", "Initial State Input", {0, 120});
+    const auto initial = addNode(body, "simulation_initial_state", "Initial State", {250, 120},
+                                 {{"slot", 0.0F}});
+    link(body, initialInput, "value", initial, "value");
+
+    const auto previous = addNode(body, "simulation_previous_state", "Previous State", {0, 520},
+                                  {{"slot", 0.0F}});
+    const auto kernelScale = input(body, "kernelScale", "Kernel Radius / Scale", {240, 390});
+    // Kernel Size remains an editable structural control on this Convolution
+    // node; Kernel Scale is a live public input, so users can tune both.
+    const auto potential = addNode(body, "convolution", "Neighborhood Potential", {480, 520},
+        {{"kernelSize", 15.0F}, {"kernel", leniaKernel()}, {"normalize", 1.0F},
+         {"operation", 0.0F}, {"iterations", 1.0F}, {"scale", 4.0F}});
+    link(body, previous, "value", potential, "image");
+    link(body, kernelScale, "value", potential, "scale");
+
+    const auto growthCenter = input(body, "growthCenter", "Growth Center μ", {730, 320});
+    const auto centered = math(body, "Potential − μ", static_cast<int>(MathOperation::Subtract),
+                               {730, 520});
+    link(body, potential, "image", centered, "a");
+    link(body, growthCenter, "value", centered, "b");
+    const auto growthWidth = input(body, "growthWidth", "Growth Width σ", {970, 390});
+    const auto normalized = math(body, "(Potential − μ) / σ", static_cast<int>(MathOperation::Divide),
+                                 {970, 520});
+    link(body, centered, "result", normalized, "a");
+    link(body, growthWidth, "value", normalized, "b");
+    const auto squared = math(body, "Normalized Potential Squared", static_cast<int>(MathOperation::Power),
+                              {1210, 520}, {{"b", 2.0F}});
+    link(body, normalized, "result", squared, "a");
+    const auto exponent = math(body, "−0.5 × Squared", static_cast<int>(MathOperation::Multiply),
+                               {1450, 520}, {{"b", -0.5F}});
+    link(body, squared, "result", exponent, "a");
+    const auto bell = math(body, "Exp Growth Bell", static_cast<int>(MathOperation::Exp), {1690, 520});
+    link(body, exponent, "result", bell, "a");
+    const auto doubled = math(body, "2 × Exp Growth Bell", static_cast<int>(MathOperation::Multiply),
+                              {1930, 520}, {{"b", 2.0F}});
+    link(body, bell, "result", doubled, "a");
+    const auto growth = math(body, "Growth", static_cast<int>(MathOperation::Subtract),
+                             {2170, 520}, {{"b", 1.0F}});
+    link(body, doubled, "result", growth, "a");
+    const auto timeStep = input(body, "timeStep", "Time Step", {2170, 700});
+    const auto change = math(body, "Time Step × Growth", static_cast<int>(MathOperation::Multiply),
+                             {2410, 520});
+    link(body, timeStep, "value", change, "a");
+    link(body, growth, "result", change, "b");
+    const auto integrated = math(body, "Integrated State", static_cast<int>(MathOperation::Add),
+                                 {2650, 520});
+    link(body, previous, "value", integrated, "a");
+    link(body, change, "result", integrated, "b");
+    const auto clamped = math(body, "Clamp State", static_cast<int>(MathOperation::Clamp),
+                              {2890, 520}, {{"b", 0.0F}, {"c", 1.0F}});
+    link(body, integrated, "result", clamped, "a");
+    const auto next = addNode(body, "simulation_next_state", "Next State", {3130, 520},
+                              {{"slot", 0.0F}});
+    link(body, clamped, "result", next, "value");
+    const auto output = addNode(body, "subgraph_output", "State Output", {3370, 520},
+                                {{"key", "state"}});
+    link(body, next, "value", output, "value");
+    return result;
+}
+
 std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definition,
                                                const NodeRegistry& registry) {
     std::vector<std::string> errors;
@@ -796,7 +898,7 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
 
 const std::vector<SubgraphDefinition>& builtInSubgraphs() {
     static const std::vector<SubgraphDefinition> values{
-        discreteReaction(), genericCellularAutomata(), floodFill()};
+        discreteReaction(), genericCellularAutomata(), floodFill(), lenia()};
     return values;
 }
 

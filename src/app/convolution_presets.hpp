@@ -7,7 +7,8 @@
 namespace reaction::convolution_presets {
 
 constexpr int kMinimumKernelSize = 3;
-constexpr int kMaximumKernelSize = 15;
+// Keep this aligned with the GPU convolution specialization limit.
+constexpr int kMaximumKernelSize = 101;
 constexpr int kPresetCount = 9;
 
 const std::array<const char*, kPresetCount>& names();

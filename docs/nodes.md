@@ -66,6 +66,12 @@ submodes, and the special nodes available inside simulation subgraphs.
   - **Cosine** — Returns the cosine of A.
   - **Clamp** — Restricts A to the range B–C.
   - **Remap** — Remaps A from `Input Min`–`Input Max` to `Output Min`–`Output Max`.
+  - **Floor**, **Ceil**, **Round**, and **Fraction** — Discrete and fractional-value operations.
+  - **Square Root**, **Exp**, **Natural Log**, and **Log2** — Exponential and logarithmic operations.
+  - **Sign**, **Tangent**, **Arc Sine**, **Arc Cosine**, **Arc Tangent**, and **Arc Tangent 2** —
+    sign and trigonometric operations.
+  - **Modulo**, **Step**, **Hypotenuse**, **Smoothstep**, and **Multiply Accumulate** —
+    remaining utility operations.
 
 - **Vector Math** (`vector_math`) — Performs explicit 2D vector operations on a Vector or
   Vector Field. The active operation determines which sockets are visible: for example,
@@ -113,8 +119,8 @@ submodes, and the special nodes available inside simulation subgraphs.
 
 ### Filters and utilities
 
-- **Convolution** (`convolution`) — Applies a configurable 3x3 through 15x15 neighborhood
-  kernel, with optional weight normalization, bias, and repeated `Iterations`. Its
+- **Convolution** (`convolution`) — Applies a configurable 3x3 through 101x101 neighborhood
+  kernel, with optional weight normalization, bias, sampling `Scale`, and repeated `Iterations`. Its
   operation submodes are **Convolution** (weighted sum), **Erosion** (minimum over enabled
   kernel taps), and **Dilation** (maximum over enabled kernel taps). It accepts Any Field and
   preserves Scalar Field, Vector Field, or Color Image identity.
@@ -179,6 +185,14 @@ submodes, and the special nodes available inside simulation subgraphs.
   region, and **Seed Mask** starts it; an optional **Initial State** overrides the seed mask
   on reset. **Connectivity** selects 4- or 8-connected propagation, and **Reset** restarts the
   fill. Its **Region** output expands through passable pixels over successive simulation steps.
+
+- **Lenia** — An editable continuous scalar-state simulation. It convolves **State** through a
+  normalized editable radial kernel, then applies an exponential growth curve controlled by
+  **Growth Center μ** and **Growth Width σ**. **Kernel Radius / Scale** controls the kernel's
+  sampling radius, **Time Step** controls integration, and the clamped **State** output stays in
+  the 0–1 range. The default kernel is a 15×15 annular shape; its editable **Kernel size** and
+  live **Kernel Radius / Scale** control are intentionally separate, allowing both footprint and
+  sampling radius to be tuned.
 
 ## Simulation-subgraph-only nodes
 

@@ -241,6 +241,26 @@ TEST_CASE("flood fill lowers its four and eight-connected offset neighborhoods")
     REQUIRE_NOTHROW(gpu.compileCompute(update, "Flood Fill / update"));
 }
 
+TEST_CASE("Lenia lowers its normalized convolution and exponential growth") {
+    const auto definition = std::ranges::find_if(builtInSubgraphs(), [](const SubgraphDefinition& item) {
+        return item.id == "builtin.lenia";
+    });
+    REQUIRE(definition != builtInSubgraphs().end());
+    const auto initialization = generateSimulationShader(*definition, true);
+    const auto update = generateSimulationShader(*definition, false);
+    REQUIRE(initialization.find("in_initialState") != std::string::npos);
+    REQUIRE(update.find("in_kernelScale") != std::string::npos);
+    REQUIRE(update.find("in_growthCenter") != std::string::npos);
+    REQUIRE(update.find("in_growthWidth") != std::string::npos);
+    REQUIRE(update.find("in_timeStep") != std::string::npos);
+    REQUIRE(update.find("exp(") != std::string::npos);
+    REQUIRE(update.find("convolutionKernel") != std::string::npos);
+
+    HiddenContext context;
+    GpuRuntime gpu;
+    REQUIRE_NOTHROW(gpu.compileCompute(update, "Lenia / update"));
+}
+
 TEST_CASE("simulation shader uses the central widest-edge coercion") {
     NodeRegistry registry;
     registerBuiltInNodes(registry);
