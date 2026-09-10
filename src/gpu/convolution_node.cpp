@@ -146,7 +146,10 @@ public:
         // Helpers are emitted at global GLSL scope, where main's `uv` is not
         // visible. Keep the sampling coordinate explicit rather than relying
         // on a local in the generated entry point.
-        source << typeName << " convolutionKernel(ivec2 p,vec2 sampleUv){\n";
+        // `scale` may be an expression materialized in main (not a global
+        // uniform), especially when this node is lowered in a simulation.
+        // Pass it explicitly just like UV; helpers cannot capture main locals.
+        source << typeName << " convolutionKernel(ivec2 p,vec2 sampleUv,float kernelScale){\n";
 
         if (spec.operation == 0) {
             source << typeName << " sum=" << typeName << "(0.0);\n";
@@ -164,7 +167,7 @@ public:
                     if (weight == 0.0F) continue;
 
                     const auto coordinate = "clamp(sampleUv-vec2(" + std::to_string(x) + "," +
-                        std::to_string(y) + ")*pixelSize*" + scale.name +
+                        std::to_string(y) + ")*pixelSize*kernelScale" +
                         ",pixelSize*0.5,vec2(1.0)-pixelSize*0.5)";
                     const auto tap = context.inputSample("image", coordinate,
                         "image", 0.0F, true).name;
@@ -198,7 +201,7 @@ public:
                     if (weight == 0.0F) continue;
 
                     const auto coordinate = "clamp(sampleUv-vec2(" + std::to_string(x) + "," +
-                        std::to_string(y) + ")*pixelSize*" + scale.name +
+                        std::to_string(y) + ")*pixelSize*kernelScale" +
                         ",pixelSize*0.5,vec2(1.0)-pixelSize*0.5)";
                     const auto tap = context.inputSample("image", coordinate,
                         "image", 0.0F, true).name;
@@ -219,7 +222,7 @@ public:
         const auto helper =
             context.helper("convolutionKernel", source.str());
 
-        (void)context.emitTyped(helper + "(p,uv)", sourceType, "image");
+        (void)context.emitTyped(helper + "(p,uv," + scale.name + ")", sourceType, "image");
         return true;
     }
     void evaluate(EvaluationContext& context, std::span<const Value> inputs, std::span<Value> outputs) override {

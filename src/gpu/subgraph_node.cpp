@@ -87,13 +87,22 @@ public:
         }
         NodeDescriptor storage;
         if (const auto* descriptor = resolveSubgraphBodyDescriptor(
-                definition_, *frameNode, registry_, storage);
-            descriptor && std::ranges::any_of(descriptor->sockets,
+                definition_, *frameNode, registry_, storage); descriptor) {
+            const auto input = std::ranges::find_if(descriptor->sockets,
                 [&](const SocketDescriptor& candidate) {
-                    return candidate.direction == SocketDirection::Input &&
-                           candidate.key == socket && candidate.fieldDefault;
-                }))
-            return {ShaderValueType::Vec2, std::string(uvExpression), true};
+                    return candidate.direction == SocketDirection::Input && candidate.key == socket;
+                });
+            if (input != descriptor->sockets.end() && input->fieldDefault) {
+                if (!input->requiresImage)
+                    return {ShaderValueType::Vec2, std::string(uvExpression), true};
+                const auto type = componentCount(disconnectedType(input->contract)) == 4
+                    ? ShaderValueType::Vec4 : componentCount(disconnectedType(input->contract)) == 2
+                    ? ShaderValueType::Vec2 : ShaderValueType::Scalar;
+                const auto black = type == ShaderValueType::Vec4 ? "vec4(0.0,0.0,0.0,1.0)" :
+                    type == ShaderValueType::Vec2 ? "vec2(0.0)" : "0.0";
+                return {type, black, true};
+            }
+        }
         return parameter(parameterKey, fallback);
     }
 

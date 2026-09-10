@@ -255,10 +255,66 @@ TEST_CASE("Lenia lowers its normalized convolution and exponential growth") {
     REQUIRE(update.find("in_timeStep") != std::string::npos);
     REQUIRE(update.find("exp(") != std::string::npos);
     REQUIRE(update.find("convolutionKernel") != std::string::npos);
+    const auto mainAt = update.find("void main()");
+    REQUIRE(mainAt != std::string::npos);
+    // Generated helpers are global GLSL functions. They must not capture a
+    // materialized main-local such as Lenia's live kernel-scale input.
+    REQUIRE(update.substr(0, mainAt).find("v_") == std::string::npos);
 
     HiddenContext context;
     GpuRuntime gpu;
     REQUIRE_NOTHROW(gpu.compileCompute(update, "Lenia / update"));
+}
+
+TEST_CASE("every built-in simulation template lowers and compiles its default shaders") {
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    std::vector<std::pair<std::string, std::string>> shaders;
+    for (const auto& definition : builtInSubgraphs()) {
+        INFO(definition.name);
+        REQUIRE(validateSubgraph(definition, registry).empty());
+        const auto initialization = generateSimulationShader(definition, true);
+        const auto update = generateSimulationShader(definition, false);
+        REQUIRE(initialization.starts_with("#version 430"));
+        REQUIRE(update.starts_with("#version 430"));
+        shaders.emplace_back(definition.name + " / initialize", initialization);
+        shaders.emplace_back(definition.name + " / update", update);
+    }
+    HiddenContext context;
+    GpuRuntime gpu;
+    for (const auto& [label, source] : shaders) {
+        INFO(label);
+        REQUIRE_NOTHROW(gpu.compileCompute(source, label));
+    }
+}
+
+TEST_CASE("every lowerable built-in node generates from a basic field input") {
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    for (const auto* descriptor : registry.descriptors()) {
+        INFO(descriptor->type);
+        auto instance = registry.create(descriptor->type);
+        REQUIRE(instance != nullptr);
+        if (!descriptor->lowerable) continue;
+
+        Graph graph;
+        const auto source = graph.addNode("perlin");
+        const auto node = graph.addNode(descriptor->type);
+        for (const auto& socket : descriptor->sockets) {
+            if (socket.direction == SocketDirection::Input && socket.requiresImage)
+                graph.addLink(source, "image", node, socket.key);
+        }
+        const auto compiled = graph.compile(registry);
+        INFO(nlohmann::json(compiled.errors).dump());
+        REQUIRE(compiled.valid);
+        const auto regions = planShaderRegions(graph, registry, compiled, 16, 1024);
+        const auto region = std::ranges::find_if(regions, [&](const ShaderRegion& candidate) {
+            return std::ranges::find(candidate.nodes, node) != candidate.nodes.end();
+        });
+        REQUIRE(region != regions.end());
+        REQUIRE(region->diagnostic.empty());
+        REQUIRE_NOTHROW(generateComputeShader(*region, {region->nodes.back()}));
+    }
 }
 
 TEST_CASE("simulation shader uses the central widest-edge coercion") {
@@ -494,8 +550,8 @@ TEST_CASE("convolution fuses with clamp sampling and specializes") {
 
     const auto generated = generateComputeShader(regions[1], {threshold});
     REQUIRE(generated.source.find("convolutionKernel_") != std::string::npos);
-    REQUIRE(generated.source.find("ivec2 p,vec2 sampleUv") != std::string::npos);
-    REQUIRE(generated.source.find("convolutionKernel_2(p,uv)") != std::string::npos);
+    REQUIRE(generated.source.find("ivec2 p,vec2 sampleUv,float kernelScale") != std::string::npos);
+    REQUIRE(generated.source.find("convolutionKernel_2(p,uv,inputFloat_1)") != std::string::npos);
     REQUIRE(generated.source.find("pixelSize*0.5") != std::string::npos);
     REQUIRE(generated.source.find("texelFetch(") != std::string::npos);
     REQUIRE(generated.source.find("fract(") == std::string::npos);

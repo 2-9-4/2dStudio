@@ -165,6 +165,10 @@ Generated helpers are emitted outside `main`, so they cannot read `uv` or other 
 there. Pass per-pixel values explicitly through helper parameters; global uniforms and the global
 `pixelSize` value remain available after `main` initializes them.
 
+This applies equally to parameter expressions: a connected parameter can be materialized as a
+`main` local in simulation lowering. A helper that uses it must receive that expression as an
+explicit argument rather than capturing its generated `v_*` name.
+
 For a nearest field sample with Clamp behavior, clamp the normalized coordinate to texel centers
 (`pixelSize * 0.5` through `1.0 - pixelSize * 0.5`) before `inputSample`. Clamping only to `1.0`
 would form a texel index equal to the texture size and diverge from native clamp behavior.

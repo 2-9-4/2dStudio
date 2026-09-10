@@ -333,6 +333,7 @@ void GraphRuntime::rebuild() {
     }
     compiled_ = candidate;
     std::unordered_map<NodeId, std::unique_ptr<NodeInstance>> next;
+    std::unordered_map<NodeId, std::string> instantiationErrors;
     for (const auto& node : graph_.nodes()) {
         auto found = instances_.find(node.id);
         if (found != instances_.end() && node.type != "subgraph" &&
@@ -346,9 +347,16 @@ void GraphRuntime::rebuild() {
                     previous->second == signature) {
                     next.emplace(node.id, std::move(found->second));
                 } else {
-                    auto instance = createSubgraphInstance(*definition, registry_);
-                    pendingResets_.insert(node.id);
-                    next.emplace(node.id, std::move(instance));
+                    try {
+                        auto instance = createSubgraphInstance(*definition, registry_);
+                        pendingResets_.insert(node.id);
+                        next.emplace(node.id, std::move(instance));
+                    } catch (const std::exception& error) {
+                        // A simulation shader is generated when its instance is
+                        // created. Keep that failure local to this graph node so
+                        // the editor can render its existing red error state.
+                        instantiationErrors.emplace(node.id, error.what());
+                    }
                 }
                 subgraphSignatures_[node.id] = signature;
             }
@@ -377,7 +385,10 @@ void GraphRuntime::rebuild() {
         return !instances_.contains(item.first);
     });
     std::erase_if(pendingResets_, [&](NodeId id) { return !instances_.contains(id); });
-    std::erase_if(typeErrors_, [&](const auto& item) { return !instances_.contains(item.first); });
+    std::erase_if(typeErrors_, [&](const auto& item) {
+        return !graph_.findNode(item.first);
+    });
+    for (auto& [id, error] : instantiationErrors) typeErrors_[id] = std::move(error);
     std::erase_if(values_, [&](const auto& item) { return !instances_.contains(item.first); });
     for (auto it = timerQueries_.begin(); it != timerQueries_.end();) {
         if (!instances_.contains(it->first)) {
