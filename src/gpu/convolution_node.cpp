@@ -118,6 +118,9 @@ public:
         result.lowerable = true;
         result.neighborhoodSocket = "image";
         result.sockets[0].requiresImage = true;
+        // An unconnected convolution is a useful, valid black field. Once a
+        // source is connected it must still be a real field image.
+        result.sockets[0].fieldDefault = true;
         result.sockets[1].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
         result.sockets[1].typeInputs = {"image"};
         return result;

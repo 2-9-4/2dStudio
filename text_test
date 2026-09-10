@@ -1051,6 +1051,33 @@
       ],
       "type": "color_r",
       "typeVersion": 1
+    },
+    {
+      "id": 92,
+      "parameters": {
+        "bias": 0.0,
+        "kernel": [
+          0.0,
+          1.0,
+          0.0,
+          1.0,
+          1.0,
+          1.0,
+          0.0,
+          1.0,
+          0.0
+        ],
+        "kernelSize": 3,
+        "normalize": 0.0,
+        "operation": 2.0,
+        "preset": "Dilation"
+      },
+      "position": [
+        5582.0,
+        -253.0
+      ],
+      "type": "convolution",
+      "typeVersion": 1
     }
   ],
   "project": {
@@ -1073,6 +1100,7 @@
           "maximum": 1.0,
           "minimum": 0.0,
           "optional": true,
+          "options": [],
           "role": "",
           "type": "numeric"
         },
@@ -1085,6 +1113,7 @@
           "maximum": 1.0,
           "minimum": 0.0,
           "optional": true,
+          "options": [],
           "role": "",
           "type": "numeric"
         },
@@ -1097,6 +1126,7 @@
           "maximum": 1.0,
           "minimum": 0.0,
           "optional": true,
+          "options": [],
           "role": "",
           "type": "scalar_field"
         },
@@ -1109,6 +1139,7 @@
           "maximum": 0.10000000149011612,
           "minimum": 0.0,
           "optional": true,
+          "options": [],
           "role": "",
           "type": "float"
         },
@@ -1121,6 +1152,7 @@
           "maximum": 0.10000000149011612,
           "minimum": 0.0,
           "optional": true,
+          "options": [],
           "role": "",
           "type": "float"
         },
@@ -1133,6 +1165,7 @@
           "maximum": 2.0,
           "minimum": 0.0,
           "optional": true,
+          "options": [],
           "role": "",
           "type": "float"
         },
@@ -1145,6 +1178,7 @@
           "maximum": 2.0,
           "minimum": 0.0,
           "optional": true,
+          "options": [],
           "role": "",
           "type": "float"
         },
@@ -1157,6 +1191,7 @@
           "maximum": 8.0,
           "minimum": 0.25,
           "optional": true,
+          "options": [],
           "role": "",
           "type": "float"
         },
@@ -1169,6 +1204,7 @@
           "maximum": 2.0,
           "minimum": 0.009999999776482582,
           "optional": true,
+          "options": [],
           "role": "",
           "type": "float"
         },
@@ -1181,6 +1217,7 @@
           "maximum": 64.0,
           "minimum": 1.0,
           "optional": true,
+          "options": [],
           "role": "iterations",
           "type": "float"
         },
@@ -1193,6 +1230,7 @@
           "maximum": 1.0,
           "minimum": 0.0,
           "optional": true,
+          "options": [],
           "role": "autoReset",
           "type": "float"
         },
@@ -1205,6 +1243,7 @@
           "maximum": 1.0,
           "minimum": 0.0,
           "optional": false,
+          "options": [],
           "role": "",
           "type": "scalar_field"
         },
@@ -1217,6 +1256,7 @@
           "maximum": 1.0,
           "minimum": 0.0,
           "optional": false,
+          "options": [],
           "role": "",
           "type": "scalar_field"
         },
@@ -1229,6 +1269,7 @@
           "maximum": 1.0,
           "minimum": 0.0,
           "optional": false,
+          "options": [],
           "role": "",
           "type": "scalar_field"
         }

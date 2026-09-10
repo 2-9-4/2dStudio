@@ -191,6 +191,13 @@ public:
         if (link && regionNodes_.contains(link->fromNode))
             throw std::runtime_error("Neighborhood input crosses an in-region value");
         if (!link) {
+            if (socketFieldDefault(socket)) {
+                const auto semantic = compiled_.socketType(currentNode_->id, socket)
+                    .value_or(ValueType::ColorImage);
+                const auto type = shaderType(semantic);
+                nodeHasFieldDependency_ = true;
+                return {type, glslFallback(type, fallback), true};
+            }
             typedError("Input '" + std::string(socket) + "' requires a field image");
             return parameter(parameterKey, fallback);
         }
@@ -219,6 +226,13 @@ public:
         if (link && regionNodes_.contains(link->fromNode))
             throw std::runtime_error("Sampled input crosses an in-region value");
         if (!link) {
+            if (socketFieldDefault(socket)) {
+                const auto semantic = compiled_.socketType(currentNode_->id, socket)
+                    .value_or(ValueType::ColorImage);
+                const auto type = shaderType(semantic);
+                nodeHasFieldDependency_ = true;
+                return {type, glslFallback(type, fallback), true};
+            }
             typedError("Input '" + std::string(socket) + "' requires a field image");
             return parameter(parameterKey, fallback);
         }

@@ -187,6 +187,11 @@ coordinates diverge, causing the child control to appear away from its node. A l
 such as Convolution's kernel grid belongs in a deferred `node_widgets::PopupState` popup; the node
 body keeps only its compact launcher.
 
+An image-consuming node may opt into a generated field default with `fieldDefault` while retaining
+`requiresImage`: use this only when an omitted source has a defined field result (Convolution uses
+an opaque black Color Image). A connected constant remains invalid; arbitrary sampling still never
+pretends that a supplied constant is an image.
+
 Both canvases render the node box through the same `renderNodeBody` helper in `src/app/application.cpp`, so a node looks identical in the root graph and inside a subgraph: the descriptor title, pin columns, parameter rows, and per-node widget editors (Convolution kernel, Table values, Image picker, Color Ramp swatches) are one code path. Each canvas supplies the same shared editor utilities and only the root graph adds runtime inspection in the middle column — fusion status, live value/image previews, GPU timing, Reset Simulation, and the subgraph/output instance actions — because those are keyed to root-graph state that the simulation body does not own. `NodeRecord::label` is not a canvas title anywhere: it only labels generated-shader instructions in the Shader Inspector (and the Shader IR), matching root rendering. The subgraph canvas renders its records with the normal node-editor interactions: background-menu creation, pin-to-pin linking, replacement links, selection, deletion, movement, panning, and zooming.
 
 Only nodes that cross or define the simulation boundary need specialized descriptors: subgraph inputs and outputs and Initial/Previous/Next Simulation State. They are offered only in the simulation-subgraph add menu because they depend on the subgraph interface or its private RG16F feedback state. The body itself remains acyclic; Previous Simulation State is the controlled feedback boundary rather than a graph-level feedback edge.

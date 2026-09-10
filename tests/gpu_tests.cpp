@@ -512,6 +512,20 @@ TEST_CASE("convolution fuses with clamp sampling and specializes") {
     REQUIRE(normalized.source == originalSource);
 }
 
+TEST_CASE("unconnected convolution lowers to a black field") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph;
+    const auto convolution = graph.addNode("convolution");
+    const auto compiled = graph.compile(registry);
+    REQUIRE(compiled.valid);
+    REQUIRE(compiled.socketType(convolution, "image") == ValueType::ColorImage);
+    const auto regions = planShaderRegions(graph, registry, compiled, 16, 1024);
+    REQUIRE(regions.size() == 1);
+    REQUIRE(regions.front().diagnostic.empty());
+    const auto generated = generateComputeShader(regions.front(), {convolution});
+    REQUIRE(generated.source.find("vec4(0.000000,0.000000,0.000000,1.0)") != std::string::npos);
+}
+
 TEST_CASE("texture samplers lower arbitrary-coordinate source reads") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     const auto* textureSample = registry.descriptor("texture_sample");
