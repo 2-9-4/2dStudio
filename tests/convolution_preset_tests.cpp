@@ -142,7 +142,7 @@ TEST_CASE("morphology footprints are circular at every supported size") {
 
 TEST_CASE("Lenia Ring is normalized and regenerates when resized") {
     nlohmann::json parameters = {{"kernelSize", 15}};
-    apply(parameters, kLeniaRingPreset);
+    apply(parameters, kAnnularRingPreset);
     const auto small = values(parameters, 15);
     REQUIRE(parameters.at("preset") == "Lenia Ring");
     REQUIRE(parameters.at("normalize") == 1.0F);
@@ -152,7 +152,7 @@ TEST_CASE("Lenia Ring is normalized and regenerates when resized") {
 
     resize(parameters, 31);
     const auto large = values(parameters, 31);
-    REQUIRE(current(parameters) == kLeniaRingPreset);
+    REQUIRE(current(parameters) == kAnnularRingPreset);
     REQUIRE(large.size() == 31U * 31U);
     REQUIRE(large != small);
 }

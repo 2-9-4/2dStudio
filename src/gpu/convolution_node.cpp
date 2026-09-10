@@ -37,6 +37,8 @@ ConvolutionSpec convolutionSpec(const nlohmann::json& parameters) {
     spec.radius = spec.size / 2;
 
     spec.normalize = parameter(parameters, "normalize", 0) > 0.5F;
+    const float minimumKernelValue = std::max(
+        0.0F, parameter(parameters, "minimumKernelValue", 0.0F));
 
     spec.kernel[static_cast<std::size_t>(
         spec.radius * spec.size + spec.radius)] = 1.0F;
@@ -52,6 +54,13 @@ ConvolutionSpec convolutionSpec(const nlohmann::json& parameters) {
             if ((*it)[index].is_number())
                 spec.kernel[index] = (*it)[index].get<float>();
         }
+    }
+
+    // This deliberately changes the specialized shader: negligible taps are
+    // omitted entirely, trading approximation error for fewer texture reads.
+    for (int index = 0; index < spec.size * spec.size; ++index) {
+        auto& weight = spec.kernel[static_cast<std::size_t>(index)];
+        if (std::abs(weight) < minimumKernelValue) weight = 0.0F;
     }
 
     if (spec.operation == 0 && spec.normalize) {

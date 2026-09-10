@@ -98,6 +98,15 @@ bool renderConvolutionEditor(NodeRecord& node, PopupState& popup) {
         changed = true;
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Added to every output channel after convolution");
+    float minimumKernelValue = std::max(0.0F, parameters.value("minimumKernelValue", 0.0F));
+    ImGui::SetNextItemWidth(150);
+    if (ImGui::DragFloat("Minimum kernel value", &minimumKernelValue, 0.0001F, 0.0F, 1.0F,
+                         "%.5g", ImGuiSliderFlags_AlwaysClamp)) {
+        parameters["minimumKernelValue"] = minimumKernelValue;
+        changed = true;
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Taps with an absolute weight below this value are omitted from the shader");
     return changed;
 }
 

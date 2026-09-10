@@ -124,7 +124,9 @@ submodes, and the special nodes available inside simulation subgraphs.
   operation submodes are **Convolution** (weighted sum), **Erosion** (minimum over enabled
   kernel taps), and **Dilation** (maximum over enabled kernel taps). It accepts Any Field and
   preserves Scalar Field, Vector Field, or Color Image identity. The size-aware **Lenia Ring**
-  preset regenerates its normalized annular weights when Kernel Size changes.
+  preset regenerates its normalized annular weights when Kernel Size changes. **Minimum kernel
+  value** is a local slider (not a graph input): taps whose absolute weight is smaller are rounded
+  to zero before normalization and omitted from generated shaders.
 
   The preset menu provides:
 

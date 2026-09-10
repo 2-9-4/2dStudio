@@ -10,7 +10,7 @@ constexpr int kMinimumKernelSize = 3;
 // Keep this aligned with the GPU convolution specialization limit.
 constexpr int kMaximumKernelSize = 101;
 constexpr int kPresetCount = 10;
-constexpr int kLeniaRingPreset = 9;
+constexpr int kAnnularRingPreset = 9;
 
 const std::array<const char*, kPresetCount>& names();
 int kernelSize(const nlohmann::json& parameters);

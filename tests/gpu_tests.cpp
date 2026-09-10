@@ -582,6 +582,24 @@ TEST_CASE("unconnected convolution lowers to a black field") {
     REQUIRE(generated.source.find("vec4(0.000000,0.000000,0.000000,1.0)") != std::string::npos);
 }
 
+TEST_CASE("convolution minimum kernel value removes negligible taps") {
+    NodeRegistry registry; registerBuiltInNodes(registry);
+    Graph graph;
+    const auto source = graph.addNode("perlin");
+    const auto convolution = graph.addNode("convolution");
+    graph.findNode(convolution)->parameters = {
+        {"kernelSize", 3},
+        {"kernel", {0.05F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F}},
+        {"minimumKernelValue", 0.1F}};
+    graph.addLink(source, "image", convolution, "image");
+    const auto compiled = graph.compile(registry);
+    REQUIRE(compiled.valid);
+    const auto regions = planShaderRegions(graph, registry, compiled, 16, 1024);
+    const auto generated = generateComputeShader(regions.back(), {convolution});
+    REQUIRE(generated.source.find("*0.0500000007") == std::string::npos);
+    REQUIRE(generated.source.find("*1.0") != std::string::npos);
+}
+
 TEST_CASE("texture samplers lower arbitrary-coordinate source reads") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     const auto* textureSample = registry.descriptor("texture_sample");

@@ -584,7 +584,7 @@ SubgraphDefinition lenia() {
     const auto potential = addNode(body, "convolution", "Neighborhood Potential", {480, 520},
         {{"kernelSize", 15.0F}, {"kernel", leniaKernel()}, {"normalize", 1.0F},
          {"operation", 0.0F}, {"iterations", 1.0F}, {"scale", 4.0F},
-         {"preset", "Lenia Ring"}});
+         {"preset", "Annular Ring"}});
     link(body, previous, "value", potential, "image");
     link(body, kernelScale, "value", potential, "scale");
 
