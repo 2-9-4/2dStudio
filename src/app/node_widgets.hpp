@@ -20,6 +20,7 @@ enum class PopupKind {
     MathOperation,
     MixMode,
     ConvolutionPreset,
+    ConvolutionKernel,
     ParameterEnum,
 };
 

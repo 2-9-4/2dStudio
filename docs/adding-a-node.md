@@ -182,6 +182,11 @@ files containing `kind: "slider"` are migrated to these optional Float inputs on
 
 Editable simulation bodies support the registered Float, Math, Bit Test / Integer Mask, Threshold, Select, Canvas Coordinates, Laplacian, Table, and Convolution node types. `resolveSubgraphBodyDescriptor` returns their canonical registry descriptors, so their names, pins, parameters, widgets, and validation rules do not diverge from the root editor.
 
+Do not create an ImGui child window inside a node body: node-editor coordinates and child-window
+coordinates diverge, causing the child control to appear away from its node. A large custom editor
+such as Convolution's kernel grid belongs in a deferred `node_widgets::PopupState` popup; the node
+body keeps only its compact launcher.
+
 Both canvases render the node box through the same `renderNodeBody` helper in `src/app/application.cpp`, so a node looks identical in the root graph and inside a subgraph: the descriptor title, pin columns, parameter rows, and per-node widget editors (Convolution kernel, Table values, Image picker, Color Ramp swatches) are one code path. Each canvas supplies the same shared editor utilities and only the root graph adds runtime inspection in the middle column — fusion status, live value/image previews, GPU timing, Reset Simulation, and the subgraph/output instance actions — because those are keyed to root-graph state that the simulation body does not own. `NodeRecord::label` is not a canvas title anywhere: it only labels generated-shader instructions in the Shader Inspector (and the Shader IR), matching root rendering. The subgraph canvas renders its records with the normal node-editor interactions: background-menu creation, pin-to-pin linking, replacement links, selection, deletion, movement, panning, and zooming.
 
 Only nodes that cross or define the simulation boundary need specialized descriptors: subgraph inputs and outputs and Initial/Previous/Next Simulation State. They are offered only in the simulation-subgraph add menu because they depend on the subgraph interface or its private RG16F feedback state. The body itself remains acyclic; Previous Simulation State is the controlled feedback boundary rather than a graph-level feedback edge.

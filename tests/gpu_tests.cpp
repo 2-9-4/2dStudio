@@ -494,6 +494,9 @@ TEST_CASE("convolution fuses with clamp sampling and specializes") {
 
     const auto generated = generateComputeShader(regions[1], {threshold});
     REQUIRE(generated.source.find("convolutionKernel_") != std::string::npos);
+    REQUIRE(generated.source.find("ivec2 p,vec2 sampleUv") != std::string::npos);
+    REQUIRE(generated.source.find("convolutionKernel_2(p,uv)") != std::string::npos);
+    REQUIRE(generated.source.find("pixelSize*0.5") != std::string::npos);
     REQUIRE(generated.source.find("texelFetch(") != std::string::npos);
     REQUIRE(generated.source.find("fract(") == std::string::npos);
     REQUIRE(generated.source.find("operation") == std::string::npos);

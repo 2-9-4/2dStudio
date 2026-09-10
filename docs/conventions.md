@@ -161,6 +161,14 @@ to that node; it is never silently broadcast as a fake texture. Concrete boundar
 of a region specialization. The runtime re-lowers when a live value changes between constant,
 vector, field, and empty, while the generated-source cache reuses prior specializations.
 
+Generated helpers are emitted outside `main`, so they cannot read `uv` or other locals declared
+there. Pass per-pixel values explicitly through helper parameters; global uniforms and the global
+`pixelSize` value remain available after `main` initializes them.
+
+For a nearest field sample with Clamp behavior, clamp the normalized coordinate to texel centers
+(`pixelSize * 0.5` through `1.0 - pixelSize * 0.5`) before `inputSample`. Clamping only to `1.0`
+would form a texel index equal to the texture size and diverge from native clamp behavior.
+
 ## Float-backed integer data
 
 Graph values are floats. Discrete lookup inputs that are not already integer controls use

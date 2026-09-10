@@ -17,6 +17,7 @@ constexpr const char* popupName(PopupKind kind) {
     case PopupKind::MathOperation: return "Math operation";
     case PopupKind::MixMode: return "Mix mode";
     case PopupKind::ConvolutionPreset: return "Convolution preset";
+    case PopupKind::ConvolutionKernel: return "Convolution kernel";
     case PopupKind::ParameterEnum: return "Parameter enum";
     case PopupKind::None: return "";
     }
@@ -83,29 +84,8 @@ bool renderConvolutionEditor(NodeRecord& node, PopupState& popup) {
     }
     ImGui::SameLine();
     ImGui::Text("%d x %d", size, size);
-    auto values = convolution_presets::values(parameters, size);
-    ImGui::TextUnformatted("Kernel (center is the current pixel)");
-    // Large supported kernels remain editable without turning the entire node
-    // body into a several-thousand-row control list.
-    const float kernelHeight = std::min(260.0F, static_cast<float>(size) * 24.0F);
-    ImGui::BeginChild("Kernel weights", ImVec2(0.0F, kernelHeight), true,
-                      ImGuiWindowFlags_HorizontalScrollbar);
-    for (int y = 0; y < size; ++y) {
-        for (int x = 0; x < size; ++x) {
-            if (x > 0) ImGui::SameLine(0, 2);
-            const auto index = static_cast<std::size_t>(y * size + x);
-            ImGui::PushID(static_cast<int>(index));
-            ImGui::SetNextItemWidth(30);
-            if (ImGui::DragFloat("##weight", &values[index], 0.02F, -100.0F, 100.0F, "%.2g")) {
-                convolution_presets::write(parameters, values, size);
-                parameters["preset"] = "Custom";
-                parameters["operation"] = 0.0F;
-                changed = true;
-            }
-            ImGui::PopID();
-        }
-    }
-    ImGui::EndChild();
+    if (ImGui::Button("Edit kernel…", ImVec2(150, 0)))
+        popup.request(PopupKind::ConvolutionKernel, node.id);
     bool normalize = parameters.value("normalize", 0.0F) > 0.5F;
     if (ImGui::Checkbox("Normalize weights", &normalize)) {
         parameters["normalize"] = normalize ? 1.0F : 0.0F;
@@ -245,6 +225,36 @@ bool renderPopup(PopupState& popup, GraphBody& graph) {
                     convolution_presets::apply(node->parameters, preset);
                     changed = true;
                 }
+            }
+        } else if (popup.kind == PopupKind::ConvolutionKernel) {
+            if (node->type != "convolution") {
+                ImGui::CloseCurrentPopup();
+            } else {
+                auto& parameters = node->parameters;
+                const int size = convolution_presets::kernelSize(parameters);
+                auto values = convolution_presets::values(parameters, size);
+                ImGui::Text("%d x %d kernel (center is the current pixel)", size, size);
+                constexpr float editorWidth = 760.0F;
+                const float editorHeight = std::min(560.0F, static_cast<float>(size) * 28.0F);
+                ImGui::BeginChild("Kernel weights", ImVec2(editorWidth, editorHeight), true,
+                                  ImGuiWindowFlags_HorizontalScrollbar);
+                for (int y = 0; y < size; ++y) {
+                    for (int x = 0; x < size; ++x) {
+                        if (x > 0) ImGui::SameLine(0, 2);
+                        const auto index = static_cast<std::size_t>(y * size + x);
+                        ImGui::PushID(static_cast<int>(index));
+                        ImGui::SetNextItemWidth(42);
+                        if (ImGui::DragFloat("##weight", &values[index], 0.02F,
+                                             -100.0F, 100.0F, "%.2g")) {
+                            convolution_presets::write(parameters, values, size);
+                            parameters["preset"] = "Custom";
+                            parameters["operation"] = 0.0F;
+                            changed = true;
+                        }
+                        ImGui::PopID();
+                    }
+                }
+                ImGui::EndChild();
             }
         } else if (popup.kind == PopupKind::ParameterEnum) {
             const int current = std::clamp(

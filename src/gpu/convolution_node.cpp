@@ -140,7 +140,10 @@ public:
         const auto typeName = glslType(sourceType);
 
         std::ostringstream source;
-        source << typeName << " convolutionKernel(ivec2 p){\n";
+        // Helpers are emitted at global GLSL scope, where main's `uv` is not
+        // visible. Keep the sampling coordinate explicit rather than relying
+        // on a local in the generated entry point.
+        source << typeName << " convolutionKernel(ivec2 p,vec2 sampleUv){\n";
 
         if (spec.operation == 0) {
             source << typeName << " sum=" << typeName << "(0.0);\n";
@@ -157,8 +160,9 @@ public:
                     // Don't emit zero-weight texture accesses at all.
                     if (weight == 0.0F) continue;
 
-                    const auto coordinate = "uv-vec2(" + std::to_string(x) + "," +
-                        std::to_string(y) + ")*pixelSize*" + scale.name;
+                    const auto coordinate = "clamp(sampleUv-vec2(" + std::to_string(x) + "," +
+                        std::to_string(y) + ")*pixelSize*" + scale.name +
+                        ",pixelSize*0.5,vec2(1.0)-pixelSize*0.5)";
                     const auto tap = context.inputSample("image", coordinate,
                         "image", 0.0F, true).name;
 
@@ -190,8 +194,9 @@ public:
                     // For morphology, the kernel is just an enabled/disabled mask.
                     if (weight == 0.0F) continue;
 
-                    const auto coordinate = "uv-vec2(" + std::to_string(x) + "," +
-                        std::to_string(y) + ")*pixelSize*" + scale.name;
+                    const auto coordinate = "clamp(sampleUv-vec2(" + std::to_string(x) + "," +
+                        std::to_string(y) + ")*pixelSize*" + scale.name +
+                        ",pixelSize*0.5,vec2(1.0)-pixelSize*0.5)";
                     const auto tap = context.inputSample("image", coordinate,
                         "image", 0.0F, true).name;
 
@@ -211,7 +216,7 @@ public:
         const auto helper =
             context.helper("convolutionKernel", source.str());
 
-        (void)context.emitTyped(helper + "(p)", sourceType, "image");
+        (void)context.emitTyped(helper + "(p,uv)", sourceType, "image");
         return true;
     }
     void evaluate(EvaluationContext& context, std::span<const Value> inputs, std::span<Value> outputs) override {
