@@ -144,7 +144,7 @@ TEST_CASE("Lenia Ring is normalized and regenerates when resized") {
     nlohmann::json parameters = {{"kernelSize", 15}};
     apply(parameters, kAnnularRingPreset);
     const auto small = values(parameters, 15);
-    REQUIRE(parameters.at("preset") == "Lenia Ring");
+    REQUIRE(parameters.at("preset") == "Annular Ring");
     REQUIRE(parameters.at("normalize") == 1.0F);
     REQUIRE(parameters.at("operation") == 0.0F);
     REQUIRE(small[7 * 15 + 7] > 0.0F);

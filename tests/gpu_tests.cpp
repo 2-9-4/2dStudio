@@ -241,6 +241,24 @@ TEST_CASE("flood fill lowers its four and eight-connected offset neighborhoods")
     REQUIRE_NOTHROW(gpu.compileCompute(update, "Flood Fill / update"));
 }
 
+TEST_CASE("skeletonization lowers its alternating Zhang-Suen neighborhood passes") {
+    const auto definition = std::ranges::find_if(builtInSubgraphs(), [](const SubgraphDefinition& item) {
+        return item.id == "builtin.skeletonization";
+    });
+    REQUIRE(definition != builtInSubgraphs().end());
+    const auto initialization = generateSimulationShader(*definition, true);
+    const auto update = generateSimulationShader(*definition, false);
+    REQUIRE(initialization.find("in_initialState") != std::string::npos);
+    REQUIRE(update.find("in_iterations") == std::string::npos);
+    REQUIRE(std::ranges::count(definition->body.nodes(), "state_input_sample_offset",
+                               &NodeRecord::type) == 8);
+    REQUIRE(update.find("texture(") != std::string::npos);
+
+    HiddenContext context;
+    GpuRuntime gpu;
+    REQUIRE_NOTHROW(gpu.compileCompute(update, "Skeletonization / update"));
+}
+
 TEST_CASE("distance from nearest white pixel lowers its Euclidean seed propagation") {
     const auto definition = std::ranges::find_if(builtInSubgraphs(), [](const SubgraphDefinition& item) {
         return item.id == "builtin.distance_from_nearest_white_pixel";

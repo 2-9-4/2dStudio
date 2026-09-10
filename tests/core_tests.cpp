@@ -594,6 +594,41 @@ TEST_CASE("flood fill is an editable scalar region simulation") {
                                &NodeRecord::type) == 8);
 }
 
+TEST_CASE("skeletonization is an editable Zhang-Suen thinning simulation") {
+    auto nodes = registry();
+    NodeDescriptor offsetSample{"state_input_sample_offset", 1,
+        "State/Input Sample at Offset", "Coordinates",
+        {{"source", "Source", SocketContract::AnyField, SocketDirection::Input},
+         {"offset", "Offset Pixels", SocketContract::VectorNumeric, SocketDirection::Input, true},
+         {"sampled", "Sampled", SocketContract::AnyField, SocketDirection::Output}}, {}};
+    offsetSample.sockets[0].requiresImage = true;
+    offsetSample.sockets[2].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+    offsetSample.sockets[2].typeInputs = {"source"};
+    offsetSample.neighborhoodSocket = "source";
+    offsetSample.lowerable = true;
+    add(nodes, std::move(offsetSample));
+
+    const auto builtIn = std::ranges::find_if(builtInSubgraphs(), [](const SubgraphDefinition& definition) {
+        return definition.id == "builtin.skeletonization";
+    });
+    REQUIRE(builtIn != builtInSubgraphs().end());
+    const auto errors = validateSubgraph(*builtIn, nodes);
+    INFO(nlohmann::json(errors).dump());
+    REQUIRE(errors.empty());
+
+    const auto descriptor = describeSubgraph(*builtIn);
+    REQUIRE(descriptor.stateful);
+    REQUIRE(descriptor.sockets.size() == 4);
+    REQUIRE(descriptor.sockets[0].key == "initialState");
+    REQUIRE(descriptor.sockets[1].key == "iterations");
+    REQUIRE(descriptor.sockets[3].key == "skeleton");
+    REQUIRE(builtIn->stateSlots.size() == 2);
+    REQUIRE(builtIn->stateSlots[0].type == ValueType::ScalarField);
+    REQUIRE(builtIn->stateSlots[1].key == "phase");
+    REQUIRE(std::ranges::count(builtIn->body.nodes(), "state_input_sample_offset",
+                               &NodeRecord::type) == 8);
+}
+
 TEST_CASE("distance from nearest white pixel is an editable Euclidean distance simulation") {
     auto nodes = registry();
     NodeDescriptor offsetSample{"state_input_sample_offset", 1,
@@ -664,7 +699,7 @@ TEST_CASE("Lenia is an editable scalar growth simulation") {
     REQUIRE(kernel != builtIn->body.nodes().end());
     REQUIRE(kernel->parameters["kernelSize"] == 15.0F);
     REQUIRE(kernel->parameters["kernel"].size() == 225);
-    REQUIRE(kernel->parameters["preset"] == "Lenia Ring");
+    REQUIRE(kernel->parameters["preset"] == "Annular Ring");
     REQUIRE(std::ranges::any_of(builtIn->body.nodes(), [](const NodeRecord& node) {
         return node.type == "math" && node.parameters.value("operation", -1.0F) ==
             static_cast<float>(MathOperation::Exp);

@@ -189,6 +189,13 @@ submodes, and the special nodes available inside simulation subgraphs.
   on reset. **Connectivity** selects 4- or 8-connected propagation, and **Reset** restarts the
   fill. Its **Region** output expands through passable pixels over successive simulation steps.
 
+- **Skeletonization (Zhang-Suen)** — An editable binary-image thinning simulation. It thresholds
+  **Initial Binary Image** at 0.5, then applies alternating Zhang-Suen sub-passes to preserve
+  connected strokes while removing their interior. **Iterations Per Step** controls how many
+  thinning sub-passes run per frame; use an even value to complete matching pairs in one frame,
+  although the internal phase is preserved correctly for odd values. Pixels outside the canvas
+  are treated as background. Its **Skeleton** output is a Scalar Field of 0 or 1.
+
 - **Lenia** — An editable continuous scalar-state simulation. It convolves **State** through a
   normalized editable **Lenia Ring** kernel preset, then applies an exponential growth curve controlled by
   **Growth Center μ** and **Growth Width σ**. **Kernel Radius / Scale** controls the kernel's

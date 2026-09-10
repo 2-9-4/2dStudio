@@ -4110,7 +4110,7 @@
             "minimumKernelValue": 0.7347000241279602,
             "normalize": 1.0,
             "operation": 0.0,
-            "preset": "Lenia Ring",
+            "preset": "Annular Ring",
             "scale": 4.0
           },
           "position": [

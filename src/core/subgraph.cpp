@@ -7,6 +7,7 @@
 #include <cmath>
 #include <functional>
 #include <queue>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -532,6 +533,176 @@ SubgraphDefinition floodFill() {
     return result;
 }
 
+SubgraphDefinition skeletonization() {
+    SubgraphDefinition result;
+    result.id = "builtin.skeletonization";
+    result.name = "Skeletonization (Zhang-Suen)";
+    result.category = "Simulation";
+    result.execution = SubgraphExecution::Simulation;
+    result.immutable = true;
+    // The second slot persists the alternating Zhang-Suen sub-pass.  Keeping
+    // it in state, rather than deriving it from the per-frame iteration index,
+    // makes an odd number of iterations per step correct too.
+    result.stateSlots = {
+        {"image", "Binary Image", ValueType::ScalarField},
+        {"phase", "Thinning Phase", ValueType::ScalarField},
+    };
+    result.interface = {
+        {"initialState", "Initial Binary Image", SubgraphInterfaceKind::Input,
+         ValueType::ScalarField},
+        {"iterations", "Iterations Per Step", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 2.0F, 1.0F, 64.0F, Control::Integer, "iterations"},
+        {"reset", "Reset", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 1.0F, Control::Boolean},
+        {"skeleton", "Skeleton", SubgraphInterfaceKind::Output, ValueType::ScalarField},
+    };
+
+    auto& body = result.body;
+    const auto initialInput = input(body, "initialState", "Initial Binary Image", {0, 80});
+    const auto initialBinary = addNode(body, "threshold", "Binarize Initial Image", {240, 80},
+                                       {{"threshold", 0.5F}});
+    link(body, initialInput, "value", initialBinary, "value");
+    const auto initialImage = addNode(body, "simulation_initial_state", "Initial Binary Image",
+                                      {500, 80}, {{"slot", 0.0F}});
+    link(body, initialBinary, "result", initialImage, "value");
+    // Materialize a zero field from the binary image because state endpoints
+    // deliberately accept fields, not uniform Float constants.
+    const auto initialPhaseValue = math(body, "Initial Thinning Phase", 2, {240, 220},
+                                        {{"b", 0.0F}});
+    link(body, initialBinary, "result", initialPhaseValue, "a");
+    const auto initialPhase = addNode(body, "simulation_initial_state", "Initial Phase",
+                                      {500, 220}, {{"slot", 1.0F}});
+    link(body, initialPhaseValue, "result", initialPhase, "value");
+
+    const auto previous = addNode(body, "simulation_previous_state", "Previous Binary Image",
+                                  {0, 560}, {{"slot", 0.0F}});
+    const auto previousPhase = addNode(body, "simulation_previous_state", "Previous Thinning Phase",
+                                       {0, 1660}, {{"slot", 1.0F}});
+    const auto binary = addNode(body, "threshold", "Binary Current Pixel", {240, 560},
+                                {{"threshold", 0.5F}});
+    link(body, previous, "value", binary, "value");
+
+    // P2..P9 are the clockwise 8-neighborhood used by the Zhang-Suen rules.
+    const std::array<std::tuple<const char*, const char*, Vec2>, 8> neighbors{{
+        {"P2", "North", {0.0F, -1.0F}}, {"P3", "Northeast", {1.0F, -1.0F}},
+        {"P4", "East", {1.0F, 0.0F}}, {"P5", "Southeast", {1.0F, 1.0F}},
+        {"P6", "South", {0.0F, 1.0F}}, {"P7", "Southwest", {-1.0F, 1.0F}},
+        {"P8", "West", {-1.0F, 0.0F}}, {"P9", "Northwest", {-1.0F, -1.0F}},
+    }};
+    std::array<NodeId, 8> samples{};
+    for (std::size_t index = 0; index < neighbors.size(); ++index) {
+        const auto& [key, direction, offsetValue] = neighbors[index];
+        const auto offset = vector(body, std::string(direction) + " Offset",
+                                   {220, 700.0F + static_cast<float>(index) * 120.0F},
+                                   offsetValue.x, offsetValue.y);
+        samples[index] = addNode(body, "state_input_sample_offset",
+            std::string(key) + " " + direction + " Neighbor",
+            {460, 700.0F + static_cast<float>(index) * 120.0F},
+            {{"sampling", 0.0F}, {"addressMode", 3.0F}});
+        link(body, previous, "value", samples[index], "source");
+        link(body, offset, "value", samples[index], "offset");
+    }
+
+    const auto add = [&](NodeId left, std::string_view leftSocket, NodeId right,
+                         std::string_view rightSocket, std::string label, Vec2 position) {
+        const auto node = math(body, std::move(label), static_cast<int>(MathOperation::Add), position);
+        link(body, left, std::string(leftSocket), node, "a");
+        link(body, right, std::string(rightSocket), node, "b");
+        return node;
+    };
+    const auto multiply = [&](NodeId left, std::string_view leftSocket, NodeId right,
+                              std::string_view rightSocket, std::string label, Vec2 position) {
+        const auto node = math(body, std::move(label), static_cast<int>(MathOperation::Multiply), position);
+        link(body, left, std::string(leftSocket), node, "a");
+        link(body, right, std::string(rightSocket), node, "b");
+        return node;
+    };
+    const auto inverse = [&](NodeId value, std::string_view valueSocket, std::string label, Vec2 position) {
+        const auto node = math(body, std::move(label), static_cast<int>(MathOperation::Subtract),
+                               position, {{"a", 1.0F}});
+        link(body, value, std::string(valueSocket), node, "b");
+        return node;
+    };
+    const auto atLeast = [&](NodeId value, std::string_view valueSocket, float limit,
+                             std::string label, Vec2 position) {
+        const auto node = math(body, std::move(label), static_cast<int>(MathOperation::Step),
+                               position, {{"a", limit}});
+        link(body, value, std::string(valueSocket), node, "b");
+        return node;
+    };
+
+    NodeId neighborCount = samples[0];
+    for (std::size_t index = 1; index < samples.size(); ++index)
+        neighborCount = add(neighborCount, index == 1 ? "sampled" : "result", samples[index], "sampled",
+                            "Neighbor Count", {700, 700.0F + static_cast<float>(index) * 95.0F});
+    const auto atLeastTwo = atLeast(neighborCount, "result", 2.0F, "At Least Two Neighbors", {940, 760});
+    const auto moreThanSix = atLeast(neighborCount, "result", 6.5F, "More Than Six Neighbors", {940, 900});
+    const auto atMostSix = inverse(moreThanSix, "result", "At Most Six Neighbors", {1180, 900});
+    const auto validNeighborCount = multiply(atLeastTwo, "result", atMostSix, "result",
+                                             "Two Through Six Neighbors", {1420, 820});
+
+    NodeId transitions = 0;
+    for (std::size_t index = 0; index < samples.size(); ++index) {
+        const auto next = (index + 1) % samples.size();
+        const auto off = inverse(samples[index], "sampled", std::string("Not ") + std::get<0>(neighbors[index]),
+                                 {700, 1780.0F + static_cast<float>(index) * 110.0F});
+        const auto transition = multiply(off, "result", samples[next], "sampled",
+                                         std::string("Transition ") + std::get<0>(neighbors[index]) +
+                                             " to " + std::get<0>(neighbors[next]),
+                                         {940, 1780.0F + static_cast<float>(index) * 110.0F});
+        transitions = index == 0 ? transition : add(transitions, "result", transition, "result",
+            "0-to-1 Transition Count", {1180, 1780.0F + static_cast<float>(index) * 110.0F});
+    }
+    const auto hasTransition = atLeast(transitions, "result", 0.5F, "Has One Transition", {1420, 2100});
+    const auto multipleTransitions = atLeast(transitions, "result", 1.5F, "Has Multiple Transitions", {1420, 2220});
+    const auto oneTransition = inverse(multipleTransitions, "result", "Exactly One Transition", {1660, 2220});
+    const auto validTransitions = multiply(hasTransition, "result", oneTransition, "result",
+                                           "One 0-to-1 Transition", {1900, 2160});
+
+    const auto triple = [&](std::size_t first, std::size_t second, std::size_t third,
+                            std::string label, Vec2 position) {
+        const auto pair = multiply(samples[first], "sampled", samples[second], "sampled",
+                                   label + " Pair", position);
+        return multiply(pair, "result", samples[third], "sampled", std::move(label),
+                        {position.x + 240.0F, position.y});
+    };
+    const auto phase0A = inverse(triple(0, 2, 4, "P2 P4 P6", {2140, 740}), "result",
+                                 "Phase 1: P2 P4 P6 Has Background", {2620, 740});
+    const auto phase0B = inverse(triple(2, 4, 6, "P4 P6 P8", {2140, 900}), "result",
+                                 "Phase 1: P4 P6 P8 Has Background", {2620, 900});
+    const auto phase0 = multiply(phase0A, "result", phase0B, "result", "Phase 1 Conditions", {2860, 820});
+    const auto phase1A = inverse(triple(0, 2, 6, "P2 P4 P8", {2140, 1080}), "result",
+                                 "Phase 2: P2 P4 P8 Has Background", {2620, 1080});
+    const auto phase1B = inverse(triple(0, 4, 6, "P2 P6 P8", {2140, 1240}), "result",
+                                 "Phase 2: P2 P6 P8 Has Background", {2620, 1240});
+    const auto phase1 = multiply(phase1A, "result", phase1B, "result", "Phase 2 Conditions", {2860, 1160});
+    const auto phaseConditions = addNode(body, "select", "Alternating Phase Conditions", {3100, 980});
+    link(body, previousPhase, "value", phaseConditions, "condition");
+    link(body, phase1, "result", phaseConditions, "ifTrue");
+    link(body, phase0, "result", phaseConditions, "ifFalse");
+    const auto preliminary = multiply(validNeighborCount, "result", validTransitions, "result",
+                                      "Topology-Preserving Candidate", {2140, 2160});
+    const auto candidate = multiply(preliminary, "result", phaseConditions, "result",
+                                    "Phase Deletion Candidate", {3340, 1420});
+    const auto deletePixel = multiply(binary, "result", candidate, "result", "Delete Pixel", {3580, 1420});
+    const auto nextImageValue = math(body, "Skeleton After Sub-pass", static_cast<int>(MathOperation::Subtract),
+                                     {3820, 1420});
+    link(body, binary, "result", nextImageValue, "a");
+    link(body, deletePixel, "result", nextImageValue, "b");
+    const auto nextImage = addNode(body, "simulation_next_state", "Next Skeleton", {4060, 1420},
+                                   {{"slot", 0.0F}});
+    link(body, nextImageValue, "result", nextImage, "value");
+    const auto output = addNode(body, "subgraph_output", "Skeleton Output", {4300, 1420},
+                                {{"key", "skeleton"}});
+    link(body, nextImage, "value", output, "value");
+
+    const auto nextPhaseValue = inverse(previousPhase, "value", "Alternate Thinning Phase", {2640, 1600});
+    const auto nextPhase = addNode(body, "simulation_next_state", "Next Thinning Phase", {2880, 1600},
+                                   {{"slot", 1.0F}});
+    link(body, nextPhaseValue, "result", nextPhase, "value");
+    return result;
+}
+
 SubgraphDefinition distanceFromNearestWhitePixel() {
     SubgraphDefinition result;
     result.id = "builtin.distance_from_nearest_white_pixel";
@@ -1024,7 +1195,7 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
 const std::vector<SubgraphDefinition>& builtInSubgraphs() {
     static const std::vector<SubgraphDefinition> values{
         discreteReaction(), genericCellularAutomata(), floodFill(),
-        distanceFromNearestWhitePixel(), lenia()};
+        skeletonization(), distanceFromNearestWhitePixel(), lenia()};
     return values;
 }
 
