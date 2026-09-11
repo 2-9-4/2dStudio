@@ -827,6 +827,116 @@ SubgraphDefinition distanceFromNearestWhitePixel() {
     return result;
 }
 
+// The native SDF Generator uses jump flooding; this template intentionally
+// keeps the slower one-pixel propagation visible and editable.  It is useful
+// for learning and for rules that want to intervene in either seed flow.
+SubgraphDefinition sdfGenerator() {
+    SubgraphDefinition result;
+    result.id = "builtin.sdf_generator";
+    result.name = "SDF Generator";
+    result.category = "Simulation";
+    result.execution = SubgraphExecution::Simulation;
+    result.immutable = true;
+    result.stateSlots = {{"foregroundSeed", "Nearest Foreground", ValueType::VectorField},
+                         {"backgroundSeed", "Nearest Background", ValueType::VectorField},
+                         {"distance", "Signed Distance", ValueType::ScalarField}};
+    result.interface = {
+        {"mask", "Mask", SubgraphInterfaceKind::Input, ValueType::ScalarField},
+        {"threshold", "Threshold", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, .5F, 0.F, 1.F},
+        {"iterations", "Iterations per Frame", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 16.F, 1.F, 64.F, Control::Integer},
+        {"reset", "Reset", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.F, 0.F, 1.F, Control::Boolean},
+        {"distance", "Signed Distance (Pixels)", SubgraphInterfaceKind::Output,
+         ValueType::ScalarField},
+    };
+    auto& body = result.body;
+    const auto mask = input(body, "mask", "Mask", {0, 100});
+    const auto thresholdInput = input(body, "threshold", "Threshold", {0, 240});
+    const auto foreground = addNode(body, "threshold", "Foreground", {240, 100});
+    link(body, mask, "value", foreground, "value");
+    link(body, thresholdInput, "value", foreground, "threshold");
+    const auto background = math(body, "Background", static_cast<int>(MathOperation::Subtract),
+                                 {480, 100}, {{"a", 1.0F}});
+    link(body, foreground, "result", background, "b");
+    const auto coordinates = addNode(body, "coordinates", "Pixel Coordinates", {240, 400},
+                                     {{"pixels", 1.0F}});
+    const auto iteration = addNode(body, "simulation_iteration_info", "Jump Flood Step", {240, 680});
+    const auto remaining = math(body, "Remaining Jump Passes", static_cast<int>(MathOperation::Subtract),
+                                {480, 680});
+    link(body, iteration, "iterationCount", remaining, "a");
+    link(body, iteration, "iterationIndex", remaining, "b");
+    const auto exponent = math(body, "Jump Exponent", static_cast<int>(MathOperation::Subtract),
+                               {720, 680}, {{"b", 1.0F}});
+    link(body, remaining, "result", exponent, "a");
+    const auto jump = math(body, "Jump Distance (Pixels)", static_cast<int>(MathOperation::Power),
+                           {960, 680}, {{"a", 2.0F}});
+    link(body, exponent, "result", jump, "b");
+    const auto sentinel = vector(body, "No Seed", {240, 540}, -65504.F, -65504.F);
+    const auto initialDistance = addNode(body, "simulation_initial_state", "Initial Distance",
+                                         {500, 540}, {{"slot", 2.0F}});
+    // Initial values are only presented during reset; the first update replaces
+    // this with the freshly propagated signed distance.
+    link(body, foreground, "result", initialDistance, "value");
+    (void)addNode(body, "simulation_previous_state", "Previous Signed Distance",
+                  {0, 3240}, {{"slot", 2.0F}});
+    const std::array<std::pair<const char*, Vec2>, 8> offsets{{
+        {"N", {0.F,-1.F}}, {"S", {0.F,1.F}}, {"W", {-1.F,0.F}}, {"E", {1.F,0.F}},
+        {"NW", {-1.F,-1.F}}, {"NE", {1.F,-1.F}}, {"SW", {-1.F,1.F}}, {"SE", {1.F,1.F}},
+    }};
+    const auto makeSeedFlow = [&](NodeId membership, int slot, std::string prefix, float y) {
+        const auto initial = addNode(body, "select", prefix + " Initial Seed", {500, y});
+        link(body, membership, "result", initial, "condition");
+        link(body, coordinates, "coordinates", initial, "ifTrue");
+        link(body, sentinel, "value", initial, "ifFalse");
+        const auto initialState = addNode(body, "simulation_initial_state", prefix + " Initial State",
+                                          {740, y}, {{"slot", static_cast<float>(slot)}});
+        link(body, initial, "result", initialState, "value");
+        const auto previous = addNode(body, "simulation_previous_state", prefix + " Previous",
+                                      {0, y + 680.F}, {{"slot", static_cast<float>(slot)}});
+        NodeId best = previous;
+        std::string bestSocket = "value";
+        for (std::size_t i = 0; i < offsets.size(); ++i) {
+            const auto offset = vector(body, prefix + " " + offsets[i].first + " Offset",
+                                       {220, y + 620.F + static_cast<float>(i)*120.F}, offsets[i].second.x, offsets[i].second.y);
+            const auto jumpOffset = vectorMath(body, prefix + " " + offsets[i].first + " Jump Offset",
+                                               VectorMathOperation::Scale,
+                                               {440, y + 620.F + static_cast<float>(i)*120.F});
+            link(body, offset, "value", jumpOffset, "a");
+            link(body, jump, "result", jumpOffset, "scalar");
+            const auto sample = addNode(body, "state_input_sample_offset", prefix + " " + offsets[i].first,
+                                        {440, y + 620.F + static_cast<float>(i)*120.F}, {{"sampling",0.F},{"addressMode",0.F}});
+            link(body, previous, "value", sample, "source"); link(body, jumpOffset, "result", sample, "offset");
+            const auto candidateD = vectorMath(body, prefix + " Candidate Distance", VectorMathOperation::Distance,
+                                               {680, y + 620.F + static_cast<float>(i)*120.F});
+            link(body, coordinates, "coordinates", candidateD, "a"); link(body, sample, "sampled", candidateD, "b");
+            const auto bestD = vectorMath(body, prefix + " Best Distance", VectorMathOperation::Distance,
+                                          {920, y + 620.F + static_cast<float>(i)*120.F});
+            link(body, coordinates, "coordinates", bestD, "a"); link(body, best, bestSocket, bestD, "b");
+            const auto choose = math(body, prefix + " Is Closer", static_cast<int>(MathOperation::Step),
+                                     {1160, y + 620.F + static_cast<float>(i)*120.F});
+            link(body, candidateD, "result", choose, "a"); link(body, bestD, "result", choose, "b");
+            const auto selected = addNode(body, "select", prefix + " Best Seed", {1400, y + 620.F + static_cast<float>(i)*120.F});
+            link(body, choose, "result", selected, "condition"); link(body, sample, "sampled", selected, "ifTrue"); link(body, best, bestSocket, selected, "ifFalse");
+            best=selected; bestSocket="result";
+        }
+        const auto pinned=addNode(body,"select",prefix+" Keep Seed",{1640,y+1080.F});
+        link(body,membership,"result",pinned,"condition");link(body,coordinates,"coordinates",pinned,"ifTrue");link(body,best,bestSocket,pinned,"ifFalse");
+        const auto next=addNode(body,"simulation_next_state",prefix+" Next",{1880,y+1080.F},{{"slot",static_cast<float>(slot)}});link(body,pinned,"result",next,"value");
+        return next;
+    };
+    const auto fg=makeSeedFlow(foreground,0,"Foreground",700.F);
+    const auto bg=makeSeedFlow(background,1,"Background",1900.F);
+    const auto fgDistance=vectorMath(body,"Distance to Foreground",VectorMathOperation::Distance,{2140,1700});link(body,coordinates,"coordinates",fgDistance,"a");link(body,fg,"value",fgDistance,"b");
+    const auto bgDistance=vectorMath(body,"Distance to Background",VectorMathOperation::Distance,{2140,1840});link(body,coordinates,"coordinates",bgDistance,"a");link(body,bg,"value",bgDistance,"b");
+    const auto negative=math(body,"Inside Distance",static_cast<int>(MathOperation::Multiply),{2380,1840},{{"b",-1.F}});link(body,bgDistance,"result",negative,"a");
+    const auto signedDistance=addNode(body,"select","Signed Distance",{2620,1760});link(body,foreground,"result",signedDistance,"condition");link(body,negative,"result",signedDistance,"ifTrue");link(body,fgDistance,"result",signedDistance,"ifFalse");
+    const auto nextDistance=addNode(body,"simulation_next_state","Next Signed Distance",{2860,1760},{{"slot",2.0F}});link(body,signedDistance,"result",nextDistance,"value");
+    const auto output=addNode(body,"subgraph_output","SDF Output",{3100,1760},{{"key","distance"}});link(body,nextDistance,"value",output,"value");
+    return result;
+}
+
 nlohmann::json leniaKernel(int size = 15) {
     nlohmann::json values = nlohmann::json::array();
     const float radius = static_cast<float>(size / 2);
@@ -1195,7 +1305,7 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
 const std::vector<SubgraphDefinition>& builtInSubgraphs() {
     static const std::vector<SubgraphDefinition> values{
         discreteReaction(), genericCellularAutomata(), floodFill(),
-        skeletonization(), distanceFromNearestWhitePixel(), lenia()};
+        skeletonization(), distanceFromNearestWhitePixel(), sdfGenerator(), lenia()};
     return values;
 }
 

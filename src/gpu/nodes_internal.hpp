@@ -19,6 +19,7 @@ void registerHashNode(NodeRegistry& registry);
 void registerTableNode(NodeRegistry& registry);
 void registerBitTestNode(NodeRegistry& registry);
 void registerIntegerMaskNode(NodeRegistry& registry);
+void registerDistanceTransformNodes(NodeRegistry& registry);
 // Procedural node families live in focused translation units.  Keep their
 // registration functions here and call them from registerBuiltInNodes so each
 // family can evolve without turning nodes.cpp into another shared hotspot.

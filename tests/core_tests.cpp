@@ -667,6 +667,33 @@ TEST_CASE("distance from nearest white pixel is an editable Euclidean distance s
     }) == 1);
 }
 
+TEST_CASE("SDF generator is an editable signed-distance simulation") {
+    auto nodes = registry();
+    NodeDescriptor offsetSample{"state_input_sample_offset", 1,
+        "State/Input Sample at Offset", "Coordinates",
+        {{"source", "Source", SocketContract::AnyField, SocketDirection::Input},
+         {"offset", "Offset Pixels", SocketContract::VectorNumeric, SocketDirection::Input, true},
+         {"sampled", "Sampled", SocketContract::AnyField, SocketDirection::Output}}, {}};
+    offsetSample.sockets[0].requiresImage = true;
+    offsetSample.sockets[2].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+    offsetSample.sockets[2].typeInputs = {"source"};
+    offsetSample.neighborhoodSocket = "source";
+    offsetSample.lowerable = true;
+    add(nodes, std::move(offsetSample));
+    const auto builtIn = std::ranges::find_if(builtInSubgraphs(), [](const SubgraphDefinition& item) {
+        return item.id == "builtin.sdf_generator";
+    });
+    REQUIRE(builtIn != builtInSubgraphs().end());
+    INFO(nlohmann::json(validateSubgraph(*builtIn, nodes)).dump());
+    REQUIRE(validateSubgraph(*builtIn, nodes).empty());
+    const auto descriptor = describeSubgraph(*builtIn);
+    REQUIRE(descriptor.stateful);
+    REQUIRE(descriptor.sockets.back().key == "distance");
+    REQUIRE(builtIn->stateSlots.size() == 3);
+    REQUIRE(std::ranges::count(builtIn->body.nodes(), "state_input_sample_offset",
+                               &NodeRecord::type) == 16);
+}
+
 TEST_CASE("Lenia is an editable scalar growth simulation") {
     auto nodes = registry();
     NodeDescriptor convolution{"convolution", 1, "Convolution", "Filter",

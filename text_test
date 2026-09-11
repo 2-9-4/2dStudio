@@ -375,6 +375,28 @@
         "node": 123,
         "socket": "b"
       }
+    },
+    {
+      "from": {
+        "node": 125,
+        "socket": "result"
+      },
+      "id": 380,
+      "to": {
+        "node": 128,
+        "socket": "mask"
+      }
+    },
+    {
+      "from": {
+        "node": 128,
+        "socket": "distance"
+      },
+      "id": 381,
+      "to": {
+        "node": 129,
+        "socket": "a"
+      }
     }
   ],
   "nodes": [
@@ -1361,6 +1383,32 @@
       "position": [
         4615.0,
         -1610.0
+      ],
+      "type": "math",
+      "typeVersion": 1
+    },
+    {
+      "id": 128,
+      "parameters": {
+        "metric": 2.0,
+        "threshold": 0.4099999964237213
+      },
+      "position": [
+        4486.0,
+        -1205.0
+      ],
+      "type": "sdf_generator",
+      "typeVersion": 1
+    },
+    {
+      "id": 129,
+      "parameters": {
+        "b": 10.0,
+        "operation": 2
+      },
+      "position": [
+        5251.0,
+        -1260.0
       ],
       "type": "math",
       "typeVersion": 1

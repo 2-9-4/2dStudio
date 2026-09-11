@@ -156,6 +156,12 @@ submodes, and the special nodes available inside simulation subgraphs.
   readable neighborhoods such as North `(0,-1)` and East `(1,0)`.
 - **Float Preview** (`float_preview`) — Materializes/displays a scalar value in the editor
   while allowing an optional input connection to override its fallback value.
+- **Distance Transform** (`distance_transform`) — Native Jump Flood distance to the nearest
+  foreground or background mask pixel. Choose Euclidean, Manhattan, or Chebyshev distance and
+  normalized-canvas or pixel units. It is an approximate GPU transform at very large sizes.
+- **SDF Generator** (`sdf_generator`) — Native Jump Flood signed distance from a scalar mask:
+  negative inside (Mask ≥ Threshold) and positive outside. It supports the same metrics and
+  unit choices as Distance Transform.
 
 ### Simulation and output
 
@@ -203,6 +209,12 @@ submodes, and the special nodes available inside simulation subgraphs.
   the 0–1 range. The default kernel is a 15×15 annular shape; its editable **Kernel size** and
   live **Kernel Radius / Scale** control are intentionally separate, allowing both footprint and
   sampling radius to be tuned.
+
+- **SDF Generator** — An editable signed-distance simulation template. It propagates nearest
+  foreground and background seed coordinates independently with Jump Flood passes, then emits
+  negative interior and positive exterior pixel distances. **Iterations per Frame** must be at
+  least `ceil(log2(max(width, height)))`; the default 16 covers images through 65,536 pixels per
+  side. Use the native **SDF Generator** node for the lower-overhead version.
 
 ## Simulation-subgraph-only nodes
 
