@@ -59,17 +59,6 @@
     },
     {
       "from": {
-        "node": 133,
-        "socket": "distance"
-      },
-      "id": 395,
-      "to": {
-        "node": 134,
-        "socket": "b"
-      }
-    },
-    {
-      "from": {
         "node": 134,
         "socket": "result"
       },
@@ -88,17 +77,6 @@
       "to": {
         "node": 137,
         "socket": "value"
-      }
-    },
-    {
-      "from": {
-        "node": 133,
-        "socket": "distance"
-      },
-      "id": 399,
-      "to": {
-        "node": 140,
-        "socket": "b"
       }
     },
     {
@@ -166,6 +144,50 @@
         "node": 129,
         "socket": "b"
       }
+    },
+    {
+      "from": {
+        "node": 130,
+        "socket": "result"
+      },
+      "id": 406,
+      "to": {
+        "node": 145,
+        "socket": "mask"
+      }
+    },
+    {
+      "from": {
+        "node": 133,
+        "socket": "distance"
+      },
+      "id": 407,
+      "to": {
+        "node": 146,
+        "socket": "a"
+      }
+    },
+    {
+      "from": {
+        "node": 146,
+        "socket": "result"
+      },
+      "id": 408,
+      "to": {
+        "node": 134,
+        "socket": "b"
+      }
+    },
+    {
+      "from": {
+        "node": 146,
+        "socket": "result"
+      },
+      "id": 409,
+      "to": {
+        "node": 140,
+        "socket": "b"
+      }
     }
   ],
   "nodes": [
@@ -185,12 +207,12 @@
       "id": 128,
       "parameters": {
         "metric": 0.0,
-        "pixels": 0.0,
-        "threshold": 0.47999998927116394
+        "pixels": 1.0,
+        "threshold": 0.5019999742507935
       },
       "position": [
         4200.0,
-        -1267.0
+        -1237.0
       ],
       "type": "sdf_generator",
       "typeVersion": 1
@@ -250,7 +272,7 @@
       },
       "position": [
         3928.0,
-        -980.0
+        -979.0
       ],
       "subgraphId": "project.reaction_diffusion.134.1",
       "type": "subgraph",
@@ -355,6 +377,29 @@
         -524.0
       ],
       "type": "output",
+      "typeVersion": 1
+    },
+    {
+      "id": 145,
+      "parameters": {},
+      "position": [
+        4184.0,
+        -1475.0
+      ],
+      "type": "sdf_generator",
+      "typeVersion": 1
+    },
+    {
+      "id": 146,
+      "parameters": {
+        "b": 0.5600000023841858,
+        "operation": 4
+      },
+      "position": [
+        3704.0,
+        -293.0
+      ],
+      "type": "math",
       "typeVersion": 1
     }
   ],
@@ -2712,8 +2757,8 @@
             "key": "mask"
           },
           "position": [
-            0.0,
-            100.0
+            9384.0,
+            127.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2725,8 +2770,8 @@
             "key": "threshold"
           },
           "position": [
-            0.0,
-            240.0
+            9384.0,
+            234.0
           ],
           "type": "subgraph_input",
           "typeVersion": 1
@@ -2736,8 +2781,8 @@
           "label": "Foreground",
           "parameters": {},
           "position": [
-            240.0,
-            100.0
+            9792.0,
+            111.0
           ],
           "type": "threshold",
           "typeVersion": 1
@@ -2750,8 +2795,8 @@
             "operation": 1.0
           },
           "position": [
-            480.0,
-            100.0
+            10200.0,
+            0.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2763,8 +2808,8 @@
             "pixels": 1.0
           },
           "position": [
-            240.0,
-            400.0
+            408.0,
+            240.0
           ],
           "type": "coordinates",
           "typeVersion": 1
@@ -2777,8 +2822,8 @@
             "y": -65504.0
           },
           "position": [
-            240.0,
-            540.0
+            12169.0,
+            411.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -2790,8 +2835,8 @@
             "slot": 2.0
           },
           "position": [
-            500.0,
-            540.0
+            12914.0,
+            131.0
           ],
           "type": "simulation_initial_state",
           "typeVersion": 1
@@ -2804,7 +2849,7 @@
           },
           "position": [
             0.0,
-            3240.0
+            1595.0
           ],
           "type": "simulation_previous_state",
           "typeVersion": 1
@@ -2814,8 +2859,8 @@
           "label": "Foreground Initial Seed",
           "parameters": {},
           "position": [
-            500.0,
-            700.0
+            12506.0,
+            164.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -2827,8 +2872,8 @@
             "slot": 0.0
           },
           "position": [
-            740.0,
-            700.0
+            12914.0,
+            284.0
           ],
           "type": "simulation_initial_state",
           "typeVersion": 1
@@ -2840,8 +2885,8 @@
             "slot": 0.0
           },
           "position": [
-            0.0,
-            1380.0
+            408.0,
+            897.0
           ],
           "type": "simulation_previous_state",
           "typeVersion": 1
@@ -2854,8 +2899,8 @@
             "y": -1.0
           },
           "position": [
-            220.0,
-            1320.0
+            408.0,
+            704.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -2868,8 +2913,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            1320.0
+            816.0,
+            786.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -2881,8 +2926,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            1320.0
+            1224.0,
+            990.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -2894,8 +2939,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            1320.0
+            1224.0,
+            1120.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -2907,8 +2952,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            1320.0
+            1632.0,
+            864.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2918,8 +2963,8 @@
           "label": "Foreground Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            1320.0
+            2040.0,
+            956.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -2932,8 +2977,8 @@
             "y": 1.0
           },
           "position": [
-            220.0,
-            1440.0
+            1632.0,
+            218.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -2946,8 +2991,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            1440.0
+            2040.0,
+            593.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -2959,8 +3004,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            1440.0
+            2448.0,
+            1320.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -2972,8 +3017,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            1440.0
+            2448.0,
+            1190.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -2985,8 +3030,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            1440.0
+            2856.0,
+            864.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -2996,8 +3041,8 @@
           "label": "Foreground Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            1440.0
+            3264.0,
+            956.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3010,8 +3055,8 @@
             "y": 0.0
           },
           "position": [
-            220.0,
-            1560.0
+            2856.0,
+            218.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -3024,8 +3069,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            1560.0
+            3264.0,
+            593.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -3037,8 +3082,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            1560.0
+            3672.0,
+            1320.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3050,8 +3095,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            1560.0
+            3672.0,
+            1190.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3063,8 +3108,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            1560.0
+            4080.0,
+            864.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -3074,8 +3119,8 @@
           "label": "Foreground Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            1560.0
+            4488.0,
+            956.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3088,8 +3133,8 @@
             "y": 0.0
           },
           "position": [
-            220.0,
-            1680.0
+            4080.0,
+            218.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -3102,8 +3147,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            1680.0
+            4488.0,
+            593.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -3115,8 +3160,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            1680.0
+            4896.0,
+            1320.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3128,8 +3173,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            1680.0
+            4896.0,
+            1190.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3141,8 +3186,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            1680.0
+            5304.0,
+            864.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -3152,8 +3197,8 @@
           "label": "Foreground Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            1680.0
+            5712.0,
+            956.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3166,8 +3211,8 @@
             "y": -1.0
           },
           "position": [
-            220.0,
-            1800.0
+            5304.0,
+            218.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -3180,8 +3225,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            1800.0
+            5712.0,
+            593.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -3193,8 +3238,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            1800.0
+            6120.0,
+            1320.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3206,8 +3251,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            1800.0
+            6120.0,
+            1190.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3219,8 +3264,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            1800.0
+            6528.0,
+            864.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -3230,8 +3275,8 @@
           "label": "Foreground Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            1800.0
+            6936.0,
+            956.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3244,8 +3289,8 @@
             "y": -1.0
           },
           "position": [
-            220.0,
-            1920.0
+            6528.0,
+            218.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -3258,8 +3303,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            1920.0
+            6936.0,
+            593.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -3271,8 +3316,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            1920.0
+            7344.0,
+            1320.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3284,8 +3329,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            1920.0
+            7344.0,
+            1190.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3297,8 +3342,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            1920.0
+            7752.0,
+            864.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -3308,8 +3353,8 @@
           "label": "Foreground Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            1920.0
+            8160.0,
+            956.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3322,8 +3367,8 @@
             "y": 1.0
           },
           "position": [
-            220.0,
-            2040.0
+            7752.0,
+            218.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -3336,8 +3381,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            2040.0
+            8160.0,
+            593.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -3349,8 +3394,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            2040.0
+            8568.0,
+            1320.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3362,8 +3407,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            2040.0
+            8568.0,
+            1190.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3375,8 +3420,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            2040.0
+            8976.0,
+            864.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -3386,8 +3431,8 @@
           "label": "Foreground Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            2040.0
+            9384.0,
+            956.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3400,8 +3445,8 @@
             "y": 1.0
           },
           "position": [
-            220.0,
-            2160.0
+            8976.0,
+            218.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -3414,8 +3459,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            2160.0
+            9384.0,
+            593.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -3427,8 +3472,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            2160.0
+            9792.0,
+            573.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3440,8 +3485,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            2160.0
+            9792.0,
+            443.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3453,8 +3498,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            2160.0
+            10200.0,
+            450.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -3464,8 +3509,8 @@
           "label": "Foreground Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            2160.0
+            10608.0,
+            613.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3475,8 +3520,8 @@
           "label": "Foreground Keep Seed",
           "parameters": {},
           "position": [
-            1640.0,
-            1780.0
+            10945.0,
+            613.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3488,8 +3533,8 @@
             "slot": 0.0
           },
           "position": [
-            1880.0,
-            1780.0
+            11353.0,
+            653.0
           ],
           "type": "simulation_next_state",
           "typeVersion": 1
@@ -3499,8 +3544,8 @@
           "label": "Background Initial Seed",
           "parameters": {},
           "position": [
-            500.0,
-            1900.0
+            12506.0,
+            397.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3512,8 +3557,8 @@
             "slot": 1.0
           },
           "position": [
-            740.0,
-            1900.0
+            12914.0,
+            437.0
           ],
           "type": "simulation_initial_state",
           "typeVersion": 1
@@ -3526,7 +3571,7 @@
           },
           "position": [
             0.0,
-            2580.0
+            640.0
           ],
           "type": "simulation_previous_state",
           "typeVersion": 1
@@ -3539,8 +3584,8 @@
             "y": -1.0
           },
           "position": [
-            220.0,
-            2520.0
+            0.0,
+            447.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -3553,8 +3598,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            2520.0
+            408.0,
+            511.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -3566,8 +3611,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            2520.0
+            816.0,
+            616.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3579,8 +3624,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            2520.0
+            816.0,
+            486.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3592,8 +3637,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            2520.0
+            1224.0,
+            574.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -3603,8 +3648,8 @@
           "label": "Background Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            2520.0
+            1632.0,
+            604.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3617,8 +3662,8 @@
             "y": 1.0
           },
           "position": [
-            220.0,
-            2640.0
+            1224.0,
+            211.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -3631,8 +3676,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            2640.0
+            1632.0,
+            411.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -3644,8 +3689,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            2640.0
+            2040.0,
+            1189.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3657,8 +3702,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            2640.0
+            2040.0,
+            786.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3670,8 +3715,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            2640.0
+            2448.0,
+            774.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -3681,8 +3726,8 @@
           "label": "Background Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            2640.0
+            2856.0,
+            620.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3695,8 +3740,8 @@
             "y": 0.0
           },
           "position": [
-            220.0,
-            2760.0
+            2448.0,
+            411.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -3709,8 +3754,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            2760.0
+            2856.0,
+            411.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -3722,8 +3767,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            2760.0
+            3264.0,
+            1189.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3735,8 +3780,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            2760.0
+            3264.0,
+            786.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3748,8 +3793,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            2760.0
+            3672.0,
+            774.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -3759,8 +3804,8 @@
           "label": "Background Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            2760.0
+            4080.0,
+            626.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3773,8 +3818,8 @@
             "y": 0.0
           },
           "position": [
-            220.0,
-            2880.0
+            3672.0,
+            411.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -3787,8 +3832,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            2880.0
+            4080.0,
+            411.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -3800,8 +3845,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            2880.0
+            4488.0,
+            1189.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3813,8 +3858,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            2880.0
+            4488.0,
+            786.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3826,8 +3871,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            2880.0
+            4896.0,
+            774.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -3837,8 +3882,8 @@
           "label": "Background Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            2880.0
+            5304.0,
+            627.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3851,8 +3896,8 @@
             "y": -1.0
           },
           "position": [
-            220.0,
-            3000.0
+            4896.0,
+            411.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -3865,8 +3910,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            3000.0
+            5304.0,
+            411.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -3878,8 +3923,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            3000.0
+            5712.0,
+            1189.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3891,8 +3936,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            3000.0
+            5712.0,
+            786.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3904,8 +3949,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            3000.0
+            6120.0,
+            774.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -3915,8 +3960,8 @@
           "label": "Background Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            3000.0
+            6528.0,
+            628.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -3929,8 +3974,8 @@
             "y": -1.0
           },
           "position": [
-            220.0,
-            3120.0
+            6120.0,
+            411.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -3943,8 +3988,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            3120.0
+            6528.0,
+            411.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -3956,8 +4001,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            3120.0
+            6936.0,
+            1189.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3969,8 +4014,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            3120.0
+            6936.0,
+            786.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -3982,8 +4027,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            3120.0
+            7344.0,
+            774.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -3993,8 +4038,8 @@
           "label": "Background Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            3120.0
+            7752.0,
+            628.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -4007,8 +4052,8 @@
             "y": 1.0
           },
           "position": [
-            220.0,
-            3240.0
+            7344.0,
+            411.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -4021,8 +4066,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            3240.0
+            7752.0,
+            411.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -4034,8 +4079,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            3240.0
+            8160.0,
+            1189.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -4047,8 +4092,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            3240.0
+            8160.0,
+            786.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -4060,8 +4105,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            3240.0
+            8568.0,
+            774.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -4071,8 +4116,8 @@
           "label": "Background Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            3240.0
+            8976.0,
+            628.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -4085,8 +4130,8 @@
             "y": 1.0
           },
           "position": [
-            220.0,
-            3360.0
+            8568.0,
+            411.0
           ],
           "type": "vector",
           "typeVersion": 1
@@ -4099,8 +4144,8 @@
             "sampling": 0.0
           },
           "position": [
-            440.0,
-            3360.0
+            8976.0,
+            411.0
           ],
           "type": "state_input_sample_offset",
           "typeVersion": 1
@@ -4112,8 +4157,8 @@
             "operation": 23.0
           },
           "position": [
-            680.0,
-            3360.0
+            9384.0,
+            1189.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -4125,8 +4170,8 @@
             "operation": 23.0
           },
           "position": [
-            920.0,
-            3360.0
+            9384.0,
+            786.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -4138,8 +4183,8 @@
             "operation": 27.0
           },
           "position": [
-            1160.0,
-            3360.0
+            9792.0,
+            774.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -4149,8 +4194,8 @@
           "label": "Background Best Seed",
           "parameters": {},
           "position": [
-            1400.0,
-            3360.0
+            10200.0,
+            866.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -4160,8 +4205,8 @@
           "label": "Background Keep Seed",
           "parameters": {},
           "position": [
-            1640.0,
-            2980.0
+            10608.0,
+            866.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -4173,8 +4218,8 @@
             "slot": 1.0
           },
           "position": [
-            1880.0,
-            2980.0
+            10945.0,
+            906.0
           ],
           "type": "simulation_next_state",
           "typeVersion": 1
@@ -4186,8 +4231,8 @@
             "operation": 23.0
           },
           "position": [
-            2140.0,
-            1700.0
+            11761.0,
+            644.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -4199,8 +4244,8 @@
             "operation": 23.0
           },
           "position": [
-            2140.0,
-            1840.0
+            11353.0,
+            897.0
           ],
           "type": "vector_math",
           "typeVersion": 1
@@ -4213,8 +4258,8 @@
             "operation": 2.0
           },
           "position": [
-            2380.0,
-            1840.0
+            11761.0,
+            774.0
           ],
           "type": "math",
           "typeVersion": 1
@@ -4224,8 +4269,8 @@
           "label": "Signed Distance",
           "parameters": {},
           "position": [
-            2620.0,
-            1760.0
+            12169.0,
+            866.0
           ],
           "type": "select",
           "typeVersion": 1
@@ -4237,8 +4282,8 @@
             "slot": 2.0
           },
           "position": [
-            2860.0,
-            1760.0
+            12506.0,
+            906.0
           ],
           "type": "simulation_next_state",
           "typeVersion": 1
@@ -4250,8 +4295,8 @@
             "key": "distance"
           },
           "position": [
-            3100.0,
-            1760.0
+            12914.0,
+            917.0
           ],
           "type": "subgraph_output",
           "typeVersion": 1

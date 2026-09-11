@@ -68,8 +68,11 @@ protected:
         const int metric=std::clamp(static_cast<int>(node_support::parameter(parameters_,"metric",0)),0,2), pixels=std::clamp(static_cast<int>(node_support::parameter(parameters_,"pixels",0)),0,1);
         const int target=std::clamp(static_cast<int>(node_support::parameter(parameters_,"target",0)),0,1);
         const float cap=node_support::parameter(parameters_,"maximumDistance",pixels?65504.F:1.F);
-        flood(gpu,mask.texture,threshold,target,seeds_[0],seeds_[1]);
-        if(signedOutput){ flood(gpu,mask.texture,threshold,1,seeds_[2],seeds_[3]); glUseProgram(programs_[3]); glBindImageTexture(0,output_,0,GL_FALSE,0,GL_WRITE_ONLY,GL_RGBA16F); node_support::bindTexture(0,seeds_[0]); node_support::bindTexture(1,seeds_[2]); node_support::bindTexture(2,mask.texture);node_support::uniform(programs_[3],"foregroundSeeds",0);node_support::uniform(programs_[3],"backgroundSeeds",1);node_support::uniform(programs_[3],"mask",2);node_support::uniform(programs_[3],"threshold",threshold);node_support::uniform(programs_[3],"metric",metric);node_support::uniform(programs_[3],"pixels",pixels);gpu.dispatch(programs_[3],c.width,c.height); }
+        // A signed field always needs foreground seeds first and background
+        // seeds second.  Using Distance Transform's target setting here made
+        // both branches measure their own class and therefore return zero.
+        flood(gpu,mask.texture,threshold,signedOutput ? 1 : target,seeds_[0],seeds_[1]);
+        if(signedOutput){ flood(gpu,mask.texture,threshold,0,seeds_[2],seeds_[3]); glUseProgram(programs_[3]); glBindImageTexture(0,output_,0,GL_FALSE,0,GL_WRITE_ONLY,GL_RGBA16F); node_support::bindTexture(0,seeds_[0]); node_support::bindTexture(1,seeds_[2]); node_support::bindTexture(2,mask.texture);node_support::uniform(programs_[3],"foregroundSeeds",0);node_support::uniform(programs_[3],"backgroundSeeds",1);node_support::uniform(programs_[3],"mask",2);node_support::uniform(programs_[3],"threshold",threshold);node_support::uniform(programs_[3],"metric",metric);node_support::uniform(programs_[3],"pixels",pixels);gpu.dispatch(programs_[3],c.width,c.height); }
         else {glUseProgram(programs_[2]);glBindImageTexture(0,output_,0,GL_FALSE,0,GL_WRITE_ONLY,GL_RGBA16F);node_support::bindTexture(0,seeds_[0]);node_support::uniform(programs_[2],"seeds",0);node_support::uniform(programs_[2],"metric",metric);node_support::uniform(programs_[2],"pixels",pixels);node_support::uniform(programs_[2],"maximumDistance",cap);gpu.dispatch(programs_[2],c.width,c.height);}
         out[0]=ImageHandle{output_,c.width,c.height,ValueType::ScalarField};
     }
