@@ -1023,6 +1023,44 @@ TEST_CASE("procedural node descriptors expose safe controls and vector sockets")
     REQUIRE(registry.contains("separate_vector"));
 }
 
+TEST_CASE("dither modes preserve semantic width and lower without malformed offsets") {
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    const auto* descriptor = registry.descriptor("dither");
+    REQUIRE(descriptor != nullptr);
+    REQUIRE(descriptor->lowerable);
+    REQUIRE(descriptor->producedField);
+    REQUIRE(descriptor->sockets.size() == 4);
+    REQUIRE(descriptor->sockets[0].contract == SocketContract::AnyImageValue);
+    REQUIRE(descriptor->sockets[3].typePolicy == SocketDescriptor::TypePolicy::PreserveInput);
+    REQUIRE(descriptor->sockets[3].typeInputs == std::vector<std::string>{"image"});
+
+    const auto mode = std::ranges::find(descriptor->parameters, "mode",
+                                        &ParameterDescriptor::key);
+    REQUIRE(mode != descriptor->parameters.end());
+    REQUIRE(mode->enumOptions == std::vector<std::string>{
+        "Threshold", "Bayer 2x2", "Bayer 4x4", "Bayer 8x8", "Halftone", "Noise"});
+    REQUIRE(mode->maximum == Catch::Approx(5.0F));
+
+    for (int index = 0; index < 6; ++index) {
+        auto node = registry.create("dither");
+        node->setParameters({{"mode", static_cast<float>(index)}, {"levels", 4.0F},
+                             {"patternSize", 8.0F}});
+        for (const auto type : {ShaderValueType::Scalar, ShaderValueType::Vec2,
+                                ShaderValueType::Vec4}) {
+            CapturingLoweringContext lowering(type);
+            lowering.inputs = {{"image", {type, "source"}}};
+            REQUIRE(node->lowerShader(lowering));
+            REQUIRE_FALSE(lowering.emitted.name.empty());
+            REQUIRE(lowering.emitted.name.find("vec2(*") == std::string::npos);
+            if (index == 4)
+                REQUIRE(lowering.emitted.name.find("p_patternSize") != std::string::npos);
+            else if (index != 0)
+                REQUIRE(lowering.emitted.name.find("p_levels") != std::string::npos);
+        }
+    }
+}
+
 TEST_CASE("Resolution exposes render dimensions as semantic constants") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     const auto* descriptor = registry.descriptor("resolution");

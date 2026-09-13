@@ -46,6 +46,22 @@ TEST_CASE("root entries include preconfigured math aliases") {
     REQUIRE(matches(*subtract, "subtract"));
 }
 
+TEST_CASE("root entries include dither mode aliases") {
+    NodeRegistry registry;
+    addDescriptor(registry, {"dither", 1, "Dither / Halftone", "Filter", {},
+                             {{"mode", "Mode", 0.0F, 0.0F, 1.0F,
+                               ParameterDescriptor::Control::Enum,
+                               {"Threshold", "Halftone"}}}});
+
+    const Graph graph;
+    const auto entries = buildRootEntries(registry, graph);
+    const auto* halftone = findEntry(entries, "dither", "Halftone");
+
+    REQUIRE(halftone != nullptr);
+    REQUIRE(halftone->parameters.at("mode") == 1);
+    REQUIRE(matches(*halftone, "halftone"));
+}
+
 TEST_CASE("plain search entries start with an object parameter block") {
     NodeRegistry registry;
     addDescriptor(registry, {"mix", 1, "Mix", "Color", {}, {}});

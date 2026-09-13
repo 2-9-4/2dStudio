@@ -76,6 +76,13 @@ void addAliases(std::vector<AddNodeEntry>& entries, const NodeDescriptor& descri
             entry.keywords.push_back(entry.hint);
             entries.push_back(std::move(entry));
         }
+    } else if (descriptor.type == "dither") {
+        const auto mode = std::ranges::find(descriptor.parameters, "mode",
+                                            &ParameterDescriptor::key);
+        if (mode != descriptor.parameters.end()) {
+            for (std::size_t index = 0; index < mode->enumOptions.size(); ++index)
+                addAlias(mode->enumOptions[index], "mode", static_cast<int>(index));
+        }
     }
 }
 

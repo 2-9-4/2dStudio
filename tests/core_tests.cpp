@@ -859,8 +859,9 @@ TEST_CASE("simulation bodies reuse registered normal node descriptors") {
     auto definition = builtInSubgraphs().front();
     definition.body.addNode("float");
     definition.body.addNode("select");
+    definition.body.addNode("dither");
     for (const auto* type : {"float", "math", "threshold", "select",
-                             "coordinates", "laplacian"}) {
+                             "coordinates", "laplacian", "dither"}) {
         const auto normalNode = std::ranges::find(definition.body.nodes(), std::string(type),
                                                   &NodeRecord::type);
         REQUIRE(normalNode != definition.body.nodes().end());

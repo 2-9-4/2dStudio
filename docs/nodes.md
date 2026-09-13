@@ -162,6 +162,11 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **SDF Generator** (`sdf_generator`) — Native Jump Flood signed distance from a scalar mask:
   negative inside (Mask ≥ Threshold) and positive outside. It supports the same metrics and
   unit choices as Distance Transform.
+- **Dither / Halftone** (`dither`) — Quantizes an Any Image Value while preserving its scalar,
+  vector, or color semantic type. **Mode** selects Threshold, Bayer 2x2/4x4/8x8 ordered
+  dithering, circular Halftone dots, or deterministic per-pixel Noise. **Levels** controls the
+  ordered/noise quantization depth, and **Pattern Size** controls halftone cell size. Alpha is
+  preserved for Color Images.
 
 ### Simulation and output
 
@@ -243,6 +248,7 @@ These nodes are scoped to a simulation body and are not ordinary root-graph node
 
 The editable simulation canvas also permits lowerable ordinary registered nodes, including
 **Float**, **Math**, **Bit Test / Integer Mask**, **Threshold**, **Select**, **Canvas Coordinates**,
-**Laplacian**, **Texture Sample**, and **State/Input Sample at Offset**. Convolution exposes its preset/kernel editor there but is
-single-pass only; its root-graph multi-pass **Iterations** control is unavailable. Nested
-subgraphs and arbitrary pipeline subgraphs are not currently supported.
+**Laplacian**, **Dither / Halftone**, **Texture Sample**, and **State/Input Sample at Offset**.
+Convolution exposes its preset/kernel editor there but is single-pass only; its root-graph
+multi-pass **Iterations** control is unavailable. Nested subgraphs and arbitrary pipeline
+subgraphs are not currently supported.
