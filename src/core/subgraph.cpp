@@ -5,8 +5,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <functional>
-#include <queue>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
@@ -15,14 +13,6 @@ namespace reaction {
 namespace {
 
 using Control = ParameterDescriptor::Control;
-
-const SocketDescriptor* socket(const NodeDescriptor& descriptor, std::string_view key,
-                               SocketDirection direction) {
-    const auto found = std::ranges::find_if(descriptor.sockets, [&](const auto& candidate) {
-        return candidate.key == key && candidate.direction == direction;
-    });
-    return found == descriptor.sockets.end() ? nullptr : &*found;
-}
 
 const SubgraphInterfaceItem* interfaceItem(const SubgraphDefinition& definition,
                                             const NodeRecord& node) {
@@ -174,7 +164,6 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
 
     std::unordered_set<NodeId> nodeIds;
     std::unordered_map<NodeId, const NodeRecord*> nodes;
-    std::unordered_map<NodeId, NodeDescriptor> descriptors;
     int previousStates = 0;
     int initialStates = 0;
     int nextStates = 0;
@@ -225,14 +214,6 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
             if (node.type == "subgraph_output") ++outputEndpoints[key];
         }
 
-        NodeDescriptor descriptor;
-        const NodeDescriptor* resolved = resolveSubgraphBodyDescriptor(
-            definition, node, registry, descriptor);
-        if (!resolved) {
-            errors.push_back("Unsupported subgraph node type '" + node.type + "'");
-        } else {
-            descriptors.emplace(node.id, *resolved);
-        }
         // Simulation bodies are lowered into one update shader. Convolution's
         // multi-pass mode uses a native ping-pong texture and cannot participate
         // in that shader, so reject legacy/manual values before runtime.
@@ -260,114 +241,31 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
     }
 
     std::unordered_set<LinkId> linkIds;
-    std::unordered_set<std::string> occupiedInputs;
-    std::unordered_map<NodeId, int> indegree;
-    std::unordered_map<NodeId, std::vector<NodeId>> outgoing;
-    const auto bodyValueType = [&](NodeId id, std::string_view outputSocket) {
-        std::unordered_set<std::string> visiting;
-        std::unordered_map<std::string, ValueType> memo;
-        std::function<ValueType(NodeId, std::string_view)> infer =
-            [&](NodeId sourceId, std::string_view sourceSocket) -> ValueType {
-                const auto found = nodes.find(sourceId);
-                const auto visitKey = std::to_string(sourceId) + ":" + std::string(sourceSocket);
-                if (const auto known = memo.find(visitKey); known != memo.end())
-                    return known->second;
-                if (found == nodes.end() || !visiting.insert(visitKey).second)
-                    return ValueType::Float;
-                const auto descriptor = descriptors.find(sourceId);
-                if (descriptor == descriptors.end()) {
-                    visiting.erase(visitKey);
-                    return ValueType::Float;
-                }
-                const auto* output = socket(descriptor->second, sourceSocket,
-                                            SocketDirection::Output);
-                if (!output) {
-                    visiting.erase(visitKey);
-                    return ValueType::Float;
-                }
-                const auto result = resolveOutputType(descriptor->second, *output,
-                    [&](std::string_view inputKey) -> std::optional<ValueType> {
-                        const auto link = std::ranges::find_if(definition.body.links(),
-                            [&](const LinkRecord& candidate) {
-                                return candidate.toNode == sourceId &&
-                                       candidate.toSocket == inputKey;
-                            });
-                        if (link != definition.body.links().end())
-                            return infer(link->fromNode, link->fromSocket);
-                        const auto* input = socket(descriptor->second, inputKey,
-                                                   SocketDirection::Input);
-                        if (!input) return std::nullopt;
-                        auto type = disconnectedType(input->contract);
-                        if (input->fieldDefault)
-                            type = fieldTypeForWidth(componentCount(type));
-                        return type;
-                    });
-                visiting.erase(visitKey);
-                memo.emplace(visitKey, result);
-                return result;
-            };
-        return infer(id, outputSocket);
-    };
-    for (const auto id : nodeIds) indegree[id] = 0;
-    for (const auto& linkRecord : definition.body.links()) {
-        if (linkRecord.id == 0 || !linkIds.insert(linkRecord.id).second)
+    for (const auto& link : definition.body.links()) {
+        if (link.id == 0 || !linkIds.insert(link.id).second)
             errors.push_back("Subgraph link IDs must be non-zero and unique");
-        const auto from = nodes.find(linkRecord.fromNode);
-        const auto to = nodes.find(linkRecord.toNode);
-        if (from == nodes.end() || to == nodes.end()) {
-            errors.push_back("Subgraph link " + std::to_string(linkRecord.id) + " has a missing endpoint");
-            continue;
-        }
-        const auto fromDescriptor = descriptors.find(linkRecord.fromNode);
-        const auto toDescriptor = descriptors.find(linkRecord.toNode);
-        if (fromDescriptor == descriptors.end() || toDescriptor == descriptors.end()) continue;
-        const auto* output = socket(fromDescriptor->second, linkRecord.fromSocket, SocketDirection::Output);
-        const auto* inputSocket = socket(toDescriptor->second, linkRecord.toSocket, SocketDirection::Input);
-        if (!output || !inputSocket) {
-            errors.push_back("Subgraph link " + std::to_string(linkRecord.id) + " names an unknown socket");
-            continue;
-        }
-        const auto actualType = bodyValueType(linkRecord.fromNode, linkRecord.fromSocket);
-        if (!contractAccepts(inputSocket->contract, actualType)) {
-            errors.push_back("Subgraph link " + std::to_string(linkRecord.id) +
-                             " cannot connect " + toString(actualType) + " to " +
-                             toDescriptor->second.displayName + "." + inputSocket->key +
-                             "; socket accepts " + toString(inputSocket->contract));
-        } else {
-            const auto targetType = resolveInputType(
-                toDescriptor->second, inputSocket->key, actualType,
-                [&](std::string_view outputKey) -> std::optional<ValueType> {
-                    return bodyValueType(linkRecord.toNode, outputKey);
-                });
-            if (!coercionBetween(actualType, targetType))
-                errors.push_back("Subgraph link " + std::to_string(linkRecord.id) +
-                                 " cannot convert " + toString(actualType) + " to " +
-                                 toString(targetType));
-        }
-        const auto inputKey = std::to_string(linkRecord.toNode) + ":" + linkRecord.toSocket;
-        if (!occupiedInputs.insert(inputKey).second)
-            errors.push_back("Subgraph input has more than one link: " + inputKey);
-        ++indegree[linkRecord.toNode];
-        outgoing[linkRecord.fromNode].push_back(linkRecord.toNode);
     }
 
-    std::priority_queue<NodeId, std::vector<NodeId>, std::greater<>> ready;
-    for (const auto& [id, degree] : indegree) if (degree == 0) ready.push(id);
-    std::size_t visited = 0;
-    while (!ready.empty()) {
-        const auto id = ready.top();
-        ready.pop();
-        ++visited;
-        for (const auto next : outgoing[id]) if (--indegree[next] == 0) ready.push(next);
-    }
-    if (visited != nodeIds.size()) errors.push_back("Subgraph contains a cycle");
+    const auto compiled = compileSubgraphBody(definition, registry);
+    errors.insert(errors.end(), compiled.errors.begin(), compiled.errors.end());
 
-    for (const auto& [id, descriptor] : descriptors) {
-        for (const auto& inputSocket : descriptor.sockets) {
-            if (inputSocket.direction != SocketDirection::Input || inputSocket.optional) continue;
-            if (!occupiedInputs.contains(std::to_string(id) + ":" + inputSocket.key)) {
-                errors.push_back("Subgraph node " + std::to_string(id) + " has unconnected input '" +
-                                 inputSocket.label + "'");
+    std::unordered_set<std::string> connectedInputs;
+    for (const auto& [id, edge] : compiled.resolvedEdges) {
+        (void)id;
+        connectedInputs.insert(std::to_string(edge.destinationSocket.node) + ":" +
+                               edge.destinationSocket.socket);
+    }
+    for (const auto& node : definition.body.nodes()) {
+        NodeDescriptor storage;
+        const auto* descriptor =
+            resolveSubgraphBodyDescriptor(definition, node, registry, storage);
+        if (!descriptor) continue;
+        for (const auto& inputSocket : descriptor->sockets) {
+            if (inputSocket.direction != SocketDirection::Input || inputSocket.optional)
+                continue;
+            if (!connectedInputs.contains(std::to_string(node.id) + ":" + inputSocket.key)) {
+                errors.push_back("Subgraph node " + std::to_string(node.id) +
+                                 " has unconnected input '" + inputSocket.label + "'");
             }
         }
     }
@@ -494,6 +392,18 @@ const NodeDescriptor* resolveSubgraphBodyDescriptor(const SubgraphDefinition& de
         return socket.direction == SocketDirection::Input && socket.key == "iterations";
     });
     return &storage;
+}
+
+CompileResult compileSubgraphBody(const SubgraphDefinition& definition,
+                                  const NodeRegistry& registry) {
+    return compileGraphBody(
+        definition.body,
+        [&](const NodeRecord& node, NodeDescriptor& storage) {
+            return resolveSubgraphBodyDescriptor(definition, node, registry, storage);
+        },
+        [](const NodeRecord& node) {
+            return "Unsupported subgraph node type '" + node.type + "'";
+        });
 }
 
 std::vector<std::string> validateSubgraph(const SubgraphDefinition& definition,
