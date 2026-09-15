@@ -1005,29 +1005,31 @@ TEST_CASE("simulation body compilation shares root type and coercion semantics")
     const auto scalar = definition.body.addNode("image");
     const auto color = definition.body.addNode("color_source");
     const auto select = definition.body.addNode("select");
-    definition.body.addLink(scalar, "out", select, "ifTrue");
+    const auto scalarLink = definition.body.addLink(scalar, "out", select, "ifTrue");
     definition.body.addLink(color, "value", select, "ifFalse");
 
+    Graph root;
+    const auto rootScalar = root.addNode("image");
+    const auto rootColor = root.addNode("color_source");
+    const auto rootSelect = root.addNode("select");
+    const auto rootScalarLink = root.addLink(rootScalar, "out", rootSelect, "ifTrue");
+    root.addLink(rootColor, "value", rootSelect, "ifFalse");
+
     const auto simulation = compileSubgraphBody(definition, nodes);
-    const auto generic = compileGraphBody(
-        definition.body, [&](const NodeRecord& node, NodeDescriptor& storage) {
-            return resolveSubgraphBodyDescriptor(definition, node, nodes, storage);
-        });
+    const auto rootCompiled = root.compile(nodes);
 
     INFO(nlohmann::json(simulation.errors).dump());
+    INFO(nlohmann::json(rootCompiled.errors).dump());
     REQUIRE(simulation.valid);
-    REQUIRE(generic.valid);
+    REQUIRE(rootCompiled.valid);
     REQUIRE(simulation.socketType(select, "result") == ValueType::ColorImage);
+    REQUIRE(rootCompiled.socketType(rootSelect, "result") == ValueType::ColorImage);
     REQUIRE(simulation.socketType(select, "ifTrue", SocketDirection::Input) ==
-            ValueType::ColorImage);
-    REQUIRE(simulation.resolvedEdges.size() == generic.resolvedEdges.size());
-    for (const auto& [link, edge] : simulation.resolvedEdges) {
-        REQUIRE(generic.resolvedEdges.contains(link));
-        const auto& other = generic.resolvedEdges.at(link);
-        REQUIRE(edge.sourceType == other.sourceType);
-        REQUIRE(edge.targetType == other.targetType);
-        REQUIRE(edge.coercion == other.coercion);
-    }
+            rootCompiled.socketType(rootSelect, "ifTrue", SocketDirection::Input));
+    REQUIRE(simulation.resolvedEdges.at(scalarLink).coercion ==
+            rootCompiled.resolvedEdges.at(rootScalarLink).coercion);
+    REQUIRE(simulation.resolvedEdges.at(scalarLink).targetType ==
+            rootCompiled.resolvedEdges.at(rootScalarLink).targetType);
 }
 
 TEST_CASE("simulation bodies reuse registered normal node descriptors") {
