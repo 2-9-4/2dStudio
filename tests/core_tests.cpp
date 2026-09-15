@@ -490,6 +490,9 @@ TEST_CASE("project JSON round trips graph state") {
     REQUIRE(restored.links().size() == 1);
     REQUIRE(restored.activeOutput == output);
     REQUIRE(restored.findNode(image)->parameters.at("seed") == 42);
+
+    const auto current = serializeProject(graph);
+    REQUIRE(migrateProjectJson(current, nodes) == current);
 }
 
 TEST_CASE("legacy color narrowing migrates through explicit channel nodes") {
@@ -512,6 +515,12 @@ TEST_CASE("legacy color narrowing migrates through explicit channel nodes") {
         {"links", {{{"id", 7}, {"from", {{"node", 1}, {"socket", "value"}}},
                      {"to", {{"node", 2}, {"socket", "a"}}}}}},
         {"activeOutput", 0}};
+
+    const auto migrated = migrateProjectJson(document, nodes);
+    REQUIRE(migrated["formatVersion"] == kProjectFormatVersion);
+    REQUIRE(std::ranges::any_of(migrated["nodes"], [](const nlohmann::json& node) {
+        return node.value("type", std::string{}) == "color_r";
+    }));
 
     const auto restored = deserializeProject(document, nodes);
     REQUIRE(restored.nodes().size() == 3);
@@ -567,6 +576,27 @@ TEST_CASE("unknown nodes inside subgraphs preserve their original JSON") {
     const auto serialized = serializeProject(restored);
     REQUIRE(serialized["subgraphs"][0]["nodes"][0]["vendorData"] == 321);
     REQUIRE(serialized["subgraphs"][0]["nodes"][0]["type"] == "plugin.future.body");
+}
+
+TEST_CASE("project migration dispatcher upgrades historical versions to current schema") {
+    auto nodes = registry();
+    for (const int version : {1, 2, 3}) {
+        nlohmann::json document{
+            {"formatVersion", version},
+            {"project", {{"width", 128}, {"height", 128}, {"targetFps", 60}}},
+            {"nodes", nlohmann::json::array()},
+            {"links", nlohmann::json::array()},
+            {"activeOutput", 0}
+        };
+        if (version >= 2) document["subgraphs"] = nlohmann::json::array();
+
+        const auto migrated = migrateProjectJson(document, nodes);
+        INFO(version);
+        REQUIRE(migrated["formatVersion"] == kProjectFormatVersion);
+        REQUIRE(migrated.contains("subgraphs"));
+        REQUIRE(migrated["subgraphs"].is_array());
+        REQUIRE_NOTHROW(deserializeProject(migrated, nodes));
+    }
 }
 
 TEST_CASE("unsupported schema and invalid project settings fail clearly") {
@@ -1098,6 +1128,12 @@ TEST_CASE("format 2 kernel subgraphs migrate to normal node and link bodies") {
         {"nodes", nlohmann::json::array()}, {"links", nlohmann::json::array()},
         {"activeOutput", 0}
     };
+
+    const auto migratedJson = migrateProjectJson(document, nodes);
+    REQUIRE(migratedJson["formatVersion"] == kProjectFormatVersion);
+    REQUIRE(migratedJson["subgraphs"][0].contains("nodes"));
+    REQUIRE_FALSE(migratedJson["subgraphs"][0].contains("kernel"));
+    REQUIRE_FALSE(migratedJson["subgraphs"][0]["stateSlots"].empty());
 
     const auto restored = deserializeProject(document, nodes);
     REQUIRE(restored.subgraphs().size() == 1);
