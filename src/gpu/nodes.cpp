@@ -525,25 +525,13 @@ template <typename T> void addNode(NodeRegistry& registry) {
 } // namespace
 
 void registerBuiltInNodes(NodeRegistry& registry) {
-    registerInputNodes(registry);
-    registerTextureSampleNode(registry);
-    registerTransform2DNode(registry);
-    registerDomainWarpNodes(registry);
-    registerGradientNodes(registry);
-    registerPolarCoordinatesNodes(registry);
-    registerRepeatFoldNode(registry);
-    registerWaveNode(registry);
-    registerWorleyNoiseNode(registry);
-    registerCompareNode(registry);
-    registerHashNode(registry);
-    registerTableNode(registry);
-    registerBitTestNode(registry);
-    registerIntegerMaskNode(registry);
-    registerDistanceTransformNodes(registry);
-    registerDitherNode(registry);
+#define REACTION_NODE_FAMILY(registrationFunction) registrationFunction(registry);
+#include "builtin_node_families.inc"
+#undef REACTION_NODE_FAMILY
+
     addNode<PerlinNode>(registry); addNode<CoordinatesNode>(registry);
     addNode<MathNode>(registry); addNode<VectorMathNode>(registry); addNode<MixNode>(registry); addNode<ThresholdNode>(registry); addNode<SelectNode>(registry); addNode<InvertNode>(registry); addNode<ColorRNode>(registry); addNode<ColorLuminanceNode>(registry); addNode<ColorRgNode>(registry); addNode<ColorRampNode>(registry);
-    registerConvolutionNode(registry); addNode<LaplacianNode>(registry);
+    addNode<LaplacianNode>(registry);
     addNode<ReactionNode>(registry); addNode<OutputNode>(registry);
 }
 
