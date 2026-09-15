@@ -2,12 +2,9 @@
 #include "persistence_internal.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <fstream>
-#include <functional>
 #include <optional>
 #include <stdexcept>
-#include <unordered_map>
 
 namespace reaction {
 namespace {
@@ -102,9 +99,6 @@ void markLegacyPreviousStateWiring(SubgraphDefinition& definition) {
     }
 }
 
-// Format-4 editable reaction graphs used one implicit RG feedback texture. Turn
-// that representation into the explicit Vector Field slot without changing the
-// math or the A/B presentation outputs.
 nlohmann::json serializeSubgraph(const SubgraphDefinition& definition) {
     nlohmann::json interface = nlohmann::json::array();
     for (const auto& item : definition.interface) {
