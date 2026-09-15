@@ -321,6 +321,7 @@ void GraphRuntime::clear() {
     for (const auto& [_, query] : timerQueries_) glDeleteQueries(1, &query);
     timerQueries_.clear();
     values_.clear();
+    executionPlan_.clear();
     instances_.clear();
     timings_.clear();
     previousParameters_.clear();
@@ -371,18 +372,22 @@ void GraphRuntime::rebuild() {
         }
     }
     instances_ = std::move(next);
+    rebuildExecutionPlan();
     for (const auto& node : graph_.nodes()) {
         if (node.type != "subgraph") continue;
         const auto instance = instances_.find(node.id);
         if (instance == instances_.end()) continue;
         std::vector<bool> requiredOutputs;
-        for (const auto& socket : instance->second->descriptor().sockets) {
-            if (socket.direction != SocketDirection::Output) continue;
-            bool required = requiredOutputs.empty(); // Keep the normal node thumbnail/output.
-            required |= std::ranges::any_of(graph_.links(), [&](const auto& link) {
-                return link.fromNode == node.id && link.fromSocket == socket.key;
-            });
-            requiredOutputs.push_back(required);
+        const auto plan = executionPlan_.find(node.id);
+        if (plan != executionPlan_.end()) {
+            for (std::size_t output = 0; output < plan->second.outputKeys.size(); ++output) {
+                const auto& key = plan->second.outputKeys[output];
+                bool required = output == 0; // Keep the normal node thumbnail/output.
+                required |= std::ranges::any_of(graph_.links(), [&](const auto& link) {
+                    return link.fromNode == node.id && link.fromSocket == key;
+                });
+                requiredOutputs.push_back(required);
+            }
         }
         instance->second->setOutputRequirements(requiredOutputs);
     }
@@ -407,6 +412,52 @@ void GraphRuntime::rebuild() {
     if (!fusion_) fusion_ = std::make_unique<FusionState>();
     rebuildFusion();
     forceDirty_ = true;
+}
+
+void GraphRuntime::rebuildExecutionPlan() {
+    executionPlan_.clear();
+
+    for (const auto& node : graph_.nodes()) {
+        NodeDescriptor storage;
+        const auto* descriptor = resolveDescriptor(graph_, node, registry_, storage);
+        if (!descriptor) continue;
+
+        NodeExecutionPlan plan;
+        plan.descriptor = *descriptor;
+        for (const auto& socket : descriptor->sockets) {
+            if (socket.direction == SocketDirection::Input) {
+                const auto index = plan.inputKeys.size();
+                plan.inputIndices.emplace(socket.key, index);
+                plan.inputKeys.push_back(socket.key);
+                plan.inputs.emplace_back();
+                if (socket.requiresImage) plan.requiredImageInputs.push_back(index);
+            } else {
+                const auto index = plan.outputKeys.size();
+                plan.outputIndices.emplace(socket.key, index);
+                plan.outputKeys.push_back(socket.key);
+            }
+        }
+        executionPlan_.emplace(node.id, std::move(plan));
+    }
+
+    for (const auto& link : graph_.links()) {
+        const auto source = executionPlan_.find(link.fromNode);
+        const auto destination = executionPlan_.find(link.toNode);
+        if (source == executionPlan_.end() || destination == executionPlan_.end())
+            continue;
+        const auto sourceOutput = source->second.outputIndices.find(link.fromSocket);
+        const auto destinationInput = destination->second.inputIndices.find(link.toSocket);
+        if (sourceOutput == source->second.outputIndices.end() ||
+            destinationInput == destination->second.inputIndices.end())
+            continue;
+
+        auto& input = destination->second.inputs[destinationInput->second];
+        input = PlannedInput{link.fromNode, sourceOutput->second, true};
+        if (std::ranges::find(destination->second.upstreamNodes, link.fromNode) ==
+            destination->second.upstreamNodes.end()) {
+            destination->second.upstreamNodes.push_back(link.fromNode);
+        }
+    }
 }
 
 std::string GraphRuntime::fusionSignature() const {
@@ -474,24 +525,6 @@ void GraphRuntime::rebuildFusion() {
 
 namespace {
 
-Value outputValue(const Graph& graph, const NodeRegistry& registry,
-                  const std::unordered_map<NodeId, std::vector<Value>>& values,
-                  NodeId nodeId, std::string_view socketKey) {
-    const auto* node = graph.findNode(nodeId);
-    NodeDescriptor storage;
-    const auto* descriptor = node ? resolveDescriptor(graph, *node, registry, storage) : nullptr;
-    const auto foundValues = values.find(nodeId);
-    if (!descriptor || foundValues == values.end()) return {};
-    std::size_t outputIndex = 0;
-    for (const auto& socket : descriptor->sockets) {
-        if (socket.direction != SocketDirection::Output) continue;
-        if (socket.key == socketKey && outputIndex < foundValues->second.size())
-            return foundValues->second[outputIndex];
-        ++outputIndex;
-    }
-    return {};
-}
-
 float shaderParameter(const Graph& graph, const ShaderInputRequirement& input) {
     const auto* node = graph.findNode(input.parameterNode);
     return node && node->parameters.contains(input.parameterKey) &&
@@ -499,22 +532,92 @@ float shaderParameter(const Graph& graph, const ShaderInputRequirement& input) {
         ? node->parameters[input.parameterKey].get<float>() : input.fallback;
 }
 
-std::optional<std::size_t> descriptorOutputIndex(const Graph& graph, const NodeRegistry& registry,
-                                                 NodeId id, std::string_view socketKey) {
-    const auto* node = graph.findNode(id);
-    NodeDescriptor storage;
-    const auto* descriptor = node ? resolveDescriptor(graph, *node, registry, storage) : nullptr;
-    if (!descriptor) return std::nullopt;
-    std::size_t index = 0;
-    for (const auto& socket : descriptor->sockets) {
-        if (socket.direction != SocketDirection::Output) continue;
-        if (socket.key == socketKey) return index;
-        ++index;
-    }
-    return std::nullopt;
-}
+
 
 } // namespace
+
+Value GraphRuntime::outputValue(NodeId node, std::string_view socket) const {
+    const auto plan = executionPlan_.find(node);
+    const auto foundValues = values_.find(node);
+    if (plan == executionPlan_.end() || foundValues == values_.end()) return {};
+    const auto slot = plan->second.outputIndices.find(std::string(socket));
+    if (slot == plan->second.outputIndices.end() ||
+        slot->second >= foundValues->second.size())
+        return {};
+    return foundValues->second[slot->second];
+}
+
+std::optional<std::size_t> GraphRuntime::outputIndex(
+    NodeId node, std::string_view socket) const {
+    const auto plan = executionPlan_.find(node);
+    if (plan == executionPlan_.end()) return std::nullopt;
+    const auto slot = plan->second.outputIndices.find(std::string(socket));
+    if (slot == plan->second.outputIndices.end()) return std::nullopt;
+    return slot->second;
+}
+
+bool GraphRuntime::evaluateNativeNode(
+    NodeId id, EvaluationContext& context, bool resetState) {
+    const auto* record = graph_.findNode(id);
+    const auto instance = instances_.find(id);
+    const auto planned = executionPlan_.find(id);
+    if (!record || instance == instances_.end() || planned == executionPlan_.end())
+        return false;
+
+    auto& node = *instance->second;
+    const auto& plan = planned->second;
+    std::vector<Value> inputs(plan.inputs.size());
+    for (std::size_t index = 0; index < plan.inputs.size(); ++index) {
+        const auto& source = plan.inputs[index];
+        if (!source.connected) continue;
+        const auto values = values_.find(source.sourceNode);
+        if (values != values_.end() && source.sourceOutput < values->second.size())
+            inputs[index] = values->second[source.sourceOutput];
+    }
+
+    applyUnconnectedParameterInputs(
+        plan.descriptor, plan.inputKeys, inputs, record->parameters);
+    auto& outputs = values_[id];
+    outputs.resize(plan.outputKeys.size());
+
+    for (const auto inputIndex : plan.requiredImageInputs) {
+        const auto* image = inputIndex < inputs.size()
+            ? std::get_if<ImageHandle>(&inputs[inputIndex]) : nullptr;
+        if (!image || !*image) {
+            typeErrors_[id] = plan.descriptor.displayName + ": input '" +
+                              plan.inputKeys[inputIndex] +
+                              "' requires a field image";
+            for (auto& output : outputs) output = {};
+            timings_.erase(id);
+            return false;
+        }
+    }
+
+    typeErrors_.erase(id);
+    node.setParameters(withConnectedParameterOverrides(
+        plan.descriptor, plan.inputKeys, inputs, record->parameters));
+    if (resetState && plan.descriptor.stateful) node.reset(context);
+
+    const GLuint query = timerQueries_.at(id);
+    glBeginQuery(GL_TIME_ELAPSED, query);
+    node.evaluate(context, inputs, outputs);
+    glEndQuery(GL_TIME_ELAPSED);
+    GLuint64 nanoseconds = 0;
+    glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
+    timings_[id] = static_cast<double>(nanoseconds) / 1'000'000.0;
+
+    for (std::size_t output = 0;
+         output < plan.outputKeys.size() && output < outputs.size(); ++output) {
+        if (auto* image = std::get_if<ImageHandle>(&outputs[output])) {
+            if (const auto semantic = compiled_.socketType(id, plan.outputKeys[output])) {
+                image->semanticType = isFieldType(*semantic)
+                    ? *semantic : fieldTypeForWidth(componentCount(*semantic));
+            }
+        }
+    }
+    pendingResets_.erase(id);
+    return true;
+}
 
 bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
     evaluated_.clear();
@@ -538,10 +641,9 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
         if (!record || instanceIt == instances_.end()) continue;
         auto& instance = *instanceIt->second;
         instance.setParameters(record->parameters);
-        NodeDescriptor descriptorStorage;
-        const auto* resolved = resolveDescriptor(graph_, *record, registry_, descriptorStorage);
-        if (!resolved) continue;
-        const auto& desc = *resolved;
+        const auto plan = executionPlan_.find(id);
+        if (plan == executionPlan_.end()) continue;
+        const auto& desc = plan->second.descriptor;
 
         const auto fused = fusion_->regionForNode.find(id);
         if (fused != fusion_->regionForNode.end()) {
@@ -549,8 +651,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
             if (id == region.region.nodes.back()) {
                 const auto resolveKind = [&](NodeId sourceNode,
                                              std::string_view sourceSocket) {
-                    const auto value = outputValue(graph_, registry_, values_,
-                                                   sourceNode, sourceSocket);
+                    const auto value = outputValue(sourceNode, sourceSocket);
                     if (std::holds_alternative<float>(value)) return ShaderInputKind::Float;
                     if (std::holds_alternative<Vec2>(value)) return ShaderInputKind::Vector;
                     if (const auto* image = std::get_if<ImageHandle>(&value); image && *image)
@@ -612,7 +713,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                 }
                 bool missingOutput = false;
                 for (const auto& output : region.generated.outputs) {
-                    const auto slot = descriptorOutputIndex(graph_, registry_, output.node, output.socket);
+                    const auto slot = outputIndex(output.node, output.socket);
                     const auto found = values_.find(output.node);
                     missingOutput |= !slot || found == values_.end() ||
                                      *slot >= found->second.size() ||
@@ -633,8 +734,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                         continue;
                     }
                     if (input.kind != ShaderInputKind::Field) continue;
-                    const auto value = outputValue(graph_, registry_, values_,
-                                                   input.sourceNode, input.sourceSocket);
+                    const auto value = outputValue(input.sourceNode, input.sourceSocket);
                     const auto* image = std::get_if<ImageHandle>(&value);
                     missingImageInput |= !image || !*image;
                 }
@@ -646,43 +746,12 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                     region.runtimeFallback = true;
                     region.milliseconds = 0.0;
                     for (const auto member : region.region.nodes) {
-                        const auto* memberRecord = graph_.findNode(member);
-                        const auto memberInstance = instances_.find(member);
-                        if (!memberRecord || memberInstance == instances_.end()) continue;
-                        auto& fallbackInstance = *memberInstance->second;
-                        NodeDescriptor fallbackStorage;
-                        const auto* fallbackDescriptor = resolveDescriptor(
-                            graph_, *memberRecord, registry_, fallbackStorage);
-                        if (!fallbackDescriptor) continue;
-                        std::vector<std::string> keys;
-                        std::size_t outputCount = 0;
-                        for (const auto& socket : fallbackDescriptor->sockets) {
-                            if (socket.direction == SocketDirection::Input) keys.push_back(socket.key);
-                            else ++outputCount;
-                        }
-                        std::vector<Value> inputs(keys.size());
-                        for (std::size_t inputIndex = 0; inputIndex < keys.size(); ++inputIndex) {
-                            const auto link = std::ranges::find_if(graph_.links(), [&](const auto& item) {
-                                return item.toNode == member && item.toSocket == keys[inputIndex];
-                            });
-                            if (link != graph_.links().end())
-                                inputs[inputIndex] = outputValue(graph_, registry_, values_,
-                                                                 link->fromNode, link->fromSocket);
-                        }
-                        applyUnconnectedParameterInputs(*fallbackDescriptor, keys, inputs,
-                                                        memberRecord->parameters);
-                        fallbackInstance.setParameters(withConnectedParameterOverrides(
-                            *fallbackDescriptor, keys, inputs, memberRecord->parameters));
-                        auto& outputs = values_[member];
-                        outputs.resize(outputCount);
-                        const GLuint query = timerQueries_.at(member);
-                        glBeginQuery(GL_TIME_ELAPSED, query);
-                        fallbackInstance.evaluate(context, inputs, outputs);
-                        glEndQuery(GL_TIME_ELAPSED);
-                        GLuint64 nanoseconds = 0;
-                        glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
-                        timings_[member] = static_cast<double>(nanoseconds) / 1'000'000.0;
-                        region.milliseconds += timings_[member];
+                        const bool resetState =
+                            needsReset_ || pendingResets_.contains(member);
+                        evaluateNativeNode(member, context, resetState);
+                        if (const auto timing = timings_.find(member);
+                            timing != timings_.end())
+                            region.milliseconds += timing->second;
                         dirtyNodes.insert(member);
                     }
                     continue;
@@ -705,8 +774,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                 glUseProgram(region.program);
                 for (const auto& input : region.generated.inputs) {
                     if (input.kind == ShaderInputKind::Field) {
-                        const auto value = outputValue(graph_, registry_, values_,
-                                                       input.sourceNode, input.sourceSocket);
+                        const auto value = outputValue(input.sourceNode, input.sourceSocket);
                         const auto* image = std::get_if<ImageHandle>(&value);
                         if (image && *image) {
                             glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + input.binding));
@@ -717,8 +785,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                     } else if (input.kind == ShaderInputKind::Vector) {
                         Vec2 value{};
                         if (input.sourceNode != 0) {
-                            const auto source = outputValue(graph_, registry_, values_,
-                                                            input.sourceNode, input.sourceSocket);
+                            const auto source = outputValue(input.sourceNode, input.sourceSocket);
                             if (const auto* pair = std::get_if<Vec2>(&source)) value = *pair;
                         }
                         glUniform2f(glGetUniformLocation(region.program, input.uniformName.c_str()),
@@ -726,8 +793,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                     } else if (input.kind == ShaderInputKind::Float) {
                         float value = input.fallback;
                         if (input.sourceNode != 0) {
-                            const auto source = outputValue(graph_, registry_, values_,
-                                                            input.sourceNode, input.sourceSocket);
+                            const auto source = outputValue(input.sourceNode, input.sourceSocket);
                             if (const auto* number = std::get_if<float>(&source)) value = *number;
                         } else if (input.parameterKey == "__time") {
                             value = static_cast<float>(context.frame) / 60.0F;
@@ -757,8 +823,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                 for (std::size_t outputIndex = 0; outputIndex < region.generated.outputs.size();
                      ++outputIndex) {
                     const auto& generatedOutput = region.generated.outputs[outputIndex];
-                    const auto slot = descriptorOutputIndex(graph_, registry_, generatedOutput.node,
-                                                            generatedOutput.socket);
+                    const auto slot = outputIndex(generatedOutput.node, generatedOutput.socket);
                     if (!slot) continue;
                     auto& nodeValues = values_[generatedOutput.node];
                     if (nodeValues.size() <= *slot) nodeValues.resize(*slot + 1);
@@ -782,8 +847,11 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
             }
         }
         bool upstreamDirty = false;
-        for (const auto& link : graph_.links()) {
-            if (link.toNode == id && dirtyNodes.contains(link.fromNode)) { upstreamDirty = true; break; }
+        const auto planned = executionPlan_.find(id);
+        if (planned != executionPlan_.end()) {
+            upstreamDirty = std::ranges::any_of(
+                planned->second.upstreamNodes,
+                [&](NodeId upstream) { return dirtyNodes.contains(upstream); });
         }
         const bool parametersChanged = !previousParameters_.contains(id) ||
                                        previousParameters_[id] != record->parameters;
@@ -794,80 +862,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
         previousParameters_[id] = record->parameters;
         if (!shouldEvaluate) continue;
         dirtyNodes.insert(id);
-        std::vector<Value> inputs;
-        std::vector<std::string> inputKeys;
-        std::size_t outputCount = 0;
-        for (const auto& socket : desc.sockets) {
-            if (socket.direction == SocketDirection::Input) {
-                inputs.emplace_back();
-                inputKeys.push_back(socket.key);
-            } else ++outputCount;
-        }
-        for (std::size_t i = 0; i < inputKeys.size(); ++i) {
-            for (const auto& link : graph_.links()) {
-                if (link.toNode != id || link.toSocket != inputKeys[i]) continue;
-                const auto* source = graph_.findNode(link.fromNode);
-                NodeDescriptor sourceStorage;
-                const auto* sourceDesc = source ? resolveDescriptor(graph_, *source, registry_, sourceStorage) : nullptr;
-                if (!sourceDesc) continue;
-                std::size_t outputIndex = 0;
-                for (const auto& socket : sourceDesc->sockets) {
-                    if (socket.direction != SocketDirection::Output) continue;
-                    if (socket.key == link.fromSocket && outputIndex < values_[link.fromNode].size()) {
-                        inputs[i] = values_[link.fromNode][outputIndex];
-                        break;
-                    }
-                    ++outputIndex;
-                }
-            }
-        }
-        applyUnconnectedParameterInputs(desc, inputKeys, inputs, record->parameters);
-        auto& outputs = values_[id];
-        outputs.resize(outputCount);
-        bool invalidRequiredImage = false;
-        std::size_t inputIndex = 0;
-        for (const auto& socket : desc.sockets) {
-            if (socket.direction != SocketDirection::Input) continue;
-            if (socket.requiresImage) {
-                const auto* image = inputIndex < inputs.size()
-                    ? std::get_if<ImageHandle>(&inputs[inputIndex]) : nullptr;
-                if (!image || !*image) {
-                    typeErrors_[id] = desc.displayName + ": input '" + socket.key +
-                                      "' requires a field image";
-                    invalidRequiredImage = true;
-                    break;
-                }
-            }
-            ++inputIndex;
-        }
-        if (invalidRequiredImage) {
-            for (auto& output : outputs) output = {};
-            timings_.erase(id);
-            continue;
-        }
-        typeErrors_.erase(id);
-        instance.setParameters(withConnectedParameterOverrides(
-            desc, inputKeys, inputs, record->parameters));
-        if ((needsReset_ || nodeReset) && desc.stateful) instance.reset(context);
-        const GLuint query = timerQueries_.at(id);
-        glBeginQuery(GL_TIME_ELAPSED, query);
-        instance.evaluate(context, inputs, outputs);
-        glEndQuery(GL_TIME_ELAPSED);
-        GLuint64 nanoseconds = 0;
-        glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
-        timings_[id] = static_cast<double>(nanoseconds) / 1'000'000.0;
-        std::size_t outputIndex = 0;
-        for (const auto& socket : desc.sockets) {
-            if (socket.direction != SocketDirection::Output) continue;
-            if (outputIndex < outputs.size()) {
-                if (auto* image = std::get_if<ImageHandle>(&outputs[outputIndex]))
-                    if (const auto semantic = compiled_.socketType(id, socket.key))
-                        image->semanticType = isFieldType(*semantic)
-                            ? *semantic : fieldTypeForWidth(componentCount(*semantic));
-            }
-            ++outputIndex;
-        }
-        pendingResets_.erase(id);
+        evaluateNativeNode(id, context, needsReset_ || nodeReset);
     }
     needsReset_ = false;
     forceDirty_ = false;
