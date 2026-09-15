@@ -86,6 +86,47 @@ NodeRegistry registry() {
     return result;
 }
 
+NodeRegistry catalogRegistry() {
+    auto result = registry();
+
+    NodeDescriptor convolution{"convolution", 1, "Convolution", "Filter",
+        {{"image", "Image", SocketContract::AnyField, SocketDirection::Input},
+         {"image", "Image", SocketContract::AnyField, SocketDirection::Output}},
+        {{"scale", "Scale", 1.0F, 0.01F, 128.0F}}};
+    convolution.sockets[0].requiresImage = true;
+    convolution.sockets[1].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+    convolution.sockets[1].typeInputs = {"image"};
+    convolution.neighborhoodSocket = "image";
+    convolution.lowerable = true;
+    add(result, std::move(convolution));
+
+    NodeDescriptor table{"table", 1, "Table", "Math",
+        {{"index", "Index", SocketContract::Numeric, SocketDirection::Input},
+         {"result", "Result", SocketContract::Numeric, SocketDirection::Output}}, {}};
+    table.lowerable = true;
+    add(result, std::move(table));
+
+    NodeDescriptor bitTest{"bit_test", 1, "Bit Test / Integer Mask", "Math",
+        {{"mask", "Mask", ValueType::Float, SocketDirection::Input},
+         {"bit", "Bit", SocketContract::Numeric, SocketDirection::Input},
+         {"result", "Result", SocketContract::Numeric, SocketDirection::Output}}, {}};
+    bitTest.lowerable = true;
+    add(result, std::move(bitTest));
+
+    NodeDescriptor offsetSample{"state_input_sample_offset", 1,
+        "State/Input Sample at Offset", "Coordinates",
+        {{"source", "Source", SocketContract::AnyField, SocketDirection::Input},
+         {"offset", "Offset Pixels", SocketContract::VectorNumeric, SocketDirection::Input},
+         {"sampled", "Sampled", SocketContract::AnyField, SocketDirection::Output}}, {}};
+    offsetSample.sockets[0].requiresImage = true;
+    offsetSample.sockets[2].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+    offsetSample.sockets[2].typeInputs = {"source"};
+    offsetSample.neighborhoodSocket = "source";
+    offsetSample.lowerable = true;
+    add(result, std::move(offsetSample));
+    return result;
+}
+
 } // namespace
 
 TEST_CASE("GraphBody compilation reuses contextual descriptor resolution") {
@@ -821,7 +862,7 @@ TEST_CASE("built-in discrete reaction uses Vector Math for its seed distance") {
 }
 
 TEST_CASE("built-in subgraph catalog has unique valid identities") {
-    auto nodes = registry();
+    auto nodes = catalogRegistry();
     std::unordered_set<std::string> ids;
     for (const auto& definition : builtInSubgraphs()) {
         INFO(definition.name);

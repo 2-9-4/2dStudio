@@ -82,29 +82,35 @@ void applyUnconnectedParameterInputs(const NodeDescriptor& descriptor,
 }
 
 std::string simulationSignature(const SubgraphDefinition& definition) {
-    std::string result = generateSimulationShader(definition, true);
-    result.push_back('\0');
-    result += generateSimulationShader(definition, false);
-    // Init/update endpoints do not include presentation outputs. Include their
-    // mappings so changing an exported channel still refreshes the executor.
-    for (const auto& item : definition.interface) {
+    try {
+        std::string result = generateSimulationShader(definition, true);
         result.push_back('\0');
-        result += item.key + ":" + std::to_string(static_cast<int>(item.kind)) + ":" +
-                  std::to_string(static_cast<int>(item.contract)) + ":" +
-                  std::to_string(item.defaultValue);
-        if (item.kind != SubgraphInterfaceKind::Output) continue;
-        const auto endpoint = std::ranges::find_if(definition.body.nodes(), [&](const auto& node) {
-            return node.type == "subgraph_output" &&
-                   node.parameters.value("key", std::string{}) == item.key;
-        });
-        if (endpoint == definition.body.nodes().end()) continue;
-        const auto link = std::ranges::find_if(definition.body.links(), [&](const auto& candidate) {
-            return candidate.toNode == endpoint->id && candidate.toSocket == "value";
-        });
-        if (link != definition.body.links().end())
-            result += ":" + std::to_string(link->fromNode) + ":" + link->fromSocket;
+        result += generateSimulationShader(definition, false);
+        // Init/update endpoints do not include presentation outputs. Include their
+        // mappings so changing an exported channel still refreshes the executor.
+        for (const auto& item : definition.interface) {
+            result.push_back('\0');
+            result += item.key + ":" + std::to_string(static_cast<int>(item.kind)) + ":" +
+                      std::to_string(static_cast<int>(item.contract)) + ":" +
+                      std::to_string(item.defaultValue);
+            if (item.kind != SubgraphInterfaceKind::Output) continue;
+            const auto endpoint = std::ranges::find_if(definition.body.nodes(), [&](const auto& node) {
+                return node.type == "subgraph_output" &&
+                       node.parameters.value("key", std::string{}) == item.key;
+            });
+            if (endpoint == definition.body.nodes().end()) continue;
+            const auto link = std::ranges::find_if(definition.body.links(), [&](const auto& candidate) {
+                return candidate.toNode == endpoint->id && candidate.toSocket == "value";
+            });
+            if (link != definition.body.links().end())
+                result += ":" + std::to_string(link->fromNode) + ":" + link->fromSocket;
+        }
+        return result;
+    } catch (const std::exception& error) {
+        // Keep an invalid editable subgraph addressable by the runtime so its
+        // node can retain a local diagnostic while the editor repairs it.
+        return "error:" + std::string(error.what());
     }
-    return result;
 }
 
 GLuint compile(GLenum kind, std::string_view source, std::string_view label) {
@@ -327,10 +333,9 @@ void GraphRuntime::clear() {
 
 void GraphRuntime::rebuild() {
     const auto candidate = graph_.compile(registry_);
-    if (!candidate.valid) {
-        compiled_ = candidate;
-        return;
-    }
+    // Keep the compile result invalid for editor diagnostics, but still build
+    // instances for reachable nodes. Native evaluation can then report a
+    // node-local requiresImage/type error instead of going completely dark.
     compiled_ = candidate;
     std::unordered_map<NodeId, std::unique_ptr<NodeInstance>> next;
     std::unordered_map<NodeId, std::string> instantiationErrors;
@@ -424,7 +429,6 @@ std::string GraphRuntime::fusionSignature() const {
 }
 
 void GraphRuntime::rebuildFusion() {
-    if (!compiled_.valid) return;
     const bool enabled = fusion_ ? fusion_->enabled : true;
     const auto preview = fusion_ ? fusion_->previewNode : std::optional<NodeId>{};
     if (fusion_) for (const auto& [id, _] : fusion_->regionForNode) values_.erase(id);
@@ -514,7 +518,9 @@ std::optional<std::size_t> descriptorOutputIndex(const Graph& graph, const NodeR
 
 bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
     evaluated_.clear();
-    if (!compiled_.valid) return false;
+    // A non-empty partial order is useful for the same best-effort diagnostic
+    // path used by rebuild(); an empty order means there is nothing executable.
+    if (compiled_.order.empty()) return false;
     if (!fusion_) fusion_ = std::make_unique<FusionState>();
     if (fusion_->signature != fusionSignature()) rebuildFusion();
     if (lastWidth_ != graph_.settings.width || lastHeight_ != graph_.settings.height) {

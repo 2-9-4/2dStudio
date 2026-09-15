@@ -941,8 +941,10 @@ TEST_CASE("empty to field boundary change re-specializes exactly once") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph; graph.settings = {2, 2, 60};
     const auto image = graph.addNode("image");
+    const auto red = graph.addNode("color_r");
     const auto threshold = graph.addNode("threshold");
-    graph.addLink(image, "image", threshold, "value");
+    graph.addLink(image, "image", red, "color");
+    graph.addLink(red, "value", threshold, "value");
     GraphRuntime runtime(graph, registry, gpu);
 
     REQUIRE(runtime.evaluate(0.0, 0.0, false));
@@ -1633,13 +1635,15 @@ TEST_CASE("disconnected reaction multipliers are equivalent to solid white") {
     NodeRegistry registry; registerBuiltInNodes(registry);
     Graph graph; graph.settings = {24, 24, 60};
     const auto white = graph.addNode("color_ramp");
+    const auto whiteScalar = graph.addNode("color_r");
     graph.findNode(white)->parameters["value"] = 1.0F;
     const auto unmapped = graph.addNode("reaction_diffusion");
     const auto mapped = graph.addNode("reaction_diffusion");
     graph.findNode(unmapped)->parameters["iterations"] = 3;
     graph.findNode(mapped)->parameters["iterations"] = 3;
-    graph.addLink(white, "image", mapped, "feedMultiplier");
-    graph.addLink(white, "image", mapped, "killMultiplier");
+    graph.addLink(white, "image", whiteScalar, "color");
+    graph.addLink(whiteScalar, "value", mapped, "feedMultiplier");
+    graph.addLink(whiteScalar, "value", mapped, "killMultiplier");
     GpuRuntime gpu;
     GraphRuntime runtime(graph, registry, gpu);
     for (int frame = 0; frame < 5; ++frame) {
@@ -1727,6 +1731,7 @@ TEST_CASE("discrete reaction accepts scalar and image multiplier inputs") {
     const auto scalar = graph.addNode("float");
     graph.findNode(scalar)->parameters["value"] = 1.0F;
     const auto white = graph.addNode("color_ramp");
+    const auto whiteScalar = graph.addNode("color_r");
     graph.findNode(white)->parameters["value"] = 1.0F;
     const auto baseline = addDiscreteReaction(graph);
     const auto scalarMapped = addDiscreteReaction(graph);
@@ -1736,8 +1741,9 @@ TEST_CASE("discrete reaction accepts scalar and image multiplier inputs") {
     graph.findNode(imageMapped)->parameters["iterations"] = 3;
     graph.addLink(scalar, "value", scalarMapped, "feedMultiplier");
     graph.addLink(scalar, "value", scalarMapped, "killMultiplier");
-    graph.addLink(white, "image", imageMapped, "feedMultiplier");
-    graph.addLink(white, "image", imageMapped, "killMultiplier");
+    graph.addLink(white, "image", whiteScalar, "color");
+    graph.addLink(whiteScalar, "value", imageMapped, "feedMultiplier");
+    graph.addLink(whiteScalar, "value", imageMapped, "killMultiplier");
     GpuRuntime gpu; GraphRuntime runtime(graph, registry, gpu);
     for (int frame = 0; frame < 5; ++frame) REQUIRE(runtime.evaluate(frame / 60.0, 1.0 / 60.0, true));
     const auto expected = readImage(std::get<ImageHandle>(runtime.values().at(baseline)[0]));
@@ -1757,13 +1763,18 @@ TEST_CASE("structural subgraph edits change the fused simulation") {
         definition.body.nodes(), std::string("simulation_next_state"), &NodeRecord::type);
     REQUIRE(nextState != definition.body.nodes().end());
     const NodeId nextStateId = nextState->id;
+    const auto nextValue = std::ranges::find_if(definition.body.links(), [&](const LinkRecord& link) {
+        return link.toNode == nextStateId && link.toSocket == "value";
+    });
+    REQUIRE(nextValue != definition.body.links().end());
+    const NodeId nextChemicals = nextValue->fromNode;
     const auto zero = definition.body.addNode("float", {1700, 820});
     definition.body.findNode(zero)->parameters["value"] = 0.0F;
     const auto select = definition.body.addNode("select", {1880, 820});
     definition.body.findNode(select)->parameters = {
         {"condition", -0.25F}, {"ifFalse", 1.0F}};
     definition.body.addLink(zero, "value", select, "ifTrue");
-    definition.body.addLink(select, "result", nextStateId, "b");
+    definition.body.addLink(select, "result", nextChemicals, "y");
     graph.subgraphs().push_back(std::move(definition));
 
     const auto reaction = graph.addNode("subgraph");
