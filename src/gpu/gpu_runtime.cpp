@@ -805,7 +805,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                      ++outputIndex) {
                     const auto& output = region.generated.outputs[outputIndex];
                     glBindImageTexture(static_cast<GLuint>(output.binding),
-                        region.textures[generatedIndex], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+                        region.textures[outputIndex], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
                 }
                 for (const auto member : region.region.nodes) {
                     values_.erase(member);
