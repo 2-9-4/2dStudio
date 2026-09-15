@@ -805,7 +805,7 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                      ++outputIndex) {
                     const auto& output = region.generated.outputs[outputIndex];
                     glBindImageTexture(static_cast<GLuint>(output.binding),
-                        region.textures[outputIndex], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+                        region.textures[generatedIndex], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
                 }
                 for (const auto member : region.region.nodes) {
                     values_.erase(member);
@@ -820,9 +820,9 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                 glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
                 region.milliseconds = static_cast<double>(nanoseconds) / 1'000'000.0;
                 timings_[region.region.nodes.back()] = region.milliseconds;
-                for (std::size_t outputIndex = 0; outputIndex < region.generated.outputs.size();
-                     ++outputIndex) {
-                    const auto& generatedOutput = region.generated.outputs[outputIndex];
+                for (std::size_t generatedIndex = 0;
+                     generatedIndex < region.generated.outputs.size(); ++generatedIndex) {
+                    const auto& generatedOutput = region.generated.outputs[generatedIndex];
                     const auto slot = outputIndex(generatedOutput.node, generatedOutput.socket);
                     if (!slot) continue;
                     auto& nodeValues = values_[generatedOutput.node];
@@ -833,11 +833,11 @@ bool GraphRuntime::evaluate(double time, double deltaTime, bool playing) {
                             .value_or(ValueType::ColorImage);
                         const auto imageSemantic = isFieldType(semantic)
                             ? semantic : fieldTypeForWidth(componentCount(semantic));
-                        nodeValues[*slot] = ImageHandle{region.textures[outputIndex],
+                        nodeValues[*slot] = ImageHandle{region.textures[generatedIndex],
                                                         dispatchWidth, dispatchHeight, imageSemantic};
                     } else {
                         std::array<float, 4> folded{};
-                        glBindTexture(GL_TEXTURE_2D, region.textures[outputIndex]);
+                        glBindTexture(GL_TEXTURE_2D, region.textures[generatedIndex]);
                         glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, folded.data());
                         nodeValues[*slot] = generatedOutput.value.type == ShaderValueType::Vec2
                             ? Value{Vec2{folded[0], folded[1]}} : Value{folded[0]};
