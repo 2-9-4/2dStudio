@@ -140,15 +140,16 @@ public:
         return {std::move(fused), std::move(solo)};
     }
 
+private:
+    // Declaration/destruction order matters: the GL context is created first
+    // and destroyed last; GraphRuntime is destroyed before GpuRuntime.
+    HiddenContext context_;
+    GpuRuntime gpu_;
+
+public:
     NodeRegistry registry;
     Graph graph;
     std::unique_ptr<GraphRuntime> runtime;
-
-private:
-    // Declaration order matters: OpenGL must exist before GpuRuntime and must
-    // outlive it.
-    HiddenContext context_;
-    GpuRuntime gpu_;
 };
 
 } // namespace reaction::test_support
