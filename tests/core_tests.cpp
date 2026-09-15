@@ -1,5 +1,6 @@
 #include "reaction/core/layout.hpp"
 #include "reaction/core/math.hpp"
+#include "reaction/core/node_builder.hpp"
 #include "reaction/core/persistence.hpp"
 #include "reaction/core/vector_math.hpp"
 
@@ -214,6 +215,58 @@ TEST_CASE("graph compiles in dependency order") {
     REQUIRE(result.valid);
     REQUIRE(result.order == std::vector<NodeId>{source, math, output});
     REQUIRE(result.socketType(math, "out") == ValueType::ScalarField);
+}
+
+TEST_CASE("descriptor builder expresses named socket and node semantics") {
+    auto descriptor = NodeDescriptorBuilder{"builder_test", 1, "Builder Test", "Test"}
+        .input("source", "Source", SocketContract::AnyField)
+        .optionalInput("coordinates", "Coordinates", SocketContract::VectorNumeric)
+        .output("result", "Result", SocketContract::AnyField)
+        .fieldDefault("coordinates")
+        .neighborhood("source")
+        .typePolicy("result", SocketDescriptor::TypePolicy::PreserveInput, {"source"})
+        .fieldIf("result", {"coordinates"})
+        .enumParameter("mode", "Mode", 1, {"First", "Second", "Third"})
+        .booleanParameter("enabled", "Enabled", true)
+        .lowerable()
+        .producedField()
+        .build();
+
+    REQUIRE(descriptor.lowerable);
+    REQUIRE(descriptor.producedField);
+    REQUIRE(descriptor.neighborhoodSocket == "source");
+    REQUIRE(descriptor.sockets[0].requiresImage);
+    REQUIRE(descriptor.sockets[1].optional);
+    REQUIRE(descriptor.sockets[1].fieldDefault);
+    REQUIRE(descriptor.sockets[2].typePolicy ==
+            SocketDescriptor::TypePolicy::PreserveInput);
+    REQUIRE(descriptor.sockets[2].typeInputs == std::vector<std::string>{"source"});
+    REQUIRE(descriptor.sockets[2].fieldInputs ==
+            std::vector<std::string>{"coordinates"});
+    REQUIRE(descriptor.parameters[0].control == ParameterDescriptor::Control::Enum);
+    REQUIRE(descriptor.parameters[0].minimum == 0.0F);
+    REQUIRE(descriptor.parameters[0].maximum == 2.0F);
+    REQUIRE(descriptor.parameters[0].enumOptions ==
+            std::vector<std::string>{"First", "Second", "Third"});
+    REQUIRE(descriptor.parameters[1].control ==
+            ParameterDescriptor::Control::Boolean);
+    REQUIRE(descriptor.parameters[1].defaultValue == 1.0F);
+}
+
+TEST_CASE("descriptor builder rejects references to missing sockets and invalid enums") {
+    REQUIRE_THROWS_AS(
+        (NodeDescriptorBuilder{"bad", 1, "Bad", "Test"}
+            .output("result", "Result", SocketContract::Numeric)
+            .requireImage("missing")),
+        std::invalid_argument);
+    REQUIRE_THROWS_AS(
+        (NodeDescriptorBuilder{"bad", 1, "Bad", "Test"}
+            .enumParameter("mode", "Mode", 0, {})),
+        std::invalid_argument);
+    REQUIRE_THROWS_AS(
+        (NodeDescriptorBuilder{"bad", 1, "Bad", "Test"}
+            .enumParameter("mode", "Mode", 2, {"Only", "Two"})),
+        std::invalid_argument);
 }
 
 TEST_CASE("registry rejects incomplete enum metadata") {

@@ -1,6 +1,8 @@
 #include "nodes_internal.hpp"
 #include "procedural_node_support.hpp"
 
+#include "reaction/core/node_builder.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -104,22 +106,19 @@ BorderInput borderInput(std::span<const Value> values, std::size_t index) {
 class TextureSampleNode : public TextureNode {
 public:
     static NodeDescriptor describe() {
-        auto result = NodeDescriptor{"texture_sample", 1, "Texture Sample", "Coordinates",
-            {{"source", "Source", SocketContract::AnyField, SocketDirection::Input},
-             {"coordinates", "Coordinates", SocketContract::VectorNumeric, SocketDirection::Input, true},
-             {"border", "Border Value", SocketContract::VectorNumeric, SocketDirection::Input, true},
-             {"sampled", "Sampled", SocketContract::AnyField, SocketDirection::Output}},
-            {{"sampling", "Sampling", 1.0F, 0.0F, 1.0F, ParameterDescriptor::Control::Enum,
-              {"Nearest", "Linear"}},
-             {"addressMode", "Address Mode", 0.0F, 0.0F, 3.0F, ParameterDescriptor::Control::Enum,
-              {"Clamp", "Repeat", "Mirror", "Border"}}}};
-        result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
-        result.sockets.back().typeInputs = {"source"};
-        result.sockets[1].fieldDefault = true;
-        result.sockets[0].requiresImage = true;
-        result.neighborhoodSocket = "source";
-        result.lowerable = true;
-        return result;
+        return NodeDescriptorBuilder{"texture_sample", 1, "Texture Sample", "Coordinates"}
+            .input("source", "Source", SocketContract::AnyField)
+            .optionalInput("coordinates", "Coordinates", SocketContract::VectorNumeric)
+            .optionalInput("border", "Border Value", SocketContract::VectorNumeric)
+            .output("sampled", "Sampled", SocketContract::AnyField)
+            .enumParameter("sampling", "Sampling", 1, {"Nearest", "Linear"})
+            .enumParameter("addressMode", "Address Mode", 0,
+                           {"Clamp", "Repeat", "Mirror", "Border"})
+            .fieldDefault("coordinates")
+            .typePolicy("sampled", SocketDescriptor::TypePolicy::PreserveInput, {"source"})
+            .neighborhood("source")
+            .lowerable()
+            .build();
     }
 
     const NodeDescriptor& descriptor() const override {
