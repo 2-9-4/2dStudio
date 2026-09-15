@@ -255,17 +255,17 @@ TEST_CASE("descriptor builder expresses named socket and node semantics") {
 
 TEST_CASE("descriptor builder rejects references to missing sockets and invalid enums") {
     REQUIRE_THROWS_AS(
-        NodeDescriptorBuilder{"bad", 1, "Bad", "Test"}
+        (NodeDescriptorBuilder{"bad", 1, "Bad", "Test"}
             .output("result", "Result", SocketContract::Numeric)
-            .requireImage("missing"),
+            .requireImage("missing")),
         std::invalid_argument);
     REQUIRE_THROWS_AS(
-        NodeDescriptorBuilder{"bad", 1, "Bad", "Test"}
-            .enumParameter("mode", "Mode", 0, {}),
+        (NodeDescriptorBuilder{"bad", 1, "Bad", "Test"}
+            .enumParameter("mode", "Mode", 0, {})),
         std::invalid_argument);
     REQUIRE_THROWS_AS(
-        NodeDescriptorBuilder{"bad", 1, "Bad", "Test"}
-            .enumParameter("mode", "Mode", 2, {"Only", "Two"}),
+        (NodeDescriptorBuilder{"bad", 1, "Bad", "Test"}
+            .enumParameter("mode", "Mode", 2, {"Only", "Two"})),
         std::invalid_argument);
 }
 
