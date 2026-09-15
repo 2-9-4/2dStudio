@@ -747,6 +747,31 @@ TEST_CASE("built-in discrete reaction uses Vector Math for its seed distance") {
     }));
 }
 
+TEST_CASE("built-in subgraph catalog has unique valid identities") {
+    auto nodes = registry();
+    std::unordered_set<std::string> ids;
+    for (const auto& definition : builtInSubgraphs()) {
+        INFO(definition.name);
+        REQUIRE_FALSE(definition.id.empty());
+        REQUIRE(ids.insert(definition.id).second);
+
+        std::unordered_set<std::string> interfaceKeys;
+        for (const auto& item : definition.interface) {
+            REQUIRE_FALSE(item.key.empty());
+            REQUIRE(interfaceKeys.insert(item.key).second);
+        }
+
+        std::unordered_set<std::string> stateKeys;
+        for (const auto& slot : definition.stateSlots) {
+            REQUIRE_FALSE(slot.key.empty());
+            REQUIRE(stateKeys.insert(slot.key).second);
+        }
+
+        INFO(nlohmann::json(validateSubgraph(definition, nodes)).dump());
+        REQUIRE(validateSubgraph(definition, nodes).empty());
+    }
+}
+
 TEST_CASE("custom shared subgraphs round trip once with per-instance values") {
     auto nodes = registry();
     Graph graph;
