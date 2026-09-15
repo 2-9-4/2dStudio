@@ -2,6 +2,7 @@
 
 #include "reaction/core/node.hpp"
 
+#include <functional>
 #include <optional>
 #include <unordered_map>
 
@@ -158,6 +159,18 @@ struct CompileResult {
         return found->second.concreteType;
     }
 };
+
+
+using BodyDescriptorResolver =
+    std::function<const NodeDescriptor*(const NodeRecord&, NodeDescriptor&)>;
+using MissingDescriptorMessage =
+    std::function<std::string(const NodeRecord&)>;
+
+// Compile topology and semantic socket/edge types for any GraphBody. The caller
+// owns contextual descriptor resolution (root graph, simulation body, etc.).
+[[nodiscard]] CompileResult compileGraphBody(
+    const GraphBody& body, const BodyDescriptorResolver& descriptorResolver,
+    const MissingDescriptorMessage& missingDescriptorMessage = {});
 
 class Graph : public GraphBody {
 public:

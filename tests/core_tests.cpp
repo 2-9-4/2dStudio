@@ -87,6 +87,78 @@ NodeRegistry registry() {
 
 } // namespace
 
+TEST_CASE("GraphBody compilation reuses contextual descriptor resolution") {
+    auto nodes = registry();
+    GraphBody body;
+    const auto source = body.addNode("image");
+    const auto math = body.addNode("math");
+    const auto output = body.addNode("output");
+    const auto widened = body.addLink(source, "out", math, "a");
+    body.addLink(math, "out", output, "in");
+
+    const auto compiled = compileGraphBody(
+        body, [&](const NodeRecord& node, NodeDescriptor&) {
+            return nodes.descriptor(node.type);
+        });
+
+    INFO(nlohmann::json(compiled.errors).dump());
+    REQUIRE(compiled.valid);
+    REQUIRE(compiled.order == std::vector<NodeId>{source, math, output});
+    REQUIRE(compiled.socketType(math, "out") == ValueType::ScalarField);
+    REQUIRE(compiled.socketType(math, "a", SocketDirection::Input) ==
+            ValueType::ScalarField);
+    REQUIRE(compiled.resolvedEdges.at(widened).coercion == Coercion::Identity);
+}
+
+TEST_CASE("GraphBody compilation reports generic structural and type failures") {
+    auto nodes = registry();
+
+    GraphBody duplicateInputs;
+    const auto first = duplicateInputs.addNode("image");
+    const auto second = duplicateInputs.addNode("image");
+    const auto output = duplicateInputs.addNode("output");
+    duplicateInputs.links().push_back({1, first, "out", output, "in"});
+    duplicateInputs.links().push_back({2, second, "out", output, "in"});
+    const auto duplicateResult = compileGraphBody(
+        duplicateInputs, [&](const NodeRecord& node, NodeDescriptor&) {
+            return nodes.descriptor(node.type);
+        });
+    REQUIRE_FALSE(duplicateResult.valid);
+    REQUIRE(std::ranges::any_of(
+        duplicateResult.errors, [](const std::string& error) {
+            return error.find("more than one link") != std::string::npos;
+        }));
+
+    GraphBody cycle;
+    const auto a = cycle.addNode("math");
+    const auto b = cycle.addNode("math");
+    cycle.addLink(a, "out", b, "a");
+    cycle.addLink(b, "out", a, "a");
+    const auto cycleResult = compileGraphBody(
+        cycle, [&](const NodeRecord& node, NodeDescriptor&) {
+            return nodes.descriptor(node.type);
+        });
+    REQUIRE_FALSE(cycleResult.valid);
+    REQUIRE(std::ranges::any_of(
+        cycleResult.errors, [](const std::string& error) {
+            return error.find("cycle") != std::string::npos;
+        }));
+
+    GraphBody invalidType;
+    const auto vector = invalidType.addNode("vector");
+    const auto mathNode = invalidType.addNode("math");
+    invalidType.addLink(vector, "value", mathNode, "a");
+    const auto typeResult = compileGraphBody(
+        invalidType, [&](const NodeRecord& node, NodeDescriptor&) {
+            return nodes.descriptor(node.type);
+        });
+    REQUIRE_FALSE(typeResult.valid);
+    REQUIRE(std::ranges::any_of(
+        typeResult.errors, [](const std::string& error) {
+            return error.find("semantically inadmissible") != std::string::npos;
+        }));
+}
+
 TEST_CASE("graph compiles in dependency order") {
     auto nodes = registry();
     Graph graph;
