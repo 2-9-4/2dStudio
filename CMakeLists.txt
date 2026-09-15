@@ -66,30 +66,18 @@ if(REACTION_BUILD_APP)
         ${node_editor_SOURCE_DIR})
     target_link_libraries(reaction_imgui PUBLIC glfw glad OpenGL::GL)
 
+    # Focused built-in node families use the *_node.cpp naming convention.
+    # CONFIGURE_DEPENDS keeps new family sources discoverable after reconfigure,
+    # while registration itself remains explicit in builtin_node_families.inc.
+    file(GLOB REACTION_GPU_NODE_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu/*_node.cpp")
+
     add_library(reaction_gpu
         src/gpu/gpu_runtime.cpp
         src/gpu/shader_ir.cpp
         src/gpu/input_nodes.cpp
-        src/gpu/convolution_node.cpp
-        src/gpu/domain_warp_node.cpp
-        src/gpu/gradient_node.cpp
-        src/gpu/polar_coordinates_node.cpp
-        src/gpu/repeat_fold_node.cpp
-        src/gpu/transform_2d_node.cpp
-        src/gpu/wave_node.cpp
-        src/gpu/worley_noise_node.cpp
-        src/gpu/subgraph_node.cpp
         src/gpu/nodes.cpp
-        src/gpu/texture_sample_node.cpp
-        src/gpu/compare_node.cpp
-        src/gpu/hash_node.cpp
-        src/gpu/table_node.cpp
-        src/gpu/bit_test_node.cpp
-        src/gpu/integer_mask_node.cpp
-        src/gpu/distance_transform_node.cpp
-        src/gpu/dither_node.cpp
-        # Keep new node families as separate files; append their sources here.
-        # Shared procedural helpers are header-only in procedural_node_support.hpp.
+        ${REACTION_GPU_NODE_SOURCES}
         )
     target_include_directories(reaction_gpu PUBLIC include PRIVATE shaders)
     target_link_libraries(reaction_gpu PUBLIC reaction_core glad OpenGL::GL PNG::PNG)

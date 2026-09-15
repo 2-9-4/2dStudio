@@ -1,9 +1,12 @@
 # Adding a built-in node
 
-Nodes are registered through `NodeRegistry` during startup. Implement nodes in a focused
-`src/gpu/*_nodes.cpp` file (or a dedicated `*_node.cpp` for a larger node), expose its
-family registration function in `src/gpu/nodes_internal.hpp`, and call that function from
-`registerBuiltInNodes`. Shared parameter, texture, and uniform helpers live in
+Nodes are registered through `NodeRegistry` during startup. Implement a focused built-in
+family in a `src/gpu/*_node.cpp` file, expose one family registration function, and add that
+function to `src/gpu/builtin_node_families.inc`. The manifest generates both the declaration
+and the `registerBuiltInNodes` call, while CMake automatically discovers focused
+`*_node.cpp` sources after reconfigure. `src/gpu/input_nodes.cpp` and the legacy compact
+nodes that still live in `nodes.cpp` are existing exceptions; new focused families should use
+the `*_node.cpp` convention. Shared parameter, texture, and uniform helpers live in
 `src/gpu/node_support.hpp`.
 
 Each implementation derives from `NodeInstance` directly or through
