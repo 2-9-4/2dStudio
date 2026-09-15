@@ -39,7 +39,7 @@ public:
 
     bool lowerShader(ShaderLoweringContext& context) const override {
         const auto value = context.input("image", "image", 0.0F);
-        return context.emitTyped("vec4(1.0)-" + value.name, value.type, "result"), true;
+        return context.emitTyped("1.0-(" + value.name + ")", value.type, "result"), true;
     }
 };
 ```
