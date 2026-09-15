@@ -139,6 +139,27 @@ descriptor must also set `fieldDefault = true` so compile-time inference agrees 
 coordinates; `proceduralVector` handles those three states safely. Do not test “nonzero means
 texture,” because the canvas state is negative and must not sample an unbound or reused texture.
 
+## Node conformance test harness
+
+GPU integration tests can use `tests/node_test_support.hpp` instead of rebuilding GLFW, the
+registry, graph, GPU runtime, and output-reading boilerplate in every test. `RuntimeHarness`
+provides `add`, `connect`, `semanticType`, `pixels`, and `fusedAndSoloPixels` helpers:
+
+```cpp
+RuntimeHarness harness{8, 8};
+const auto coordinates = harness.add("coordinates");
+const auto node = harness.add("my_node");
+harness.connect(coordinates, "coordinates", node, "coordinates");
+
+REQUIRE(harness.semanticType(node, "result") == ValueType::ScalarField);
+const auto [fused, solo] = harness.fusedAndSoloPixels(node);
+REQUIRE(fused == solo);
+```
+
+Use the harness for graph/runtime semantics, but keep precise node-specific numeric assertions.
+Descriptor-only and type-resolution tests that do not need OpenGL should remain in the core test
+suite.
+
 ## Before registering a node
 
 - Confirm every Float/Integer slider key matches the socket key consumed by lowering or evaluate.
