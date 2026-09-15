@@ -11,6 +11,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace reaction {
 
@@ -111,12 +112,34 @@ public:
 
 private:
     struct FusionState;
+    struct PlannedInput {
+        NodeId sourceNode = 0;
+        std::size_t sourceOutput = 0;
+        bool connected = false;
+    };
+    struct NodeExecutionPlan {
+        NodeDescriptor descriptor;
+        std::vector<std::string> inputKeys;
+        std::vector<PlannedInput> inputs;
+        std::vector<std::string> outputKeys;
+        std::unordered_map<std::string, std::size_t> inputIndices;
+        std::unordered_map<std::string, std::size_t> outputIndices;
+        std::vector<NodeId> upstreamNodes;
+        std::vector<std::size_t> requiredImageInputs;
+    };
+
+    void rebuildExecutionPlan();
     void rebuildFusion();
     [[nodiscard]] std::string fusionSignature() const;
+    [[nodiscard]] Value outputValue(NodeId node, std::string_view socket) const;
+    [[nodiscard]] std::optional<std::size_t> outputIndex(
+        NodeId node, std::string_view socket) const;
+    bool evaluateNativeNode(NodeId id, EvaluationContext& context, bool resetState);
     Graph& graph_;
     const NodeRegistry& registry_;
     GpuRuntime& gpu_;
     CompileResult compiled_;
+    std::unordered_map<NodeId, NodeExecutionPlan> executionPlan_;
     std::unordered_map<NodeId, std::unique_ptr<NodeInstance>> instances_;
     std::unordered_map<NodeId, std::vector<Value>> values_;
     std::unordered_map<NodeId, double> timings_;
