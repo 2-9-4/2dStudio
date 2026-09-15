@@ -2,6 +2,7 @@
 
 #include "reaction/core/node.hpp"
 
+#include <algorithm>
 #include <initializer_list>
 #include <stdexcept>
 #include <string_view>
