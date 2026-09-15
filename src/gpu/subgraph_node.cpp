@@ -92,8 +92,11 @@ public:
             if (input != descriptor->sockets.end() && input->fieldDefault) {
                 if (!input->requiresImage)
                     return {ShaderValueType::Vec2, std::string(uvExpression), true};
-                const auto type = componentCount(disconnectedType(input->contract)) == 4
-                    ? ShaderValueType::Vec4 : componentCount(disconnectedType(input->contract)) == 2
+                const auto semantic = compiled_.socketType(
+                    frameNode->id, socket, SocketDirection::Input)
+                    .value_or(disconnectedType(input->contract));
+                const auto type = componentCount(semantic) == 4
+                    ? ShaderValueType::Vec4 : componentCount(semantic) == 2
                     ? ShaderValueType::Vec2 : ShaderValueType::Scalar;
                 const auto black = type == ShaderValueType::Vec4 ? "vec4(0.0,0.0,0.0,1.0)" :
                     type == ShaderValueType::Vec2 ? "vec2(0.0)" : "0.0";
