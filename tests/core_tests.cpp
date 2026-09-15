@@ -7,6 +7,7 @@
 #include <catch2/matchers/catch_matchers.hpp>
 #include <filesystem>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace reaction {
 namespace {
