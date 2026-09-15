@@ -19,6 +19,7 @@ add_library(reaction_core
     src/core/vector_math.cpp
     src/core/persistence.cpp
     src/core/registry.cpp
+    src/core/builtin_subgraphs.cpp
     src/core/subgraph.cpp)
 target_include_directories(reaction_core PUBLIC include)
 target_link_libraries(reaction_core PUBLIC nlohmann_json::nlohmann_json)
