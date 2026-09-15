@@ -307,7 +307,7 @@ TEST_CASE("node conformance harness exposes descriptors and resolved semantic ty
     const auto separate = harness.add("separate_vector");
     harness.connect(source, "coordinates", separate, "value");
 
-    REQUIRE(harness.descriptor("separate_vector").category == "Vector");
+    REQUIRE(harness.descriptor("separate_vector").displayName == "Separate Vector");
     REQUIRE(harness.semanticType(source, "coordinates") == ValueType::VectorField);
     REQUIRE(harness.semanticType(separate, "x") == ValueType::ScalarField);
     REQUIRE(harness.semanticType(separate, "y") == ValueType::ScalarField);
@@ -1409,6 +1409,12 @@ TEST_CASE("fused Math chain matches solo lowering and materializes previews on d
     REQUIRE(runtime.values().contains(add));
 
     runtime.setFusionEnabled(true);
+    REQUIRE(runtime.evaluate(0, 0, false));
+    REQUIRE(runtime.fusionInfo(add).has_value());
+    REQUIRE(runtime.fusionInfo(add)->interior);
+    REQUIRE(runtime.fusionInfo(multiply)->nodeCount == 4);
+    REQUIRE_FALSE(runtime.values().contains(add));
+
     runtime.setIntermediatePreview(add);
     REQUIRE(runtime.evaluate(0, 0, false));
     REQUIRE(runtime.values().contains(add));
