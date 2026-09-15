@@ -26,7 +26,13 @@ std::string identifier(std::string value) {
 class SimulationGraphCompiler final : public ShaderLoweringContext {
 public:
     SimulationGraphCompiler(const SubgraphDefinition& definition, const NodeRegistry& registry)
-        : definition_(definition), registry_(registry) {
+        : definition_(definition), registry_(registry),
+          compiled_(compileSubgraphBody(definition, registry)) {
+        if (!compiled_.valid) {
+            throw std::runtime_error(
+                compiled_.errors.empty() ? "Simulation body failed to compile"
+                                         : compiled_.errors.front());
+        }
         for (const auto& item : definition.body.nodes()) nodes_.emplace(item.id, &item);
     }
 
@@ -69,21 +75,12 @@ public:
         const auto* link = inputLink(frameNode->id, socket);
         if (link) {
             auto value = lower(link->fromNode, link->fromSocket, std::string(uvExpression));
-            NodeDescriptor storage;
-            const auto* descriptor = resolveSubgraphBodyDescriptor(
-                definition_, *frameNode, registry_, storage);
-            const auto sourceType = inferredSemanticType(link->fromNode, link->fromSocket);
-            const auto targetType = descriptor
-                ? resolveInputType(*descriptor, socket, sourceType,
-                    [&](std::string_view outputKey) -> std::optional<ValueType> {
-                        return inferredSemanticType(frameNode->id, outputKey);
-                    })
-                : sourceType;
-            const auto coercion = coercionBetween(sourceType, targetType);
-            if (!coercion)
-                throw std::runtime_error("Simulation edge cannot convert " +
-                    toString(sourceType) + " to " + toString(targetType));
-            return coerceShaderValue(std::move(value), *coercion);
+            const auto edge = compiled_.resolvedEdges.find(link->id);
+            if (edge == compiled_.resolvedEdges.end()) {
+                throw std::runtime_error("Simulation edge " + std::to_string(link->id) +
+                                         " has no compiled coercion");
+            }
+            return coerceShaderValue(std::move(value), edge->second.coercion);
         }
         NodeDescriptor storage;
         if (const auto* descriptor = resolveSubgraphBodyDescriptor(
@@ -95,8 +92,11 @@ public:
             if (input != descriptor->sockets.end() && input->fieldDefault) {
                 if (!input->requiresImage)
                     return {ShaderValueType::Vec2, std::string(uvExpression), true};
-                const auto type = componentCount(disconnectedType(input->contract)) == 4
-                    ? ShaderValueType::Vec4 : componentCount(disconnectedType(input->contract)) == 2
+                const auto semantic = compiled_.socketType(
+                    frameNode->id, socket, SocketDirection::Input)
+                    .value_or(disconnectedType(input->contract));
+                const auto type = componentCount(semantic) == 4
+                    ? ShaderValueType::Vec4 : componentCount(semantic) == 2
                     ? ShaderValueType::Vec2 : ShaderValueType::Scalar;
                 const auto black = type == ShaderValueType::Vec4 ? "vec4(0.0,0.0,0.0,1.0)" :
                     type == ShaderValueType::Vec2 ? "vec2(0.0)" : "0.0";
@@ -405,37 +405,12 @@ private:
         return "result";
     }
 
-    ValueType inferredSemanticType(NodeId id, std::string_view socket) const {
-        const auto found = nodes_.find(id);
-        if (found == nodes_.end()) return ValueType::Float;
-        const auto& node = *found->second;
-        NodeDescriptor storage;
-        if (const auto* descriptor = resolveSubgraphBodyDescriptor(definition_, node, registry_, storage)) {
-            const auto output = std::ranges::find_if(descriptor->sockets, [&](const auto& item) {
-                return item.key == socket && item.direction == SocketDirection::Output;
-            });
-            if (output != descriptor->sockets.end())
-                return resolveOutputType(*descriptor, *output,
-                    [&](std::string_view inputKey) -> std::optional<ValueType> {
-                        if (const auto* link = inputLink(id, inputKey))
-                            return inferredSemanticType(link->fromNode, link->fromSocket);
-                        const auto input = std::ranges::find_if(descriptor->sockets,
-                            [&](const auto& item) {
-                                return item.key == inputKey &&
-                                       item.direction == SocketDirection::Input;
-                            });
-                        if (input == descriptor->sockets.end()) return std::nullopt;
-                        auto type = disconnectedType(input->contract);
-                        if (input->fieldDefault)
-                            type = fieldTypeForWidth(componentCount(type));
-                        return type;
-                    });
-        }
-        return ValueType::Float;
+    ValueType semanticType(NodeId id, std::string_view socket) const {
+        return compiled_.socketType(id, socket).value_or(ValueType::Float);
     }
 
     ShaderValueType inferredType(NodeId id, std::string_view socket) const {
-        switch (componentCount(inferredSemanticType(id, socket))) {
+        switch (componentCount(semanticType(id, socket))) {
         case 2: return ShaderValueType::Vec2;
         case 4: return ShaderValueType::Vec4;
         default: return ShaderValueType::Scalar;
@@ -449,6 +424,7 @@ private:
 
     const SubgraphDefinition& definition_;
     const NodeRegistry& registry_;
+    CompileResult compiled_;
     std::unordered_map<NodeId, const NodeRecord*> nodes_;
     std::vector<ShaderHelper> helpers_;
     std::ostringstream statements_;
