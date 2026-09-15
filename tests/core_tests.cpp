@@ -993,6 +993,43 @@ TEST_CASE("graph bodies use stable node and link IDs with root graph mutation se
     REQUIRE(body.findNode(first) != nullptr);
 }
 
+TEST_CASE("simulation body compilation shares root type and coercion semantics") {
+    auto nodes = registry();
+    add(nodes, {"color_source", 1, "Color", "Test",
+        {{"value", "Value", ValueType::ColorImage, SocketDirection::Output}}, {}});
+
+    SubgraphDefinition definition;
+    definition.id = "project.compile_parity";
+    definition.name = "Compile Parity";
+    definition.execution = SubgraphExecution::Simulation;
+    const auto scalar = definition.body.addNode("image");
+    const auto color = definition.body.addNode("color_source");
+    const auto select = definition.body.addNode("select");
+    definition.body.addLink(scalar, "out", select, "ifTrue");
+    definition.body.addLink(color, "value", select, "ifFalse");
+
+    const auto simulation = compileSubgraphBody(definition, nodes);
+    const auto generic = compileGraphBody(
+        definition.body, [&](const NodeRecord& node, NodeDescriptor& storage) {
+            return resolveSubgraphBodyDescriptor(definition, node, nodes, storage);
+        });
+
+    INFO(nlohmann::json(simulation.errors).dump());
+    REQUIRE(simulation.valid);
+    REQUIRE(generic.valid);
+    REQUIRE(simulation.socketType(select, "result") == ValueType::ColorImage);
+    REQUIRE(simulation.socketType(select, "ifTrue", SocketDirection::Input) ==
+            ValueType::ColorImage);
+    REQUIRE(simulation.resolvedEdges.size() == generic.resolvedEdges.size());
+    for (const auto& [link, edge] : simulation.resolvedEdges) {
+        REQUIRE(generic.resolvedEdges.contains(link));
+        const auto& other = generic.resolvedEdges.at(link);
+        REQUIRE(edge.sourceType == other.sourceType);
+        REQUIRE(edge.targetType == other.targetType);
+        REQUIRE(edge.coercion == other.coercion);
+    }
+}
+
 TEST_CASE("simulation bodies reuse registered normal node descriptors") {
     auto nodes = registry();
     auto definition = builtInSubgraphs().front();
@@ -1045,7 +1082,7 @@ TEST_CASE("Vec2 Laplacian results require a simulation channel split before math
     definition.body.addLink(laplacianId, "result", math, "a");
     const auto errors = validateSubgraph(definition, nodes);
     REQUIRE(std::ranges::any_of(errors, [](const std::string& error) {
-        return error.find("cannot connect vector_field") != std::string::npos;
+        return error.find("Cannot connect vector_field") != std::string::npos;
     }));
 }
 
