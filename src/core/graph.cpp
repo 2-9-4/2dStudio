@@ -104,33 +104,37 @@ SubgraphDefinition* Graph::findSubgraph(std::string_view id) {
     return it == subgraphs_.end() ? nullptr : &*it;
 }
 
-CompileResult Graph::compile(const NodeRegistry& registry) const {
+CompileResult compileGraphBody(
+    const GraphBody& body, const BodyDescriptorResolver& descriptorResolver,
+    const MissingDescriptorMessage& missingDescriptorMessage) {
     CompileResult result;
     std::unordered_map<NodeId, int> indegree;
     std::unordered_map<NodeId, std::vector<NodeId>> outgoing;
     std::unordered_set<std::string> occupiedInputs;
 
-    for (const auto& node : nodes_) {
+    for (const auto& node : body.nodes()) {
         indegree[node.id] = 0;
         NodeDescriptor descriptorStorage;
-        if (!resolveDescriptor(*this, node, registry, descriptorStorage)) {
-            if (node.type == "subgraph")
-                result.errors.push_back("Missing subgraph definition '" + node.subgraphId + "'");
-            else if (!node.missing)
+        if (!descriptorResolver(node, descriptorStorage)) {
+            if (missingDescriptorMessage) {
+                const auto message = missingDescriptorMessage(node);
+                if (!message.empty()) result.errors.push_back(message);
+            } else if (!node.missing) {
                 result.errors.push_back("Unknown node type '" + node.type + "'");
+            }
         }
     }
 
-    for (const auto& link : links_) {
-        const auto* from = findNode(link.fromNode);
-        const auto* to = findNode(link.toNode);
+    for (const auto& link : body.links()) {
+        const auto* from = body.findNode(link.fromNode);
+        const auto* to = body.findNode(link.toNode);
         if (!from || !to) {
             result.errors.push_back("Link " + std::to_string(link.id) + " has a missing endpoint");
             continue;
         }
         NodeDescriptor fromStorage, toStorage;
-        const auto* fromDesc = resolveDescriptor(*this, *from, registry, fromStorage);
-        const auto* toDesc = resolveDescriptor(*this, *to, registry, toStorage);
+        const auto* fromDesc = descriptorResolver(*from, fromStorage);
+        const auto* toDesc = descriptorResolver(*to, toStorage);
         if (!fromDesc || !toDesc) {
             result.errors.push_back("Link " + std::to_string(link.id) + " touches a missing node type");
             continue;
@@ -151,26 +155,30 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
     }
 
     std::priority_queue<NodeId, std::vector<NodeId>, std::greater<>> ready;
-    for (const auto& [id, degree] : indegree) if (degree == 0) ready.push(id);
+    for (const auto& [id, degree] : indegree)
+        if (degree == 0) ready.push(id);
     while (!ready.empty()) {
         const auto id = ready.top();
         ready.pop();
         result.order.push_back(id);
-        for (const auto next : outgoing[id]) if (--indegree[next] == 0) ready.push(next);
+        for (const auto next : outgoing[id])
+            if (--indegree[next] == 0) ready.push(next);
     }
-    if (result.order.size() != nodes_.size()) result.errors.push_back("Graph contains a cycle");
+    if (result.order.size() != body.nodes().size())
+        result.errors.push_back("Graph contains a cycle");
 
     const auto incoming = [&](NodeId node, std::string_view key) -> const LinkRecord* {
-        const auto found = std::ranges::find_if(links_, [&](const LinkRecord& link) {
+        const auto found = std::ranges::find_if(body.links(), [&](const LinkRecord& link) {
             return link.toNode == node && link.toSocket == key;
         });
-        return found == links_.end() ? nullptr : &*found;
+        return found == body.links().end() ? nullptr : &*found;
     };
 
     for (const auto id : result.order) {
-        const auto* node = findNode(id);
+        const auto* node = body.findNode(id);
         NodeDescriptor descriptorStorage;
-        const auto* descriptor = node ? resolveDescriptor(*this, *node, registry, descriptorStorage) : nullptr;
+        const auto* descriptor =
+            node ? descriptorResolver(*node, descriptorStorage) : nullptr;
         if (!descriptor) continue;
 
         std::unordered_map<std::string, ValueType> inputTypes;
@@ -199,21 +207,26 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
 
         for (const auto& port : descriptor->sockets) {
             if (port.direction != SocketDirection::Output) continue;
-            const auto resolved = resolveOutputType(*descriptor, port,
+            const auto resolved = resolveOutputType(
+                *descriptor, port,
                 [&](std::string_view key) -> std::optional<ValueType> {
                     const auto found = inputTypes.find(std::string(key));
-                    return found == inputTypes.end() ? std::nullopt
-                                                     : std::optional(found->second);
+                    return found == inputTypes.end()
+                        ? std::nullopt
+                        : std::optional(found->second);
                 });
             result.resolvedSockets[{id, port.key, SocketDirection::Output}] =
                 {port.contract, resolved};
-
         }
+
         for (const auto& [key, sourceType] : inputTypes) {
-            const auto inputKey = CompileResult::SocketKey{id, key, SocketDirection::Input};
-            const auto targetType = resolveInputType(*descriptor, key, sourceType,
+            const auto inputKey =
+                CompileResult::SocketKey{id, key, SocketDirection::Input};
+            const auto targetType = resolveInputType(
+                *descriptor, key, sourceType,
                 [&](std::string_view outputKey) {
-                    return result.socketType(id, outputKey, SocketDirection::Output);
+                    return result.socketType(id, outputKey,
+                                             SocketDirection::Output);
                 });
             if (auto found = result.resolvedSockets.find(inputKey);
                 found != result.resolvedSockets.end())
@@ -221,15 +234,16 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
         }
     }
 
-    for (const auto& link : links_) {
+    for (const auto& link : body.links()) {
         const auto source = result.socketType(link.fromNode, link.fromSocket);
-        const auto target = result.socketType(link.toNode, link.toSocket,
-                                              SocketDirection::Input);
+        const auto target =
+            result.socketType(link.toNode, link.toSocket, SocketDirection::Input);
         if (!source || !target) continue;
         const auto coercion = coercionBetween(*source, *target);
         if (!coercion) {
-            result.errors.push_back("Link " + std::to_string(link.id) + " cannot convert " +
-                                    toString(*source) + " to " + toString(*target));
+            result.errors.push_back(
+                "Link " + std::to_string(link.id) + " cannot convert " +
+                toString(*source) + " to " + toString(*target));
             continue;
         }
         result.resolvedEdges[link.id] = {
@@ -238,12 +252,30 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
             *source, *target, *coercion};
     }
 
+    result.valid = result.errors.empty();
+    return result;
+}
+
+CompileResult Graph::compile(const NodeRegistry& registry) const {
+    auto result = compileGraphBody(
+        *this,
+        [&](const NodeRecord& node, NodeDescriptor& storage) {
+            return resolveDescriptor(*this, node, registry, storage);
+        },
+        [&](const NodeRecord& node) {
+            if (node.type == "subgraph")
+                return "Missing subgraph definition '" + node.subgraphId + "'";
+            return node.missing ? std::string{}
+                                : "Unknown node type '" + node.type + "'";
+        });
+
     std::unordered_set<std::string> validatedSubgraphs;
     for (const auto& node : nodes_) {
-        if (node.type != "subgraph" || !validatedSubgraphs.insert(node.subgraphId).second)
+        if (node.type != "subgraph" ||
+            !validatedSubgraphs.insert(node.subgraphId).second)
             continue;
         const auto* definition = resolveSubgraph(*this, node.subgraphId);
-        if (!definition) continue; // The missing-definition error was added above.
+        if (!definition) continue;
         for (const auto& error : validateSubgraph(*definition, registry)) {
             result.errors.push_back("Subgraph '" + definition->name + "': " + error);
         }
@@ -251,8 +283,11 @@ CompileResult Graph::compile(const NodeRegistry& registry) const {
 
     if (activeOutput != 0) {
         const auto* output = findNode(activeOutput);
-        if (!output) result.errors.push_back("Active output node does not exist");
-        else if (output->type != "output") result.errors.push_back("Active output must reference an Output node");
+        if (!output)
+            result.errors.push_back("Active output node does not exist");
+        else if (output->type != "output")
+            result.errors.push_back(
+                "Active output must reference an Output node");
     }
     result.valid = result.errors.empty();
     return result;
