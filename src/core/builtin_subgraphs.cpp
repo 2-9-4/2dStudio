@@ -2,7 +2,9 @@
 #include "reaction/core/math.hpp"
 #include "reaction/core/vector_math.hpp"
 
+#include <array>
 #include <cmath>
+#include <tuple>
 
 namespace reaction {
 namespace {
