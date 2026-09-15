@@ -1,6 +1,8 @@
 #include "nodes_internal.hpp"
 #include "node_support.hpp"
 
+#include "reaction/core/node_builder.hpp"
+
 #include "reaction/gpu/shader_ir.hpp"
 
 #include <algorithm>
@@ -31,24 +33,18 @@ DitherMode clampMode(float persistedValue) {
 class DitherNode final : public node_support::ParameterNode {
 public:
     static NodeDescriptor describe() {
-        auto result = NodeDescriptor{"dither", 1, "Dither / Halftone", "Filter",
-            {{"image", "Image", SocketContract::AnyImageValue, SocketDirection::Input},
-             {"image", "Image", SocketContract::AnyImageValue, SocketDirection::Output}},
-            {{"mode", "Mode", 0.0F, 0.0F, 5.0F, ParameterDescriptor::Control::Enum,
-              {"Threshold", "Bayer 2x2", "Bayer 4x4", "Bayer 8x8",
-               "Halftone", "Noise"}},
-             {"levels", "Levels", 2.0F, 2.0F, 16.0F,
-              ParameterDescriptor::Control::Integer},
-             {"patternSize", "Pattern Size", 8.0F, 2.0F, 64.0F,
-              ParameterDescriptor::Control::Integer}}};
-        result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
-        result.sockets.back().typeInputs = {"image"};
-        result.lowerable = true;
-        // Dithering depends on the pixel position even when its input is a
-        // frame-wide constant, so its output is always a field at the width
-        // resolved from the source value.
-        result.producedField = true;
-        return result;
+        return NodeDescriptorBuilder{"dither", 1, "Dither / Halftone", "Filter"}
+            .input("image", "Image", SocketContract::AnyImageValue)
+            .output("image", "Image", SocketContract::AnyImageValue)
+            .enumParameter("mode", "Mode", 0,
+                {"Threshold", "Bayer 2x2", "Bayer 4x4", "Bayer 8x8",
+                 "Halftone", "Noise"})
+            .integerParameter("levels", "Levels", 2, 2, 16)
+            .integerParameter("patternSize", "Pattern Size", 8, 2, 64)
+            .typePolicy("image", SocketDescriptor::TypePolicy::PreserveInput, {"image"})
+            .lowerable()
+            .producedField()
+            .build();
     }
 
     const NodeDescriptor& descriptor() const override {
