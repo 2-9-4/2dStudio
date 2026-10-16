@@ -128,13 +128,23 @@ TEST_CASE("Sands particle subgraph compiles, deposits trails, and persists graph
     REQUIRE(errors.empty());
     REQUIRE(found->stateSlots.size() == 3);
     REQUIRE(found->stateSlots[0].type == ValueType::VectorField);
+    REQUIRE(found->stateSlots[0].highPrecision);
+    REQUIRE(std::ranges::none_of(found->body.nodes(), [](const auto& node) {
+        return node.type == "particle_step";
+    }));
+    REQUIRE(std::ranges::count(found->body.nodes(), "math", &NodeRecord::type) >= 20);
+    REQUIRE(std::ranges::count(found->body.nodes(), "select", &NodeRecord::type) >= 3);
     REQUIRE(found->stateSlots[1].type == ValueType::ScalarField);
     REQUIRE(found->stateSlots[2].type == ValueType::ScalarField);
 
     const auto initial = generateSimulationShader(*found, true);
     const auto update = generateSimulationShader(*found, false);
     REQUIRE(initial.find("deterministicHash") != std::string::npos);
-    REQUIRE(update.find("particleRng") != std::string::npos);
+    REQUIRE(update.find("deterministicHash") != std::string::npos);
+    REQUIRE(update.find("rg32f,binding=0") != std::string::npos);
+    REQUIRE(update.find("tan(") != std::string::npos);
+    REQUIRE(update.find("cos(") != std::string::npos);
+    REQUIRE(update.find("sin(") != std::string::npos);
     REQUIRE(update.find("simulationFrameIndex") != std::string::npos);
     REQUIRE(update.find("perlinNoise") != std::string::npos);
 
@@ -150,11 +160,12 @@ TEST_CASE("Sands particle subgraph compiles, deposits trails, and persists graph
     const auto simulation = graph.addNode("subgraph");
     graph.findNode(simulation)->subgraphId = found->id;
     graph.findNode(simulation)->parameters = {
-        {"noiseScale", 6.0F}, {"speed", 1.0F}, {"maxJump", 64.0F},
+        {"noiseScale", 5.0F}, {"speed", 1.0F}, {"maxJump", 64.0F},
+        {"angleBins", 1200.0F},
         {"iterations", 1.0F}};
     const auto splat = graph.addNode("particle_splat");
     graph.findNode(splat)->parameters = {
-        {"count", 1000.0F}, {"opacity", 0.375F}, {"retention", 0.996F}};
+        {"count", 1000.0F}, {"opacity", 0.375F}, {"retention", 0.985F}};
     const auto output = graph.addNode("output");
     graph.addLink(simulation, "positions", splat, "positions");
     graph.addLink(simulation, "branches", splat, "branches");
@@ -167,10 +178,25 @@ TEST_CASE("Sands particle subgraph compiles, deposits trails, and persists graph
     const auto project = serializeProject(graph);
     const auto restored = deserializeProject(project, registry);
     REQUIRE(restored.compile(registry).valid);
+    Graph localCopy;
+    localCopy.subgraphs().push_back(*found);
+    const auto restoredCopy = deserializeProject(serializeProject(localCopy), registry);
+    REQUIRE(restoredCopy.subgraphs().front().stateSlots[0].highPrecision);
 
     GraphRuntime runtime(graph, registry, gpu);
-    for (int i = 0; i < 10; ++i)
+    REQUIRE(runtime.evaluate(0.0, 1.0 / 60.0, true));
+    const auto firstPositions = readImage(std::get<ImageHandle>(runtime.values().at(simulation)[0]));
+    for (int i = 1; i < 30; ++i)
         REQUIRE(runtime.evaluate(static_cast<double>(i) / 60.0, 1.0 / 60.0, true));
+    const auto finalPositions = readImage(std::get<ImageHandle>(runtime.values().at(simulation)[0]));
+    std::size_t moved = 0;
+    for (std::size_t i = 0; i + 3 < firstPositions.size(); i += 4) {
+        const float dx = finalPositions[i] - firstPositions[i];
+        const float dy = finalPositions[i+1] - firstPositions[i+1];
+        if (std::hypot(dx,dy) > 1.0F / 64.0F) ++moved;
+    }
+    INFO("Moved agents by >1px in 29 steps: " << moved);
+    REQUIRE(moved > firstPositions.size() / 4 / 8); // not frozen/static
     REQUIRE(runtime.outputImage());
     const auto pixels = readImage(runtime.outputImage());
     REQUIRE(std::ranges::all_of(pixels, [](float v) { return std::isfinite(v); }));
