@@ -213,7 +213,10 @@ private:
         source << "#version 430\nlayout(local_size_x=16,local_size_y=16)in;\n";
         for (std::size_t slot = 0; slot < definition_.stateSlots.size(); ++slot) {
             const auto width = componentCount(definition_.stateSlots[slot].type);
-            const char* layout = width == 1 ? "r16f" : width == 2 ? "rg16f" : "rgba16f";
+            const bool full = definition_.stateSlots[slot].highPrecision;
+            const char* layout = width == 1 ? (full ? "r32f" : "r16f") :
+                width == 2 ? (full ? "rg32f" : "rg16f") :
+                             (full ? "rgba32f" : "rgba16f");
             source << "layout(" << layout << ",binding=" << slot << ")writeonly uniform image2D stateOut"
                    << slot << ";\nlayout(binding=" << slot << ")uniform sampler2D stateIn" << slot << ";\n";
         }
@@ -694,10 +697,11 @@ private:
 
     GLenum stateFormat(std::size_t slot) const {
         if (definition_.stateSlots.empty()) return GL_RG16F;
+        const bool full = definition_.stateSlots[slot].highPrecision;
         switch (componentCount(definition_.stateSlots[slot].type)) {
-        case 1: return GL_R16F;
-        case 2: return GL_RG16F;
-        default: return GL_RGBA16F;
+        case 1: return full ? GL_R32F : GL_R16F;
+        case 2: return full ? GL_RG32F : GL_RG16F;
+        default: return full ? GL_RGBA32F : GL_RGBA16F;
         }
     }
 
