@@ -56,7 +56,7 @@ The **Noise-Driven Particles (Sands)** built-in subgraph is editable (select
 and press Tab) and drives a separate **Particle Splat / Trails** node that
 rasterizes the evolving particle positions as fading orange/teal points.
 Parameters expose noise frequency, motion speed, tangent singularity clamp,
-particle count, point opacity and trail retention. See
+particle count, point opacity and trail retention. The motion and lifetime\nlogic are composed from standard Math/Hash/Select/Vector nodes (not a monolithic\nparticle integrator). See
 [docs/noise-particles.md](docs/noise-particles.md) for architecture,
 performance limits and differences from the original sketch.
 
