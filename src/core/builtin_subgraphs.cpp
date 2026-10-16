@@ -931,6 +931,8 @@ SubgraphDefinition noiseDrivenParticles() {
          true, 5.0F, .05F, 40.0F},
         {"speed", "Particle Speed", SubgraphInterfaceKind::Input, ValueType::Float,
          true, 1.0F, 0.0F, 10.0F},
+        {"angleBins", "Direction Quantization", SubgraphInterfaceKind::Input,
+         ValueType::Float, true, 1200.0F, 8.0F, 4096.0F, Control::Integer},
         {"maxJump", "Tangent Jump Limit", SubgraphInterfaceKind::Input, ValueType::Float,
          true, 64.0F, 1.0F, 512.0F},
         {"reset", "Reset", SubgraphInterfaceKind::Input, ValueType::Float,
@@ -1034,11 +1036,12 @@ SubgraphDefinition noiseDrivenParticles() {
     connect(pos, noiseSampler, "coordinates");
 
     // ANGLE = 2*pi * round(noise*1200)/1200.
-    const auto scaledNoise = calc("Noise to 1200 angular bins", M::Multiply, 790, 1370,
-                                  w(noiseSampler, "sampled"), {}, {}, {{"b", 1200.0F}});
+    const auto bins = input(body, "angleBins", "Direction Bins", {790, 1550});
+    const auto scaledNoise = calc("Noise to Angular Bins", M::Multiply, 790, 1370,
+                                  w(noiseSampler, "sampled"), w(bins, "value"));
     const auto roundNoise = calc("Quantize Flow Angle", M::Round, 1020, 1370, scaledNoise);
     const auto normalized = calc("Quantized Fraction", M::Divide, 1240, 1370,
-                                 roundNoise, {}, {}, {{"b", 1200.0F}});
+                                 roundNoise, w(bins, "value"));
     const auto theta = calc("Flow Angle Radians", M::Multiply, 1460, 1370,
                             normalized, {}, {}, {{"b", 6.28318530718F}});
 
