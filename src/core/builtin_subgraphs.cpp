@@ -1027,7 +1027,8 @@ SubgraphDefinition noiseDrivenParticles() {
     const auto noiseScale = input(body, "noiseScale", "Flow Noise Scale", {0, 1450});
     const auto perlin = addNode(body, "perlin", "Stationary One-Octave Perlin",
                                 {260, 1450},
-                                {{"seed", 1.0F}, {"speed", 0.0F}, {"octaves", 1.0F}});
+                                {{"seed", 1.0F}, {"speed", 0.0F}, {"octaves", 4.0F},
+                                 {"persistence", 0.5F}, {"lacunarity", 2.0F}});
     connect(w(noiseScale, "value"), perlin, "scale");
     const auto noiseSampler = addNode(body, "texture_sample", "Sample Flow at Particle",
                                       {520, 1420},
