@@ -113,7 +113,7 @@ public:
             .input("branches","Orange / Teal Branch",ValueType::ScalarField)
             .output("image","Accumulated Trails",ValueType::ColorImage)
             .integerParameter("count","Visible Particles",1000,1,100000)
-            .floatParameter("retention","Frame Retention",0.996F,0.0F,1.0F)
+            .floatParameter("retention","Frame Retention",0.985F,0.0F,1.0F)
             .floatParameter("opacity","Point Opacity",0.375F,0.0F,1.0F)
             .stateful().timeDependent()
             .build();
@@ -147,7 +147,7 @@ public:
                                       branches.width*branches.height});
         if(capacity<=0){outputs[0]=Value{};return;}
         const int count=std::clamp(static_cast<int>(floatAt(inputs,2,1000.0F)),1,capacity);
-        const float retention=std::clamp(floatAt(inputs,3,0.996F),0.0F,1.0F);
+        const float retention=std::clamp(floatAt(inputs,3,0.985F),0.0F,1.0F);
         const float opacity=std::clamp(floatAt(inputs,4,0.375F),0.0F,1.0F);
 
         // GL is shared with ImGui and the preview. Do not leak framebuffer,
