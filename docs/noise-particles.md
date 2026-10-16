@@ -1,61 +1,112 @@
 # Noise-driven particle trails (Sands)
 
-Inspired by SamuelYAN's p5.js sketch (credit: SamuelYAN; see the original artist's
-[Instagram](https://www.instagram.com/samuel_yan_1990/) and
-[Twitter](https://twitter.com/SamuelAnn0924)). This implementation adapts the
-motion rules but is **not** numerically identical to p5.js noise or its RNG.
+Inspired by SamuelYAN's p5.js sketch ([Instagram](https://www.instagram.com/samuel_yan_1990/),
+[Twitter](https://twitter.com/SamuelAnn0924/)). This is a procedural adaptation,
+not a bit-for-bit port of p5.js Perlin noise or the original RNG.
 
-Open with:
+Run the preset:
 
-```sh
+\`\`\`sh
 ./build/reaction_studio examples/noise-particles.reaction.json
-```
+\`\`\`
 
 Graph: **Noise-Driven Particles (Sands)** → **Particle Splat / Trails** → **Output**.
+Select the Sands node and press **Tab** to open the editable simulation body.
 
-Select the simulation and press Tab to edit its body. It uses existing
-Canvas Coordinates, Hash, Perlin Noise, Texture Sample, Simulation Step Info,
-and state nodes, plus one lowerable **Particle Step** primitive.
+## Subgraph anatomy (the algorithm is NOT a primitive)
 
-The particle simulation is a *texel-per-agent* approximation: all pixels in the
-simulation texture are independent particle slots. The Splat node deterministically
-selects an evenly distributed subset of these slots and renders that number of
-points with alpha blending onto a retained RGBA16F canvas. For performance,
-use a 256–512 pixel project while experimenting; increasing resolution increases
-simulation work quadratically even if Visible Particles stays at 1,000.
+Everything below is a visible, connected, editable node:
 
-## Tunable settings
+1. **Initialize slots** — Canvas Coordinates → Deterministic Hash → initial
+   position and lifetime state. Separate Hash seeds make initial UV coordinates
+   and initial life independent.
+2. **Sample flow** — Previous Position → Texture Sample, driven by a
+   *stationary*, one-octave Perlin field. Noise Scale controls its spatial frequency.
+3. **Quantize angle** — Multiply by Direction Quantization → Round → Divide by
+   Direction Quantization → Multiply by 2π.
+4. **Choose branch** — Step at 3 and 6 radians, subtract and multiply to
+   produce a binary orange-region mask.
+5. **Orange motion** — Tangent → Clamp (using Tangent Jump Limit), multiplied by
+   random(1,3) in X, same tangent in Y → Combine Vector.
+6. **Teal motion** — Sine, Cosine, independent random(0.1,1) in X, Y fixed to
+   negative cosine → Combine Vector.
+7. **Integrate** — Select orange/teal vector → Vector Scale by Particle Speed →
+   Pixel Delta to UV → Vector Add to the previous position.
+8. **Life** — Two 2-channel Deterministic Hash nodes generate four independent
+   uniform values → three multiplies → multiply by 0.1 → subtract from life →
+   Step to detect expiration.
+9. **Respawn** — Random Position and Random Life hashes drive two Select nodes:
+   dead particles get new random states, survivors keep their integrated states.
+10. **Persist** — Next Position, Next Life and Next Branch state endpoints.
+    Two exported texture fields feed the separate renderer.
 
-- **Noise Scale:** spatial frequency of the stationary noise used by the motion
-  graph. This is the number of noise cells across the canvas, not the p5.js
-  pixel divisor of 100.
-- **Particle Speed:** scales pixel displacement per simulation step.
-- **Tangent Jump Limit:** clamps the tangent singularity to avoid numerical
-  overflow and unbounded particle coordinates.
-- **Iterations per Frame:** one step per frame matches the original's schedule.
-- **Visible Particles:** number of independently moving points deposited per frame.
-- **Frame Retention:** retention multiplier applied once per rendered frame
-  (0.996 by default).
-- **Point Opacity:** overall opacity of each deposited point.
+No custom node owns the actual motion, branching, lifetime, or respawn rules.
+The only new lowerable mathematical primitive is **Pixel Delta to UV**, which
+exposes the shader's pixel size as a vector conversion. Existing Math, Vector
+Math, Hash, Select, Texture Sample, and state nodes do the rest.
 
-The two branches are retained: at quantized angle in (3,6), orange particles
-move by `(tan(angle)*random(1,3),tan(angle))`. Otherwise teal particles move
-by `(-sin(angle)*random(0.1,1),-cos(angle))`. Angles are quantized to 1,200 steps.
-Lifetime starts uniformly random and decreases by the product of four
-independent uniforms divided by ten; dead particles respawn at random UVs.
-The renderer clamps **drawn points only** to a 20-pixel inset, without affecting
-particle coordinates. Out-of-bounds noise sampling repeats the field rather than
-continuing p5.js noise outside the canvas.
+All Perlin parameters are visible on the noise node; noise remains stationary
+(speed zero) while agents independently move through it.
 
-## Caveats / follow-up improvements
+## Precision and appearance
 
-- The host's current simulation implementation runs on full-resolution image
-  state. A dedicated particle-buffer execution backend would be more efficient.
-- Particle Step combines the per-agent stochastic operations into one lowerable
-  node because the existing graph language has no general per-agent random-stream
-  or arbitrary multi-output state-update facility.
-- Color and point-weight sampling approximate the original; no subpixel point
-  rasterization or exact p5.js random seed compatibility is claimed.
-- The trails buffer is deliberately not serialized; re-opening the project
-  starts a fresh drawing. For a clean reset of both particle state and trails,
-  use the graph's Reset Simulation action.
+Position integration is **RGBA/RG32F** through the private simulation
+state and exported position texture. The default RG16F used by other simulations
+lost movement smaller than about a fraction of a pixel, so simply verifying
+nonblack output could never validate this algorithm.
+
+Splat is deliberately separate: the current subgraph compiler cannot execute
+OpenGL framebuffer point drawing. It reads the position and branch fields and
+draws independently colored, partially transparent points into a persistent
+RGBA canvas, then fades the canvas every frame. The resulting strokes emerge
+from tracked trajectories, rather than sampled white noise.
+
+Important parameters:
+
+- **Noise Scale**: approximately 5 noise cells across the image; increasing
+  makes more tightly curved shapes.
+- **Direction Quantization**: 1200 steps by default, matching the original.
+- **Particle Speed**: displacement measured in pixels per simulation step.
+- **Tangent Jump Limit**: avoids overflow near π/2 and 3π/2 poles.
+- **Visible Particles**: 1,000 deposited points per frame.
+- **Frame Retention**: 0.985 by default for the intended time window, rather
+  than the previous 0.996 that could accumulate many stale dots.
+- **Point Opacity**: 0.375 by default.
+
+The life update is the product of four independent uniforms divided by 10,
+which has the same marginal distribution as the original four nested
+random() calls; exact stochastic sequences still differ.
+
+The renderer clamps drawn positions to a 20-pixel inset (not the simulation
+positions). Out-of-bounds noise samples repeat rather than extending unbounded
+p5.js noise. Source-derived tangent displacement, alpha, and two-color branch
+semantics are otherwise retained.
+
+## Engineering limitations and footguns
+
+- The existing backend encodes **one particle per simulation texel**, not
+  packed SSBO agents. This is wasteful: simulation runtime scales with canvas
+  resolution, not with the visible point count. A dedicated particle-buffer
+  backend would be the correct longer-term optimization.
+- The renderer is a separate stateful native node; its internal fading
+  framebuffer isn't editable *inside* the simulation subgraph.
+- Simulations require exactly one Previous/Initial/Next accessor for *every*
+  private slot, even when the previous value is unused.
+- Headless core tests use a miniature mock registry and must list every new
+  built-in node contract separately from the actual GPU registry.
+- Root and subgraph canvas node labels had been hidden (used only for shader
+  inspection), which made large graphs very hard to understand. This PR
+  shows the instance labels in both canvases.
+- Cached project-local copies of the *previous* built-in definition are not
+  replaced automatically. Open the updated example or re-add the built-in
+  Sands subgraph to see the new wiring.
+- Simulation texture contents are not persisted to project JSON; reload
+  restarts the drawing.
+
+## Verification
+
+The CI run compiles generated initialization/update shaders with headless
+Mesa, verifies the subgraph contains ordinary math/select/hash nodes rather
+than a monolithic step, checks persistence of high-precision state, and
+compares exported particle positions over multiple frames to detect frozen
+motion. It also verifies the trails image contains nontrivial finite color.
