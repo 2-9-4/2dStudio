@@ -27,25 +27,25 @@ submodes, and the special nodes available inside simulation subgraphs.
 
 ### Particle simulation and rendering
 
-- **Pixel Delta to UV** (\`pixel_delta_to_uv\`) — Lowerable conversion of
-  \`Vector Numeric\` pixel displacement into normalized UV displacement using
+- **Pixel Delta to UV** (`pixel_delta_to_uv`) — Lowerable conversion of
+  `Vector Numeric` pixel displacement into normalized UV displacement using
   the actual canvas pixel size. Supports ordinary vector inputs and spatial
   vector fields; no particle-specific logic.
 
-- **Particle Splat / Trails** (\`particle_splat\`) — Native stateful GPU
-  renderer. Its \`Particle Positions (UV)\` (Vector Field) and \`Orange / Teal
-  Branch\` (Scalar Field) inputs deposit \`Visible Particles\` colored points
-  onto a persistent RGBA canvas. Set \`Frame Retention\` and \`Point Opacity\`
+- **Particle Splat / Trails** (`particle_splat`) — Native stateful GPU
+  renderer. Its `Particle Positions (UV)` (Vector Field) and `Orange / Teal
+  Branch` (Scalar Field) inputs deposit `Visible Particles` colored points
+  onto a persistent RGBA canvas. Set `Frame Retention` and `Point Opacity`
   to control fade and deposition. The point rasterizer is a root-only node,
   since simulation subgraphs use lowerable shader expressions.
 
-- **Noise-Driven Particles (Sands)** (\`builtin.particles.noise_flow\`) —
+- **Noise-Driven Particles (Sands)** (`builtin.particles.noise_flow`) —
   Editable simulation made entirely of existing Perlin Noise, Texture Sample,
   Hash, Math, Select, Combine/Separate Vector, Vector Math, simulation state,
   and the generic Pixel Delta to UV primitive. It publicly exposes Noise
   Scale, Particle Speed, Direction Quantization, Tangent Jump Limit, Reset,
   and Iterations per Frame. The private Position slot uses high-precision
-  RG32F storage for subpixel motion. Connect its \`positions\` and \`branches\`
+  RG32F storage for subpixel motion. Connect its `positions` and `branches`
   outputs to Particle Splat. See [the complete graph and example](noise-particles.md).
 
 ### Generators
