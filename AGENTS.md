@@ -54,3 +54,5 @@ address behavior before calling it and set the sampled source as both `requiresI
 `neighborhoodSocket`. This keeps the source materialized rather than attempting to sample an
 in-region SSA value. Simulation state samplers take raw normalized coordinates; each consumer,
 not the state accessor, owns wrapping/clamping semantics.
+
+Particle rendering: the built-in Sands subgraph stores per-agent UV positions, life, and branch in three image-state slots; Particle Splat is a **root-only native** renderer because simulation subgraph bodies require lowerable nodes. Keep its per-frame fade separate from physics stepping, keep shader state precision and GPU image semantics explicit, and regression-test both generated simulation shaders and point compositing. See [docs/noise-particles.md](docs/noise-particles.md).
