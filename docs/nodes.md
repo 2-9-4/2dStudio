@@ -25,6 +25,31 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **Canvas Coordinates** (`coordinates`) — Outputs one Vector Field containing normalized XY
   canvas coordinates. Enable **Pixels** to output pixel-center coordinates instead.
 
+### Particle simulation and rendering
+
+- **Particle Step** (`particle_step`) — Lowerable, stateless per-agent integrator.
+  Takes normalized `Position` (Vector Field), `Remaining Life` (Scalar Field),
+  `Noise at Position` (Scalar Field), and an optional Float `Frame / Step`.
+  Produces `Next Position` (Vector Field), `Next Life`, and `Orange Region`
+  (both Scalar Fields). Its nonlinear orange tangent and smooth teal sine/cosine
+  motion are quantized to 1,200 angles; stochastic age-out respawns particles.
+  `Speed`, `Max Tangent Jump`, and `Random Seed` are editable.
+
+- **Particle Splat / Trails** (`particle_splat`) — Native stateful GPU
+  rasterizer. Inputs: `Particle Positions (UV)` (Vector Field) and
+  `Orange / Teal Branch` (Scalar Field). Deposits `Visible Particles`
+  colored 1-pixel points into a persistent RGBA16F canvas, faded once per
+  rendered frame by `Frame Retention`, with `Point Opacity` control. This
+  node is root-only because simulation subgraph bodies currently accept only
+  shader-lowerable operations. It does not alter the particle positions.
+
+- **Noise-Driven Particles (Sands)** (`builtin.particles.noise_flow`) —
+  Editable built-in **Simulation** subgraph with independent Position, Life,
+  and Branch state slots. Uses Perlin Noise, Texture Sample, Hash, Step / Frame
+  Info, and Particle Step. Wire `positions` and `branches` outputs to
+  Particle Splat, then to Output. See
+  [the example and architecture notes](noise-particles.md).
+
 ### Generators
 
 - **Perlin Noise** (`perlin`) — Generates animated fractal noise. Its controls are `Seed`,
