@@ -914,20 +914,21 @@ SubgraphDefinition lenia() {
 SubgraphDefinition noiseDrivenParticles() {
     SubgraphDefinition result;
     result.id = "builtin.particles.noise_flow";
+    result.version = 2;
     result.name = "Noise-Driven Particles (Sands)";
     result.category = "Simulation";
     result.execution = SubgraphExecution::Simulation;
     result.immutable = true;
-    // Each texel represents one independent particle. A separate splat node
-    // turns the particle positions into a persistent canvas.
+    // Coordinates are integrated at subpixel precision. Half-float UV storage
+    // otherwise rounds the sub-1px teal increments to zero or unstable jumps.
     result.stateSlots = {
-        {"position", "Particle Position", ValueType::VectorField},
-        {"life", "Particle Life", ValueType::ScalarField},
+        {"position", "Particle Position", ValueType::VectorField, true},
+        {"life", "Remaining Life", ValueType::ScalarField},
         {"branch", "Orange / Teal", ValueType::ScalarField},
     };
     result.interface = {
         {"noiseScale", "Noise Scale", SubgraphInterfaceKind::Input, ValueType::Float,
-         true, 6.0F, 0.05F, 40.0F},
+         true, 5.0F, .05F, 40.0F},
         {"speed", "Particle Speed", SubgraphInterfaceKind::Input, ValueType::Float,
          true, 1.0F, 0.0F, 10.0F},
         {"maxJump", "Tangent Jump Limit", SubgraphInterfaceKind::Input, ValueType::Float,
@@ -943,71 +944,220 @@ SubgraphDefinition noiseDrivenParticles() {
     };
 
     auto& body = result.body;
-    const auto coords = addNode(body, "coordinates", "Particle Slot IDs (UV)", {0, 0});
-    const auto randomInitial = addNode(body, "hash", "Random Initial Positions", {240, 0},
-                                       {{"seed", 14.0F}, {"salt", 0.0F}});
-    const auto randomLife = addNode(body, "hash", "Random Initial Life", {240, 200},
-                                    {{"seed", 14.0F}, {"salt", 1.0F}});
-    link(body, coords, "coordinates", randomInitial, "position");
-    link(body, coords, "coordinates", randomLife, "position");
+    using M = MathOperation;
+    using V = VectorMathOperation;
+    // Small node wiring helpers: all math, branches, random numbers, and
+    // state transitions remain genuine editable nodes in the body.
+    using Wire = std::pair<NodeId, const char*>;
+    const auto w = [](NodeId n, const char* socket = "result") -> Wire {
+        return {n, socket};
+    };
+    const auto connect = [&](Wire from, NodeId to, const char* socket) {
+        link(body, from.first, from.second, to, socket);
+    };
+    const auto calc = [&](std::string name, M operation, int x, int y,
+                          Wire a = {}, Wire b = {}, Wire c = {},
+                          nlohmann::json defaults = nlohmann::json::object()) -> Wire {
+        const auto id = math(body, std::move(name), static_cast<int>(operation),
+                             {static_cast<float>(x), static_cast<float>(y)},
+                             std::move(defaults));
+        if (a.first) connect(a, id, "a");
+        if (b.first) connect(b, id, "b");
+        if (c.first) connect(c, id, "c");
+        return w(id);
+    };
+    const auto vec = [&](std::string name, Wire x, Wire y, int col, int row) -> Wire {
+        const auto id = addNode(body, "combine_vector", std::move(name),
+                                {static_cast<float>(col), static_cast<float>(row)});
+        connect(x, id, "x");
+        connect(y, id, "y");
+        return w(id, "value");
+    };
+    const auto split = [&](std::string name, Wire value, int col, int row) -> NodeId {
+        const auto id = addNode(body, "separate_vector", std::move(name),
+                                {static_cast<float>(col), static_cast<float>(row)});
+        connect(value, id, "value");
+        return id;
+    };
+    const auto choose = [&](std::string name, Wire condition, Wire ifTrue,
+                            Wire ifFalse, int col, int row) -> Wire {
+        const auto id = addNode(body, "select", std::move(name),
+                                {static_cast<float>(col), static_cast<float>(row)});
+        connect(condition, id, "condition");
+        connect(ifTrue, id, "ifTrue");
+        connect(ifFalse, id, "ifFalse");
+        return w(id);
+    };
 
-    const auto initialPos = addNode(body, "simulation_initial_state", "Initial Positions",
-                                    {500, 0}, {{"slot", 0.0F}});
-    const auto initialLife = addNode(body, "simulation_initial_state", "Initial Life",
-                                     {500, 200}, {{"slot", 1.0F}});
-    const auto initialBranch = addNode(body, "simulation_initial_state", "Initial Branch",
-                                       {500, 400}, {{"slot", 2.0F}});
-    link(body, randomInitial, "vector", initialPos, "value");
-    link(body, randomLife, "scalar", initialLife, "value");
-    const auto initialZero = addNode(body, "float", "No Initial Branch", {240, 400},
-                                     {{"value", 0.0F}});
-    link(body, initialZero, "value", initialBranch, "value");
+    // INIT: independent uniform positions and lifetimes, keyed by agent slot.
+    const auto slots = addNode(body, "coordinates", "Agent Slot Identity (UV)", {0, 20});
+    const auto slotUv = w(slots, "coordinates");
+    const auto spawnAtStart = addNode(body, "hash", "Initial Random Position", {260, 0},
+                                      {{"seed", 14.0F}, {"salt", 0.0F}});
+    const auto ageAtStart = addNode(body, "hash", "Initial Random Life", {260, 200},
+                                    {{"seed", 15.0F}, {"salt", 0.0F}});
+    connect(slotUv, spawnAtStart, "position");
+    connect(slotUv, ageAtStart, "position");
+    const auto initialPos = addNode(body, "simulation_initial_state", "Start Position",
+                                    {520, 0}, {{"slot", 0.0F}});
+    const auto initialAge = addNode(body, "simulation_initial_state", "Start Life",
+                                    {520, 200}, {{"slot", 1.0F}});
+    const auto initialBranch = addNode(body, "simulation_initial_state", "Start Branch",
+                                       {520, 400}, {{"slot", 2.0F}});
+    connect(w(spawnAtStart, "vector"), initialPos, "value");
+    connect(w(ageAtStart, "scalar"), initialAge, "value");
+    const auto zero = addNode(body, "float", "Initial Teal", {260, 400},
+                              {{"value", 0.0F}});
+    connect(w(zero, "value"), initialBranch, "value");
 
-    const auto prevPos = addNode(body, "simulation_previous_state", "Previous Position",
-                                 {0, 680}, {{"slot", 0.0F}});
-    const auto prevLife = addNode(body, "simulation_previous_state", "Previous Life",
-                                  {0, 880}, {{"slot", 1.0F}});
-    // The simulation schema requires one previous-state accessor per slot.
+    // FEEDBACK: three explicit state slots, with the per-agent positions stored
+    // in RG32F rather than quantized RG16F.
+    const auto previousPos = addNode(body, "simulation_previous_state", "Previous Position",
+                                     {0, 760}, {{"slot", 0.0F}});
+    const auto previousLife = addNode(body, "simulation_previous_state", "Previous Life",
+                                      {0, 960}, {{"slot", 1.0F}});
     addNode(body, "simulation_previous_state", "Previous Branch",
-            {0, 1020}, {{"slot", 2.0F}});
-    const auto noiseScale = input(body, "noiseScale", "Noise Spatial Scale", {0, 1150});
-    const auto noise = addNode(body, "perlin", "Stationary Perlin Noise", {250, 1120},
-                               {{"seed", 1.0F}, {"speed", 0.0F}, {"octaves", 1.0F},
-                                {"persistence", 0.5F}, {"lacunarity", 2.0F}});
-    link(body, noiseScale, "value", noise, "scale");
-    const auto sample = addNode(body, "texture_sample", "Noise at Each Particle", {510, 1040},
-                                {{"addressMode", 1.0F}, {"sampling", 1.0F}});
-    link(body, noise, "image", sample, "source");
-    link(body, prevPos, "value", sample, "coordinates");
+            {0, 1160}, {{"slot", 2.0F}});
+    const auto pos = w(previousPos, "value");
+    const auto life = w(previousLife, "value");
 
-    const auto frame = addNode(body, "simulation_step_info", "Frame Number", {270, 1350});
-    const auto step = addNode(body, "particle_step", "Nonlinear Particle Motion",
-                              {790, 850}, {{"seed", 14.0F}});
-    link(body, prevPos, "value", step, "position");
-    link(body, prevLife, "value", step, "life");
-    link(body, sample, "sampled", step, "noise");
-    link(body, frame, "frameIndex", step, "frame");
-    const auto speed = input(body, "speed", "Motion Speed", {510, 1330});
-    const auto jump = input(body, "maxJump", "Tangent Jump Clamp", {510, 1480});
-    link(body, speed, "value", step, "speed");
-    link(body, jump, "value", step, "maxJump");
+    // Stationary flow field; sample at the *moving particle position*.
+    const auto noiseScale = input(body, "noiseScale", "Flow Noise Scale", {0, 1450});
+    const auto perlin = addNode(body, "perlin", "Stationary One-Octave Perlin",
+                                {260, 1450},
+                                {{"seed", 1.0F}, {"speed", 0.0F}, {"octaves", 1.0F}});
+    connect(w(noiseScale, "value"), perlin, "scale");
+    const auto noiseSampler = addNode(body, "texture_sample", "Sample Flow at Particle",
+                                      {520, 1420},
+                                      {{"addressMode", 1.0F}, {"sampling", 1.0F}});
+    connect(w(perlin, "image"), noiseSampler, "source");
+    connect(pos, noiseSampler, "coordinates");
 
+    // ANGLE = 2*pi * round(noise*1200)/1200.
+    const auto scaledNoise = calc("Noise to 1200 angular bins", M::Multiply, 790, 1370,
+                                  w(noiseSampler, "sampled"), {}, {}, {{"b", 1200.0F}});
+    const auto roundNoise = calc("Quantize Flow Angle", M::Round, 1020, 1370, scaledNoise);
+    const auto normalized = calc("Quantized Fraction", M::Divide, 1240, 1370,
+                                 roundNoise, {}, {}, {{"b", 1200.0F}});
+    const auto theta = calc("Flow Angle Radians", M::Multiply, 1460, 1370,
+                            normalized, {}, {}, {{"b", 6.28318530718F}});
+
+    // 3 < angle < 6 determines the orange / teal motion branch.
+    const auto afterThree = calc("Angle >= 3", M::Step, 1680, 1210,
+                                 {}, theta, {}, {{"a", 3.0F}});
+    const auto afterSix = calc("Angle >= 6", M::Step, 1680, 1410,
+                               {}, theta, {}, {{"a", 6.0F}});
+    const auto belowSix = calc("Angle < 6", M::Subtract, 1900, 1410,
+                               {}, afterSix, {}, {{"a", 1.0F}});
+    const auto orange = calc("Orange Region 3..6", M::Multiply, 2120, 1300,
+                             afterThree, belowSix);
+
+    // RANDOM STREAMS: per-slot and per-frame hashes. All seeds are visible,
+    // streams are independent, and all randomness is reproducible on replay.
+    const auto frame = addNode(body, "simulation_step_info", "Simulation Frame",
+                               {0, 1830});
+    const auto frameNumber = w(frame, "frameIndex");
+    const auto randomFor = [&](std::string name, int seed, int row) -> NodeId {
+        const auto id = addNode(body, "hash", std::move(name),
+            {270.0F, static_cast<float>(row)},
+            {{"seed", static_cast<float>(seed)}, {"salt", 0.0F}});
+        connect(slotUv, id, "position");
+        connect(frameNumber, id, "salt");
+        return id;
+    };
+    const auto jitter = randomFor("Independent Velocity Jitter", 1001, 1780);
+    const auto ageRandomA = randomFor("Life Random Samples A", 1002, 2030);
+    const auto ageRandomB = randomFor("Life Random Samples B", 1003, 2280);
+    const auto newSpawn = randomFor("Random Respawn XY", 1004, 2530);
+    const auto newLife = randomFor("Random Respawn Life", 1005, 2780);
+    const auto jitterComponents = split("Movement Random XY", w(jitter, "vector"), 520, 1810);
+    const auto ageComponentsA = split("Life Samples 1 and 2", w(ageRandomA, "vector"), 520, 2030);
+    const auto ageComponentsB = split("Life Samples 3 and 4", w(ageRandomB, "vector"), 520, 2260);
+
+    // ORANGE: (tan(theta) * random(1,3), tan(theta)).
+    const auto rawTan = calc("Tangent Flow", M::Tangent, 1680, 1600, theta);
+    const auto jump = input(body, "maxJump", "Tangent Cap", {1460, 1740});
+    const auto negativeJump = calc("Negative Tangent Cap", M::Multiply, 1680, 1740,
+                                   w(jump, "value"), {}, {}, {{"b", -1.0F}});
+    const auto safeTan = calc("Clamp Tangent Singularities", M::Clamp, 1900, 1640,
+                              rawTan, negativeJump, w(jump, "value"));
+    const auto orangeJitter = calc("Random Orange Speed 1..3", M::Multiply, 800, 1810,
+                                   w(jitterComponents, "x"), {}, {}, {{"b", 2.0F}});
+    const auto orangeFactor = calc("Orange Speed + 1", M::Add, 1020, 1810,
+                                   orangeJitter, {}, {}, {{"b", 1.0F}});
+    const auto orangeX = calc("Orange Horizontal Speed", M::Multiply, 2120, 1650,
+                              safeTan, orangeFactor);
+    const auto orangeStep = vec("Orange Diagonal Motion", orangeX, safeTan, 2340, 1610);
+
+    // TEAL: (-sin(theta) * random(.1,1), -cos(theta)).
+    const auto sine = calc("Flow Sine", M::Sine, 1680, 1920, theta);
+    const auto cosine = calc("Flow Cosine", M::Cosine, 1680, 2150, theta);
+    const auto negSin = calc("Negative Sine", M::Multiply, 1900, 1920,
+                             sine, {}, {}, {{"b", -1.0F}});
+    const auto negCos = calc("Negative Cosine", M::Multiply, 1900, 2150,
+                             cosine, {}, {}, {{"b", -1.0F}});
+    const auto tealRandom = calc("Teal Speed 0.1..1", M::Multiply, 800, 1920,
+                                 w(jitterComponents, "y"), {}, {}, {{"b", 0.9F}});
+    const auto tealFactor = calc("Teal Speed Offset", M::Add, 1020, 1920,
+                                 tealRandom, {}, {}, {{"b", 0.1F}});
+    const auto tealX = calc("Teal Horizontal Motion", M::Multiply, 2120, 1930,
+                            negSin, tealFactor);
+    const auto tealStep = vec("Teal Sine Cosine Motion", tealX, negCos, 2340, 2080);
+
+    const auto selectedStep = choose("Select Orange / Teal Motion", orange,
+                                     orangeStep, tealStep, 2590, 1820);
+    const auto speed = input(body, "speed", "Particle Motion Speed", {2590, 2110});
+    const auto scaledStep = vectorMath(body, "Apply Motion Speed", V::Scale, {2820, 1840});
+    connect(selectedStep, scaledStep, "a");
+    connect(w(speed, "value"), scaledStep, "scalar");
+    const auto pixelToUv = addNode(body, "pixel_delta_to_uv", "Pixels to UV",
+                                   {3050, 1840});
+    connect(w(scaledStep), pixelToUv, "delta");
+    const auto updatedPosition = vectorMath(body, "Integrate Particle Position",
+                                             V::Add, {3290, 1840});
+    connect(pos, updatedPosition, "a");
+    connect(w(pixelToUv, "uvDelta"), updatedPosition, "b");
+
+    // LIFE: life -= random(random(random(random())))/10. Each nested
+    // uniform random input is an independent sample and becomes one factor.
+    const auto lifeAB = calc("Nested Random Product 1", M::Multiply, 800, 2180,
+                             w(ageComponentsA, "x"), w(ageComponentsA, "y"));
+    const auto lifeCD = calc("Nested Random Product 2", M::Multiply, 800, 2370,
+                             w(ageComponentsB, "x"), w(ageComponentsB, "y"));
+    const auto lifeProduct = calc("Nested Random Product 3", M::Multiply, 1030, 2280,
+                                  lifeAB, lifeCD);
+    const auto loss = calc("Life Lost This Step", M::Multiply, 1260, 2280,
+                           lifeProduct, {}, {}, {{"b", .1F}});
+    const auto reducedLife = calc("Subtract Life Lost", M::Subtract, 1490, 2280,
+                                  life, loss);
+    const auto dead = calc("Dead When Life <= 0", M::Step, 1720, 2280,
+                           reducedLife, {}, {}, {{"b", 0.0F}});
+    const auto respawnedPosition = choose("Respawn or Retain Position", dead,
+                                          w(newSpawn, "vector"),
+                                          w(updatedPosition, "result"),
+                                          3510, 1800);
+    const auto updatedLife = choose("Respawn or Retain Life", dead,
+                                    w(newLife, "scalar"), reducedLife,
+                                    3510, 2230);
+
+    // STORE: visibly separate endpoints. The exported values are next-state
+    // texture snapshots; nothing in this body uses a hidden motion kernel.
     const auto nextPos = addNode(body, "simulation_next_state", "Next Position",
-                                 {1110, 760}, {{"slot", 0.0F}});
+                                 {3770, 1800}, {{"slot", 0.0F}});
     const auto nextLife = addNode(body, "simulation_next_state", "Next Life",
-                                  {1110, 980}, {{"slot", 1.0F}});
+                                  {3770, 2230}, {{"slot", 1.0F}});
     const auto nextBranch = addNode(body, "simulation_next_state", "Next Branch",
-                                    {1110, 1200}, {{"slot", 2.0F}});
-    link(body, step, "position", nextPos, "value");
-    link(body, step, "life", nextLife, "value");
-    link(body, step, "branch", nextBranch, "value");
+                                    {3770, 1330}, {{"slot", 2.0F}});
+    connect(respawnedPosition, nextPos, "value");
+    connect(updatedLife, nextLife, "value");
+    connect(orange, nextBranch, "value");
 
-    const auto positions = addNode(body, "subgraph_output", "Particle Positions",
-                                   {1370, 780}, {{"key", "positions"}});
-    const auto branches = addNode(body, "subgraph_output", "Orange / Teal",
-                                  {1370, 1200}, {{"key", "branches"}});
-    link(body, nextPos, "value", positions, "value");
-    link(body, nextBranch, "value", branches, "value");
+    const auto positions = addNode(body, "subgraph_output", "Positions (UV)",
+                                   {4010, 1800}, {{"key", "positions"}});
+    const auto branches = addNode(body, "subgraph_output", "Orange / Teal Region",
+                                  {4010, 1330}, {{"key", "branches"}});
+    connect(w(nextPos, "value"), positions, "value");
+    connect(w(nextBranch, "value"), branches, "value");
     return result;
 }
 
