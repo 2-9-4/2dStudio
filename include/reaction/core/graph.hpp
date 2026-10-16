@@ -200,6 +200,8 @@ private:
 [[nodiscard]] const NodeDescriptor* resolveSubgraphBodyDescriptor(
     const SubgraphDefinition& definition, const NodeRecord& node,
     const NodeRegistry& registry, NodeDescriptor& storage);
+[[nodiscard]] CompileResult compileSubgraphBody(
+    const SubgraphDefinition& definition, const NodeRegistry& registry);
 [[nodiscard]] bool isSubgraphBodyNodeType(std::string_view type);
 [[nodiscard]] std::vector<std::string> validateSubgraph(
     const SubgraphDefinition& definition, const NodeRegistry& registry);

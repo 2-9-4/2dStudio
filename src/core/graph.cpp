@@ -191,10 +191,21 @@ CompileResult compileGraphBody(
                 const auto source = result.socketType(link->fromNode, link->fromSocket);
                 if (source) resolved = *source;
                 if (source && !contractAccepts(port.contract, *source)) {
-                    result.errors.push_back(
-                        "Cannot connect " + toString(*source) + " to " +
-                        descriptor->displayName + "." + port.key + "; socket accepts " +
-                        toString(port.contract) + " (semantically inadmissible)");
+                    // A fixed field socket can receive a narrower concrete
+                    // value when the central widening table has an explicit,
+                    // lossless broadcast for it. Keep the contract itself
+                    // strict; this is only the link's coercion admission.
+                    const auto fixed = fixedType(port.contract);
+                    const auto widening = fixed
+                        ? coercionBetween(*source, *fixed) : std::nullopt;
+                    if (fixed && widening && !port.requiresImage) {
+                        resolved = *fixed;
+                    } else {
+                        result.errors.push_back(
+                            "Cannot connect " + toString(*source) + " to " +
+                            descriptor->displayName + "." + port.key + "; socket accepts " +
+                            toString(port.contract) + " (semantically inadmissible)");
+                    }
                 } else if (source && port.requiresImage && !isFieldType(*source)) {
                     result.errors.push_back(descriptor->displayName + "." + port.key +
                                             " requires a field image");
