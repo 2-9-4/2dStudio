@@ -6,9 +6,9 @@ not a bit-for-bit port of p5.js Perlin noise or the original RNG.
 
 Run the preset:
 
-\`\`\`sh
+```sh
 ./build/reaction_studio examples/noise-particles.reaction.json
-\`\`\`
+```
 
 Graph: **Noise-Driven Particles (Sands)** → **Particle Splat / Trails** → **Output**.
 Select the Sands node and press **Tab** to open the editable simulation body.
