@@ -1025,7 +1025,7 @@ SubgraphDefinition noiseDrivenParticles() {
 
     // Stationary flow field; sample at the *moving particle position*.
     const auto noiseScale = input(body, "noiseScale", "Flow Noise Scale", {0, 1450});
-    const auto perlin = addNode(body, "perlin", "Stationary One-Octave Perlin",
+    const auto perlin = addNode(body, "perlin", "Stationary Four-Octave Perlin",
                                 {260, 1450},
                                 {{"seed", 1.0F}, {"speed", 0.0F}, {"octaves", 4.0F},
                                  {"persistence", 0.5F}, {"lacunarity", 2.0F}});
