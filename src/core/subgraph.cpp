@@ -185,6 +185,17 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
         }
         nodes[node.id] = &node;
         if (node.type == "subgraph") errors.push_back("Nested subgraphs are not supported");
+        // Type compilation intentionally resolves all registered descriptors so
+        // that simulation bodies and root graphs share the same type result.
+        // Runtime simulation execution has a narrower catalog; keep that
+        // contextual restriction explicit in validation.
+        if (registry.contains(node.type)) {
+            NodeDescriptor descriptorStorage;
+            if (!resolveSubgraphBodyDescriptor(definition, node, registry,
+                                               descriptorStorage)) {
+                errors.push_back("Unsupported subgraph node type '" + node.type + "'");
+            }
+        }
         if (node.type == "simulation_previous_state") ++previousStates;
         if (node.type == "simulation_initial_state") ++initialStates;
         if (node.type == "simulation_next_state") ++nextStates;
@@ -359,10 +370,11 @@ bool isSubgraphBodyNodeType(std::string_view type) {
            type == "simulation_next_state";
 }
 
-const NodeDescriptor* resolveSubgraphBodyDescriptor(const SubgraphDefinition& definition,
-                                                    const NodeRecord& node,
-                                                    const NodeRegistry& registry,
-                                                    NodeDescriptor& storage) {
+const NodeDescriptor* resolveSubgraphBodyDescriptorImpl(const SubgraphDefinition& definition,
+                                                         const NodeRecord& node,
+                                                         const NodeRegistry& registry,
+                                                         NodeDescriptor& storage,
+                                                         bool enforceExecutionCatalog) {
     if (node.type == "subgraph_input" || node.type == "subgraph_output" ||
         node.type == "simulation_previous_state" ||
         node.type == "simulation_channel" ||
@@ -377,7 +389,8 @@ const NodeDescriptor* resolveSubgraphBodyDescriptor(const SubgraphDefinition& de
         return &storage;
     }
     const auto* descriptor = registry.descriptor(node.type);
-    if (!descriptor || (!descriptor->lowerable && !isSubgraphBodyNodeType(node.type)))
+    if (!descriptor || (enforceExecutionCatalog && !descriptor->lowerable &&
+                        !isSubgraphBodyNodeType(node.type)))
         return nullptr;
     if (node.type != "convolution") return descriptor;
 
@@ -394,12 +407,24 @@ const NodeDescriptor* resolveSubgraphBodyDescriptor(const SubgraphDefinition& de
     return &storage;
 }
 
+const NodeDescriptor* resolveSubgraphBodyDescriptor(const SubgraphDefinition& definition,
+                                                    const NodeRecord& node,
+                                                    const NodeRegistry& registry,
+                                                    NodeDescriptor& storage) {
+    return resolveSubgraphBodyDescriptorImpl(definition, node, registry, storage, true);
+}
+
 CompileResult compileSubgraphBody(const SubgraphDefinition& definition,
                                   const NodeRegistry& registry) {
     return compileGraphBody(
         definition.body,
         [&](const NodeRecord& node, NodeDescriptor& storage) {
-            return resolveSubgraphBodyDescriptor(definition, node, registry, storage);
+            // Semantic compilation is independent from the simulation
+            // execution catalog. A registered root descriptor still defines
+            // the same socket contracts and polymorphic output policies, even
+            // when its node cannot be lowered inside a simulation body.
+            return resolveSubgraphBodyDescriptorImpl(definition, node, registry,
+                                                     storage, false);
         },
         [](const NodeRecord& node) {
             return "Unsupported subgraph node type '" + node.type + "'";

@@ -284,8 +284,14 @@ private:
     ShaderValue lowerInput(const NodeRecord& node, std::string_view socket,
                            const std::string& uv, float fallback = 0.0F) {
         const auto* link = inputLink(node.id, socket);
-        return link ? lower(link->fromNode, link->fromSocket, uv)
-                    : ShaderValue{ShaderValueType::Scalar, std::to_string(fallback)};
+        if (!link) return {ShaderValueType::Scalar, std::to_string(fallback)};
+        auto value = lower(link->fromNode, link->fromSocket, uv);
+        const auto edge = compiled_.resolvedEdges.find(link->id);
+        if (edge == compiled_.resolvedEdges.end()) {
+            throw std::runtime_error("Simulation edge " + std::to_string(link->id) +
+                                     " has no compiled coercion");
+        }
+        return coerceShaderValue(std::move(value), edge->second.coercion);
     }
 
     ShaderValue lower(NodeId id, std::string_view socket, const std::string& uv) {

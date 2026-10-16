@@ -436,8 +436,9 @@ SubgraphDefinition skeletonization() {
     const auto initialImage = addNode(body, "simulation_initial_state", "Initial Binary Image",
                                       {500, 80}, {{"slot", 0.0F}});
     link(body, initialBinary, "result", initialImage, "value");
-    // Materialize a zero field from the binary image because state endpoints
-    // deliberately accept fields, not uniform Float constants.
+    // Keep the phase spatially derived from the binary image. State endpoints
+    // also admit lossless constant broadcasts, but this value should track the
+    // initial image rather than become a uniform-only reset expression.
     const auto initialPhaseValue = math(body, "Initial Thinning Phase", 2, {240, 220},
                                         {{"b", 0.0F}});
     link(body, initialBinary, "result", initialPhaseValue, "a");
