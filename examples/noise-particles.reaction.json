@@ -16,11 +16,12 @@
         100
       ],
       "parameters": {
-        "noiseScale": 6,
+        "noiseScale": 5,
         "speed": 1,
         "maxJump": 64,
         "iterations": 1,
-        "reset": 0
+        "reset": 0,
+        "angleBins": 1200
       }
     },
     {
@@ -33,7 +34,7 @@
       ],
       "parameters": {
         "count": 1000,
-        "retention": 0.996,
+        "retention": 0.985,
         "opacity": 0.375
       }
     },
