@@ -1,9 +1,10 @@
 name: Particle feature build and GPU tests
 on:
-  push:
-    branches: [feature/noise-driven-particle-trails]
   pull_request:
     branches: [main]
+concurrency:
+  group: sands-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   linux:
     runs-on: ubuntu-24.04
