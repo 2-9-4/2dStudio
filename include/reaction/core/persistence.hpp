@@ -9,6 +9,8 @@ namespace reaction {
 inline constexpr int kProjectFormatVersion = 4;
 
 [[nodiscard]] nlohmann::json serializeProject(const Graph& graph);
+[[nodiscard]] nlohmann::json migrateProjectJson(const nlohmann::json& document,
+                                                const NodeRegistry& registry);
 [[nodiscard]] Graph deserializeProject(const nlohmann::json& document,
                                        const NodeRegistry& registry);
 void saveProjectAtomic(const Graph& graph, const std::filesystem::path& path);
