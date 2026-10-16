@@ -27,28 +27,26 @@ submodes, and the special nodes available inside simulation subgraphs.
 
 ### Particle simulation and rendering
 
-- **Particle Step** (`particle_step`) — Lowerable, stateless per-agent integrator.
-  Takes normalized `Position` (Vector Field), `Remaining Life` (Scalar Field),
-  `Noise at Position` (Scalar Field), and an optional Float `Frame / Step`.
-  Produces `Next Position` (Vector Field), `Next Life`, and `Orange Region`
-  (both Scalar Fields). Its nonlinear orange tangent and smooth teal sine/cosine
-  motion are quantized to 1,200 angles; stochastic age-out respawns particles.
-  `Speed`, `Max Tangent Jump`, and `Random Seed` are editable.
+- **Pixel Delta to UV** (\`pixel_delta_to_uv\`) — Lowerable conversion of
+  \`Vector Numeric\` pixel displacement into normalized UV displacement using
+  the actual canvas pixel size. Supports ordinary vector inputs and spatial
+  vector fields; no particle-specific logic.
 
-- **Particle Splat / Trails** (`particle_splat`) — Native stateful GPU
-  rasterizer. Inputs: `Particle Positions (UV)` (Vector Field) and
-  `Orange / Teal Branch` (Scalar Field). Deposits `Visible Particles`
-  colored 1-pixel points into a persistent RGBA16F canvas, faded once per
-  rendered frame by `Frame Retention`, with `Point Opacity` control. This
-  node is root-only because simulation subgraph bodies currently accept only
-  shader-lowerable operations. It does not alter the particle positions.
+- **Particle Splat / Trails** (\`particle_splat\`) — Native stateful GPU
+  renderer. Its \`Particle Positions (UV)\` (Vector Field) and \`Orange / Teal
+  Branch\` (Scalar Field) inputs deposit \`Visible Particles\` colored points
+  onto a persistent RGBA canvas. Set \`Frame Retention\` and \`Point Opacity\`
+  to control fade and deposition. The point rasterizer is a root-only node,
+  since simulation subgraphs use lowerable shader expressions.
 
-- **Noise-Driven Particles (Sands)** (`builtin.particles.noise_flow`) —
-  Editable built-in **Simulation** subgraph with independent Position, Life,
-  and Branch state slots. Uses Perlin Noise, Texture Sample, Hash, Step / Frame
-  Info, and Particle Step. Wire `positions` and `branches` outputs to
-  Particle Splat, then to Output. See
-  [the example and architecture notes](noise-particles.md).
+- **Noise-Driven Particles (Sands)** (\`builtin.particles.noise_flow\`) —
+  Editable simulation made entirely of existing Perlin Noise, Texture Sample,
+  Hash, Math, Select, Combine/Separate Vector, Vector Math, simulation state,
+  and the generic Pixel Delta to UV primitive. It publicly exposes Noise
+  Scale, Particle Speed, Direction Quantization, Tangent Jump Limit, Reset,
+  and Iterations per Frame. The private Position slot uses high-precision
+  RG32F storage for subpixel motion. Connect its \`positions\` and \`branches\`
+  outputs to Particle Splat. See [the complete graph and example](noise-particles.md).
 
 ### Generators
 
