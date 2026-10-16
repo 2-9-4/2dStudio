@@ -967,6 +967,9 @@ SubgraphDefinition noiseDrivenParticles() {
                                  {0, 680}, {{"slot", 0.0F}});
     const auto prevLife = addNode(body, "simulation_previous_state", "Previous Life",
                                   {0, 880}, {{"slot", 1.0F}});
+    // The simulation schema requires one previous-state accessor per slot.
+    addNode(body, "simulation_previous_state", "Previous Branch",
+            {0, 1020}, {{"slot", 2.0F}});
     const auto noiseScale = input(body, "noiseScale", "Noise Spatial Scale", {0, 1150});
     const auto noise = addNode(body, "perlin", "Stationary Perlin Noise", {250, 1120},
                                {{"seed", 1.0F}, {"speed", 0.0F}, {"octaves", 1.0F},
