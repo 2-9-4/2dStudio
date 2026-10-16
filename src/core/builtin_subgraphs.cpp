@@ -910,12 +910,111 @@ SubgraphDefinition lenia() {
     return result;
 }
 
+
+SubgraphDefinition noiseDrivenParticles() {
+    SubgraphDefinition result;
+    result.id = "builtin.particles.noise_flow";
+    result.name = "Noise-Driven Particles (Sands)";
+    result.category = "Simulation";
+    result.execution = SubgraphExecution::Simulation;
+    result.immutable = true;
+    // Each texel represents one independent particle. A separate splat node
+    // turns the particle positions into a persistent canvas.
+    result.stateSlots = {
+        {"position", "Particle Position", ValueType::VectorField},
+        {"life", "Particle Life", ValueType::ScalarField},
+        {"branch", "Orange / Teal", ValueType::ScalarField},
+    };
+    result.interface = {
+        {"noiseScale", "Noise Scale", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 6.0F, 0.05F, 40.0F},
+        {"speed", "Particle Speed", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 1.0F, 0.0F, 10.0F},
+        {"maxJump", "Tangent Jump Limit", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 64.0F, 1.0F, 512.0F},
+        {"reset", "Reset", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 1.0F, Control::Boolean},
+        {"iterations", "Iterations per Frame", SubgraphInterfaceKind::Input,
+         ValueType::Float, true, 1.0F, 1.0F, 64.0F, Control::Integer},
+        {"positions", "Particle Positions", SubgraphInterfaceKind::Output,
+         ValueType::VectorField},
+        {"branches", "Orange / Teal Branch", SubgraphInterfaceKind::Output,
+         ValueType::ScalarField},
+    };
+
+    auto& body = result.body;
+    const auto coords = addNode(body, "coordinates", "Particle Slot IDs (UV)", {0, 0});
+    const auto randomInitial = addNode(body, "hash", "Random Initial Positions", {240, 0},
+                                       {{"seed", 14.0F}, {"salt", 0.0F}});
+    const auto randomLife = addNode(body, "hash", "Random Initial Life", {240, 200},
+                                    {{"seed", 14.0F}, {"salt", 1.0F}});
+    link(body, coords, "coordinates", randomInitial, "position");
+    link(body, coords, "coordinates", randomLife, "position");
+
+    const auto initialPos = addNode(body, "simulation_initial_state", "Initial Positions",
+                                    {500, 0}, {{"slot", 0.0F}});
+    const auto initialLife = addNode(body, "simulation_initial_state", "Initial Life",
+                                     {500, 200}, {{"slot", 1.0F}});
+    const auto initialBranch = addNode(body, "simulation_initial_state", "Initial Branch",
+                                       {500, 400}, {{"slot", 2.0F}});
+    link(body, randomInitial, "vector", initialPos, "value");
+    link(body, randomLife, "scalar", initialLife, "value");
+    const auto initialZero = addNode(body, "float", "No Initial Branch", {240, 400},
+                                     {{"value", 0.0F}});
+    link(body, initialZero, "value", initialBranch, "value");
+
+    const auto prevPos = addNode(body, "simulation_previous_state", "Previous Position",
+                                 {0, 680}, {{"slot", 0.0F}});
+    const auto prevLife = addNode(body, "simulation_previous_state", "Previous Life",
+                                  {0, 880}, {{"slot", 1.0F}});
+    const auto noiseScale = input(body, "noiseScale", "Noise Spatial Scale", {0, 1150});
+    const auto noise = addNode(body, "perlin", "Stationary Perlin Noise", {250, 1120},
+                               {{"seed", 1.0F}, {"speed", 0.0F}, {"octaves", 1.0F},
+                                {"persistence", 0.5F}, {"lacunarity", 2.0F}});
+    link(body, noiseScale, "value", noise, "scale");
+    const auto sample = addNode(body, "texture_sample", "Noise at Each Particle", {510, 1040},
+                                {{"addressMode", 1.0F}, {"sampling", 1.0F}});
+    link(body, noise, "image", sample, "source");
+    link(body, prevPos, "value", sample, "coordinates");
+
+    const auto frame = addNode(body, "simulation_step_info", "Frame Number", {270, 1350});
+    const auto step = addNode(body, "particle_step", "Nonlinear Particle Motion",
+                              {790, 850}, {{"seed", 14.0F}});
+    link(body, prevPos, "value", step, "position");
+    link(body, prevLife, "value", step, "life");
+    link(body, sample, "sampled", step, "noise");
+    link(body, frame, "frameIndex", step, "frame");
+    const auto speed = input(body, "speed", "Motion Speed", {510, 1330});
+    const auto jump = input(body, "maxJump", "Tangent Jump Clamp", {510, 1480});
+    link(body, speed, "value", step, "speed");
+    link(body, jump, "value", step, "maxJump");
+
+    const auto nextPos = addNode(body, "simulation_next_state", "Next Position",
+                                 {1110, 760}, {{"slot", 0.0F}});
+    const auto nextLife = addNode(body, "simulation_next_state", "Next Life",
+                                  {1110, 980}, {{"slot", 1.0F}});
+    const auto nextBranch = addNode(body, "simulation_next_state", "Next Branch",
+                                    {1110, 1200}, {{"slot", 2.0F}});
+    link(body, step, "position", nextPos, "value");
+    link(body, step, "life", nextLife, "value");
+    link(body, step, "branch", nextBranch, "value");
+
+    const auto positions = addNode(body, "subgraph_output", "Particle Positions",
+                                   {1370, 780}, {{"key", "positions"}});
+    const auto branches = addNode(body, "subgraph_output", "Orange / Teal",
+                                  {1370, 1200}, {{"key", "branches"}});
+    link(body, nextPos, "value", positions, "value");
+    link(body, nextBranch, "value", branches, "value");
+    return result;
+}
+
 } // namespace
 
 const std::vector<SubgraphDefinition>& builtInSubgraphs() {
     static const std::vector<SubgraphDefinition> values{
         discreteReaction(), genericCellularAutomata(), floodFill(),
-        skeletonization(), distanceFromNearestWhitePixel(), sdfGenerator(), lenia()};
+        skeletonization(), distanceFromNearestWhitePixel(), sdfGenerator(), lenia(),
+        noiseDrivenParticles()};
     return values;
 }
 
