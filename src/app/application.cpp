@@ -540,6 +540,10 @@ bool renderNodeBody(NodeRecord& node, const NodeDescriptor& descriptor,
                     const std::function<bool()>& columnExtras) {
     bool changeReported = false;
     ImGui::TextUnformatted(descriptor.displayName.c_str());
+    // NodeRecord labels previously appeared only in shader source. Display
+    // meaningful instance names equally in root and editable subgraph canvases.
+    if (!node.label.empty() && node.label != descriptor.displayName)
+        ImGui::TextDisabled("%s", node.label.c_str());
     ImGui::Separator();
     ImGui::BeginGroup();
     for (std::size_t socketIndex = 0; socketIndex < descriptor.sockets.size(); ++socketIndex) {
