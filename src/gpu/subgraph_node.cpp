@@ -604,7 +604,7 @@ public:
         for (std::size_t output = 0; output < output_.size(); ++output)
             if (requiredOutputs_[output]) {
                 glBindImageTexture(static_cast<GLuint>(output), output_[output], 0, GL_FALSE, 0,
-                                   GL_WRITE_ONLY, GL_RGBA16F);
+                                   GL_WRITE_ONLY, outputFormat(output));
             }
         gpu.dispatch(outputProgram_, context.width, context.height);
         for (std::size_t output = 0; output < outputs.size() && output < output_.size(); ++output) {
@@ -640,7 +640,8 @@ private:
         }
         for (std::size_t output = 0; output < requiredOutputs_.size(); ++output)
             if (requiredOutputs_[output])
-                source << "layout(rgba16f,binding=" << output
+                source << "layout(" << (outputFormat(output) == GL_RGBA32F ? "rgba32f" : "rgba16f")
+                        << ",binding=" << output
                        << ")writeonly uniform image2D out" << output << ";\n";
         source << "void main(){ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=textureSize("
                << (definition_.stateSlots.empty() ? "stateIn" : "stateIn0") << ",0);"
@@ -686,13 +687,20 @@ private:
                 output_[output] = 0;
             } else if (resized || !output_[output]) {
                 if (output_[output]) glDeleteTextures(1, &output_[output]);
-                output_[output] = gpu.createTexture(width, height, GL_RGBA16F);
+                output_[output] = gpu.createTexture(width, height, outputFormat(output));
             }
         }
         if (!collapseBuffer_) {
             glGenBuffers(1, &collapseBuffer_); glBindBuffer(GL_SHADER_STORAGE_BUFFER, collapseBuffer_);
             const GLuint zero = 0; glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(zero), &zero, GL_DYNAMIC_READ);
         }
+    }
+
+    GLenum outputFormat(std::size_t output) const {
+        if (!definition_.stateSlots.empty() && output < outputSlots_.size() &&
+            definition_.stateSlots[static_cast<std::size_t>(outputSlots_[output])].highPrecision)
+            return GL_RGBA32F;
+        return GL_RGBA16F;
     }
 
     GLenum stateFormat(std::size_t slot) const {
