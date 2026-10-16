@@ -44,6 +44,22 @@ Inspector and execution-debug settings are session-only. Lowering/type errors an
 errors are attached to the affected region; native evaluation remains available only for nodes
 or parameter modes that explicitly opt out of lowering.
 
+## Noise-driven particle artwork
+
+Try the example of SamuelYAN-inspired stochastic flow particles:
+
+```sh
+./build/reaction_studio examples/noise-particles.reaction.json
+```
+
+The **Noise-Driven Particles (Sands)** built-in subgraph is editable (select
+and press Tab) and drives a separate **Particle Splat / Trails** node that
+rasterizes the evolving particle positions as fading orange/teal points.
+Parameters expose noise frequency, motion speed, tangent singularity clamp,
+particle count, point opacity and trail retention. See
+[docs/noise-particles.md](docs/noise-particles.md) for architecture,
+performance limits and differences from the original sketch.
+
 ## Current boundaries
 
 - Linux and OpenGL 4.3 compute are the supported first target.
