@@ -3,6 +3,8 @@
 #include "reaction/gpu/shader_ir.hpp"
 #include "node_support.hpp"
 
+#include "reaction/core/node_builder.hpp"
+
 #include <memory>
 
 namespace reaction {
@@ -17,16 +19,14 @@ constexpr float kMaximumBit = 23.0F;
 class BitTestNode final : public node_support::ParameterNode {
 public:
     static NodeDescriptor describe() {
-        auto result = NodeDescriptor{"bit_test", 1, "Bit Test / Integer Mask", "Math",
-            {{"mask", "Mask", ValueType::Float, SocketDirection::Input, true},
-             {"bit", "Bit", SocketContract::Numeric, SocketDirection::Input, true},
-             {"result", "Result", SocketContract::Numeric, SocketDirection::Output}},
-            {{"mask", "Mask", 0.0F, 0.0F, kMaximumMask,
-              ParameterDescriptor::Control::Integer},
-             {"bit", "Bit", 0.0F, 0.0F, kMaximumBit,
-              ParameterDescriptor::Control::Integer}}};
-        result.lowerable = true;
-        return result;
+        return NodeDescriptorBuilder{"bit_test", 1, "Bit Test / Integer Mask", "Math"}
+            .optionalInput("mask", "Mask", ValueType::Float)
+            .optionalInput("bit", "Bit", SocketContract::Numeric)
+            .output("result", "Result", SocketContract::Numeric)
+            .integerParameter("mask", "Mask", 0, 0, static_cast<int>(kMaximumMask))
+            .integerParameter("bit", "Bit", 0, 0, static_cast<int>(kMaximumBit))
+            .lowerable()
+            .build();
     }
 
     const NodeDescriptor& descriptor() const override {

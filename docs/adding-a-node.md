@@ -11,21 +11,25 @@ the `*_node.cpp` convention. Shared parameter, texture, and uniform helpers live
 
 Each implementation derives from `NodeInstance` directly or through
 `node_support::ParameterNode`, and provides a stable `NodeDescriptor`, parameter serialization,
-and either generated lowering or native evaluation. Prefer lowering for per-pixel work;
+and either generated lowering or native evaluation. New nodes should build descriptor metadata
+with `NodeDescriptorBuilder` from `reaction/core/node_builder.hpp`: its named methods make
+optional/image/default-field sockets, type policies, and control kinds explicit instead of relying
+on positional booleans or manual field mutation. Prefer lowering for per-pixel work;
 `ParameterNode` supplies the empty native fallback needed by a fully lowerable node, so that node
 does not implement `evaluate` or own a standalone compute program.
 
 ```cpp
+#include "reaction/core/node_builder.hpp"
+
 class InvertNode final : public node_support::ParameterNode {
 public:
     static NodeDescriptor describe() {
-        auto result = NodeDescriptor{"example.invert", 1, "Invert", "Color",
-            {{"image", "Image", SocketContract::AnyField, SocketDirection::Input},
-             {"result", "Result", SocketContract::AnyField, SocketDirection::Output}}, {}};
-        result.sockets.back().typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
-        result.sockets.back().typeInputs = {"image"};
-        result.lowerable = true;
-        return result;
+        return NodeDescriptorBuilder{"example.invert", 1, "Invert", "Color"}
+            .input("image", "Image", SocketContract::AnyField)
+            .output("result", "Result", SocketContract::AnyField)
+            .typePolicy("result", SocketDescriptor::TypePolicy::PreserveInput, {"image"})
+            .lowerable()
+            .build();
     }
 
     const NodeDescriptor& descriptor() const override {
@@ -34,11 +38,8 @@ public:
     }
 
     bool lowerShader(ShaderLoweringContext& context) const override {
-        const auto image = context.color("image", "image", 0.0F);
-        (void)context.emitTyped(
-            "vec4(vec3(1.0)-(" + image.name + ").rgb,(" + image.name + ").a)",
-            ShaderValueType::Vec4, "result");
-        return true;
+        const auto value = context.input("image", "image", 0.0F);
+        return context.emitTyped("1.0-(" + value.name + ")", value.type, "result"), true;
     }
 };
 ```
@@ -146,7 +147,8 @@ texture,” because the canvas state is negative and must not sample an unbound 
 - Use one `VectorNumeric` socket for coordinates, mark its canvas default with `fieldDefault`, and
   use `coordinateInput` while evaluating it.
 - Native nodes must initialize every output on every evaluation path, including missing required inputs.
-- Set every polymorphic output's `typePolicy` and `typeInputs`; never infer one node-wide type.
+- Declare polymorphic output rules with `NodeDescriptorBuilder::typePolicy` / `fieldIf`;
+  never infer one node-wide type.
 - Native `ImageHandle` outputs must retain the compiler-resolved semantic type.
 - Test contracts, rejected narrowing, exact widening expressions, multi-output independence, and
   fused versus materialized behavior.

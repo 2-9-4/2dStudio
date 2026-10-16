@@ -1,6 +1,8 @@
 #include "nodes_internal.hpp"
 #include "node_support.hpp"
 
+#include "reaction/core/node_builder.hpp"
+
 #include "reaction/gpu/shader_ir.hpp"
 
 #include <algorithm>
@@ -19,23 +21,22 @@ HashPositionMode hashPositionMode(float persistedValue) {
 class HashNode final : public node_support::ParameterNode {
 public:
     static NodeDescriptor describe() {
-        auto result = NodeDescriptor{"hash", 1, "Deterministic Hash", "Math",
-            {{"position", "Position", SocketContract::VectorNumeric, SocketDirection::Input, true},
-             {"seed", "Seed", ValueType::Float, SocketDirection::Input, true},
-             {"salt", "Salt", ValueType::Float, SocketDirection::Input, true},
-             {"scalar", "Scalar", SocketContract::Numeric, SocketDirection::Output},
-             {"vector", "Vector", SocketContract::VectorNumeric, SocketDirection::Output}},
-            {{"inputMode", "Input Handling", 0.0F, 0.0F, 1.0F,
-              ParameterDescriptor::Control::Enum,
-              {"Canvas Space", "Pixel Space"}},
-             {"seed", "Seed", 0.0F, -1000000.0F, 1000000.0F},
-             {"salt", "Salt", 0.0F, -1000000.0F, 1000000.0F}}};
-        result.lowerable = true;
-        result.sockets[3].typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
-        result.sockets[3].typeInputs = {"position"};
-        result.sockets[4].typePolicy = SocketDescriptor::TypePolicy::VectorPromotion;
-        result.sockets[4].typeInputs = {"position"};
-        return result;
+        return NodeDescriptorBuilder{"hash", 1, "Deterministic Hash", "Math"}
+            .optionalInput("position", "Position", SocketContract::VectorNumeric)
+            .optionalInput("seed", "Seed", ValueType::Float)
+            .optionalInput("salt", "Salt", ValueType::Float)
+            .output("scalar", "Scalar", SocketContract::Numeric)
+            .output("vector", "Vector", SocketContract::VectorNumeric)
+            .enumParameter("inputMode", "Input Handling", 0,
+                           {"Canvas Space", "Pixel Space"})
+            .floatParameter("seed", "Seed", 0.0F, -1000000.0F, 1000000.0F)
+            .floatParameter("salt", "Salt", 0.0F, -1000000.0F, 1000000.0F)
+            .typePolicy("scalar", SocketDescriptor::TypePolicy::NumericPromotion,
+                        {"position"})
+            .typePolicy("vector", SocketDescriptor::TypePolicy::VectorPromotion,
+                        {"position"})
+            .lowerable()
+            .build();
     }
 
     const NodeDescriptor& descriptor() const override {

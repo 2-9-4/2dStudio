@@ -1,4 +1,6 @@
 #include "node_support.hpp"
+
+#include "reaction/core/node_builder.hpp"
 #include "procedural_node_support.hpp"
 
 #include "reaction/gpu/shader_ir.hpp"
@@ -41,22 +43,23 @@ CompareMode clampMode(float persistedValue) {
 class CompareNode final : public node_support::ParameterNode {
 public:
     static NodeDescriptor describe() {
-        auto result = NodeDescriptor{"compare", 1, "Compare", "Math",
-            {{"a", "A", SocketContract::Numeric, SocketDirection::Input, true},
-             {"b", "B", SocketContract::Numeric, SocketDirection::Input, true},
-             {"c", "C", SocketContract::Numeric, SocketDirection::Input, true},
-             {"result", "Result", SocketContract::Numeric, SocketDirection::Output}},
-            {{"mode", "Operation", 0.0F, 0.0F, 11.0F, ParameterDescriptor::Control::Enum,
-              {"Less Than", "Less Than Equal", "Greater Than", "Greater Than Equal",
-               "Approximately Equal", "Not Approximately Equal", "Between Inclusive",
-               "Between Exclusive", "AND", "OR", "XOR", "NOT"}},
-             {"a", "A", 0.0F, -10.0F, 10.0F},
-             {"b", "B", 0.0F, -10.0F, 10.0F},
-             {"c", "C", 0.0F, -10.0F, 10.0F},
-             {"epsilon", "Epsilon", 1.0e-4F, 0.0F, 1.0F}}};
-        result.lowerable = true;
-        return result;
+        return NodeDescriptorBuilder{"compare", 1, "Compare", "Math"}
+            .optionalInput("a", "A", SocketContract::Numeric)
+            .optionalInput("b", "B", SocketContract::Numeric)
+            .optionalInput("c", "C", SocketContract::Numeric)
+            .output("result", "Result", SocketContract::Numeric)
+            .enumParameter("mode", "Operation", 0,
+                {"Less Than", "Less Than Equal", "Greater Than", "Greater Than Equal",
+                 "Approximately Equal", "Not Approximately Equal", "Between Inclusive",
+                 "Between Exclusive", "AND", "OR", "XOR", "NOT"})
+            .floatParameter("a", "A", 0.0F, -10.0F, 10.0F)
+            .floatParameter("b", "B", 0.0F, -10.0F, 10.0F)
+            .floatParameter("c", "C", 0.0F, -10.0F, 10.0F)
+            .floatParameter("epsilon", "Epsilon", 1.0e-4F, 0.0F, 1.0F)
+            .lowerable()
+            .build();
     }
+
     const NodeDescriptor& descriptor() const override {
         static const auto value = describe();
         return value;
