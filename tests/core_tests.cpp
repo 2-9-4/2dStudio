@@ -125,6 +125,56 @@ NodeRegistry catalogRegistry() {
     offsetSample.neighborhoodSocket = "source";
     offsetSample.lowerable = true;
     add(result, std::move(offsetSample));
+
+    // The catalog-only registry is intentionally lightweight. Mirror the socket
+    // contracts for new built-in particle dependencies so the complete built-in
+    // graph validation test covers them without linking OpenGL into core tests.
+    NodeDescriptor hash{"hash", 1, "Deterministic Hash", "Math",
+        {{"position", "Position", SocketContract::VectorNumeric, SocketDirection::Input, true},
+         {"seed", "Seed", ValueType::Float, SocketDirection::Input, true},
+         {"salt", "Salt", ValueType::Float, SocketDirection::Input, true},
+         {"scalar", "Scalar", SocketContract::Numeric, SocketDirection::Output},
+         {"vector", "Vector", SocketContract::VectorNumeric, SocketDirection::Output}}, {}};
+    hash.sockets[3].typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+    hash.sockets[3].typeInputs = {"position"};
+    hash.sockets[4].typePolicy = SocketDescriptor::TypePolicy::VectorPromotion;
+    hash.sockets[4].typeInputs = {"position"};
+    hash.lowerable = true;
+    add(result, std::move(hash));
+
+    NodeDescriptor perlin{"perlin", 1, "Perlin Noise", "Generator",
+        {{"scale", "Scale", ValueType::Float, SocketDirection::Input, true},
+         {"image", "Image", ValueType::ScalarField, SocketDirection::Output}}, {}};
+    perlin.lowerable = true;
+    perlin.producedField = true;
+    add(result, std::move(perlin));
+
+    NodeDescriptor textureSample{"texture_sample", 1, "Texture Sample", "Coordinates",
+        {{"source", "Source", SocketContract::AnyField, SocketDirection::Input},
+         {"coordinates", "Coordinates", SocketContract::VectorNumeric,
+          SocketDirection::Input, true},
+         {"sampled", "Sampled", SocketContract::AnyField, SocketDirection::Output}}, {}};
+    textureSample.sockets[0].requiresImage = true;
+    textureSample.sockets[2].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+    textureSample.sockets[2].typeInputs = {"source"};
+    textureSample.neighborhoodSocket = "source";
+    textureSample.lowerable = true;
+    add(result, std::move(textureSample));
+
+    NodeDescriptor particleStep{"particle_step", 1, "Particle Step", "Simulation",
+        {{"position", "Position", ValueType::VectorField, SocketDirection::Input},
+         {"life", "Life", ValueType::ScalarField, SocketDirection::Input},
+         {"noise", "Noise", ValueType::ScalarField, SocketDirection::Input},
+         {"frame", "Frame", ValueType::Float, SocketDirection::Input, true},
+         {"speed", "Speed", ValueType::Float, SocketDirection::Input, true},
+         {"maxJump", "Max Jump", ValueType::Float, SocketDirection::Input, true},
+         {"seed", "Seed", ValueType::Float, SocketDirection::Input, true},
+         {"position", "Position", ValueType::VectorField, SocketDirection::Output},
+         {"life", "Life", ValueType::ScalarField, SocketDirection::Output},
+         {"branch", "Branch", ValueType::ScalarField, SocketDirection::Output}}, {}};
+    particleStep.lowerable = true;
+    particleStep.producedField = true;
+    add(result, std::move(particleStep));
     return result;
 }
 
