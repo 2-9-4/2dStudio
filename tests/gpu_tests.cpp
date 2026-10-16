@@ -1,6 +1,7 @@
 #include "reaction/gpu/gpu_runtime.hpp"
 #include "reaction/gpu/shader_ir.hpp"
 #include "reaction/core/persistence.hpp"
+#include "node_test_support.hpp"
 
 #include <GLFW/glfw3.h>
 #include <catch2/catch_approx.hpp>
@@ -19,33 +20,9 @@
 namespace reaction {
 namespace {
 
-class HiddenContext {
-public:
-    HiddenContext() {
-        glfwSetErrorCallback([](int, const char*) {});
-        if (glfwInit() == GLFW_FALSE) SKIP("No desktop display is available for OpenGL integration tests");
-        glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-        window = glfwCreateWindow(32, 32, "GPU test", nullptr, nullptr);
-        if (!window) { glfwTerminate(); SKIP("OpenGL 4.3 context is unavailable"); }
-        glfwMakeContextCurrent(window);
-        if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) {
-            glfwDestroyWindow(window); window = nullptr; glfwTerminate();
-            SKIP("OpenGL loader initialization failed");
-        }
-    }
-    ~HiddenContext() { if (window) glfwDestroyWindow(window); glfwTerminate(); }
-    GLFWwindow* window = nullptr;
-};
-
-std::vector<float> readImage(ImageHandle image) {
-    std::vector<float> values(static_cast<std::size_t>(image.width * image.height * 4));
-    glBindTexture(GL_TEXTURE_2D, image.texture);
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, values.data());
-    return values;
-}
+using test_support::HiddenContext;
+using test_support::RuntimeHarness;
+using test_support::readImage;
 
 NodeId addDiscreteReaction(Graph& graph) {
     const auto id = graph.addNode("subgraph");
@@ -322,6 +299,18 @@ TEST_CASE("every built-in simulation template lowers and compiles its default sh
         INFO(label);
         REQUIRE_NOTHROW(gpu.compileCompute(source, label));
     }
+}
+
+TEST_CASE("node conformance harness exposes descriptors and resolved semantic types") {
+    RuntimeHarness harness{4, 4};
+    const auto source = harness.add("coordinates");
+    const auto separate = harness.add("separate_vector");
+    harness.connect(source, "coordinates", separate, "value");
+
+    REQUIRE(harness.descriptor("separate_vector").displayName == "Separate Vector");
+    REQUIRE(harness.semanticType(source, "coordinates") == ValueType::VectorField);
+    REQUIRE(harness.semanticType(separate, "x") == ValueType::ScalarField);
+    REQUIRE(harness.semanticType(separate, "y") == ValueType::ScalarField);
 }
 
 TEST_CASE("every lowerable built-in node generates from a basic field input") {
@@ -1353,44 +1342,40 @@ TEST_CASE("Select is an ordinary registered node with exact nonzero semantics") 
 }
 
 TEST_CASE("canvas coordinates and Laplacian execute through the normal graph runtime") {
-    HiddenContext context;
-    NodeRegistry registry; registerBuiltInNodes(registry);
-    Graph graph; graph.settings = {4, 4, 60};
-    const auto coordinates = graph.addNode("coordinates");
-    const auto laplacian = graph.addNode("laplacian");
-    graph.addLink(coordinates, "coordinates", laplacian, "value");
-    GpuRuntime gpu;
-    GraphRuntime runtime(graph, registry, gpu);
-    REQUIRE(runtime.evaluate(0, 0, false));
+    RuntimeHarness harness{4, 4};
+    const auto coordinates = harness.add("coordinates");
+    const auto laplacian = harness.add("laplacian");
+    harness.connect(coordinates, "coordinates", laplacian, "value");
+    REQUIRE_NOTHROW(harness.evaluated());
 
-    const auto& coordinateValues = runtime.values().at(coordinates);
-    REQUIRE(coordinateValues.size() == 1);
-    const auto coordinatesValue = readImage(std::get<ImageHandle>(coordinateValues[0]));
+    REQUIRE(harness.semanticType(coordinates, "coordinates") == ValueType::VectorField);
+    REQUIRE(harness.semanticType(laplacian, "result") == ValueType::VectorField);
+    const auto coordinatesValue = harness.pixels(coordinates);
     REQUIRE(coordinatesValue[0] == Catch::Approx(.125F).margin(.001F));
     REQUIRE(coordinatesValue[1] == Catch::Approx(.125F).margin(.001F));
     REQUIRE(coordinatesValue[3 * 4] == Catch::Approx(.875F).margin(.001F));
     REQUIRE(coordinatesValue[4 * 4] == Catch::Approx(.125F).margin(.001F));
-    REQUIRE(coordinatesValue[1] == Catch::Approx(.125F).margin(.001F));
     REQUIRE(coordinatesValue[4 * 4 + 1] == Catch::Approx(.375F).margin(.001F));
 
-    const auto result = readImage(std::get<ImageHandle>(runtime.values().at(laplacian)[0]));
+    const auto result = harness.pixels(laplacian);
     REQUIRE(result[0] == Catch::Approx(.3F).margin(.003F));
     REQUIRE(result[(1 * 4 + 1) * 4] == Catch::Approx(0.0F).margin(.003F));
 }
 
 TEST_CASE("Perlin advances by evaluated frame rather than wall time") {
-    HiddenContext context;
-    NodeRegistry registry; registerBuiltInNodes(registry);
-    Graph graph; graph.settings = {32, 24, 60};
-    const auto perlin = graph.addNode("perlin");
-    const auto output = graph.addNode("output");
-    graph.addLink(perlin, "image", output, "image"); graph.activeOutput = output;
-    GpuRuntime gpu;
-    GraphRuntime runtime(graph, registry, gpu);
+    RuntimeHarness harness{32, 24};
+    const auto perlin = harness.add("perlin");
+    const auto output = harness.add("output");
+    harness.connect(perlin, "image", output, "image");
+    harness.graph.activeOutput = output;
+    auto& runtime = harness.build();
+
     REQUIRE(runtime.evaluate(1.25, 1.0 / 60.0, true));
     const auto firstHandle = runtime.outputImage();
     const auto first = readImage(firstHandle);
-    REQUIRE(std::ranges::all_of(first, [](float value) { return std::isfinite(value) && value >= 0.0F && value <= 1.0F; }));
+    REQUIRE(std::ranges::all_of(first, [](float value) {
+        return std::isfinite(value) && value >= 0.0F && value <= 1.0F;
+    }));
     REQUIRE(runtime.evaluate(25.0, 1.0 / 60.0, true));
     REQUIRE(runtime.outputImage().texture == firstHandle.texture);
     REQUIRE(readImage(runtime.outputImage()) != first);
@@ -1409,34 +1394,27 @@ TEST_CASE("scalar Math safe division is emitted by its only implementation") {
 }
 
 TEST_CASE("fused Math chain matches solo lowering and materializes previews on demand") {
-    HiddenContext context;
-    NodeRegistry registry; registerBuiltInNodes(registry);
-    Graph graph; graph.settings = {16, 16, 60};
-    const auto coordinates = graph.addNode("coordinates");
-    const auto separate = graph.addNode("separate_vector");
-    const auto add = graph.addNode("math");
-    const auto multiply = graph.addNode("math");
-    graph.findNode(add)->parameters = {{"operation", 0.0F}, {"b", .125F}};
-    graph.findNode(multiply)->parameters = {{"operation", 2.0F}, {"b", .75F}};
-    graph.addLink(coordinates, "coordinates", separate, "value");
-    graph.addLink(separate, "x", add, "a");
-    graph.addLink(add, "result", multiply, "a");
-    GpuRuntime gpu;
-    GraphRuntime runtime(graph, registry, gpu);
+    RuntimeHarness harness{16, 16};
+    const auto coordinates = harness.add("coordinates");
+    const auto separate = harness.add("separate_vector");
+    const auto add = harness.add("math", {{"operation", 0.0F}, {"b", .125F}});
+    const auto multiply = harness.add("math", {{"operation", 2.0F}, {"b", .75F}});
+    harness.connect(coordinates, "coordinates", separate, "value");
+    harness.connect(separate, "x", add, "a");
+    harness.connect(add, "result", multiply, "a");
+
+    auto& runtime = harness.build();
+    const auto [generated, solo] = harness.fusedAndSoloPixels(multiply);
+    REQUIRE(generated == solo);
+    REQUIRE(runtime.values().contains(add));
+
+    runtime.setFusionEnabled(true);
     REQUIRE(runtime.evaluate(0, 0, false));
     REQUIRE(runtime.fusionInfo(add).has_value());
     REQUIRE(runtime.fusionInfo(add)->interior);
     REQUIRE(runtime.fusionInfo(multiply)->nodeCount == 4);
     REQUIRE_FALSE(runtime.values().contains(add));
-    const auto generated = readImage(std::get<ImageHandle>(runtime.values().at(multiply).front()));
 
-    runtime.setFusionEnabled(false);
-    REQUIRE(runtime.evaluate(0, 0, false));
-    REQUIRE(runtime.values().contains(add));
-    const auto solo = readImage(std::get<ImageHandle>(runtime.values().at(multiply).front()));
-    REQUIRE(generated == solo);
-
-    runtime.setFusionEnabled(true);
     runtime.setIntermediatePreview(add);
     REQUIRE(runtime.evaluate(0, 0, false));
     REQUIRE(runtime.values().contains(add));
@@ -1445,6 +1423,7 @@ TEST_CASE("fused Math chain matches solo lowering and materializes previews on d
     REQUIRE(runtime.evaluate(0, 0, false));
     REQUIRE_FALSE(runtime.values().contains(add));
 }
+
 
 TEST_CASE("every generated Math operation compiles and fused pixels agree with solo lowering") {
     HiddenContext context;
