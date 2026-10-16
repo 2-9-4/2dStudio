@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <numeric>
 #include <unordered_map>
@@ -201,6 +202,32 @@ TEST_CASE("Sands particle subgraph compiles, deposits trails, and persists graph
     const auto pixels = readImage(runtime.outputImage());
     REQUIRE(std::ranges::all_of(pixels, [](float v) { return std::isfinite(v); }));
     REQUIRE(std::ranges::any_of(pixels, [](float v) { return v > 0.15F; }));
+
+    // Optional CI-only visual evidence: a larger accumulated scene is saved as
+    // an artifact for qualitative inspection, not treated as visual correctness
+    // simply because it is non-black.
+    if (const char* snapshot = std::getenv("SANDS_PREVIEW_PATH"); snapshot && *snapshot) {
+        graph.settings = {160, 160, 60};
+        GraphRuntime preview(graph, registry, gpu);
+        for (int i = 0; i < 120; ++i)
+            REQUIRE(preview.evaluate(static_cast<double>(i) / 60.0, 1.0 / 60.0, true));
+        const auto frame = readImage(preview.outputImage());
+        std::vector<png_byte> rgba(frame.size());
+        for (std::size_t pixel = 0; pixel < frame.size() / 4; ++pixel) {
+            for (int channel = 0; channel < 3; ++channel)
+                rgba[pixel * 4 + static_cast<std::size_t>(channel)] =
+                    static_cast<png_byte>(std::lround(255.0F *
+                        std::clamp(frame[pixel * 4 + static_cast<std::size_t>(channel)],
+                                   0.0F, 1.0F)));
+            rgba[pixel * 4 + 3] = 255;
+        }
+        png_image png{};
+        png.version = PNG_IMAGE_VERSION;
+        png.width = 160;
+        png.height = 160;
+        png.format = PNG_FORMAT_RGBA;
+        REQUIRE(png_image_write_to_file(&png, snapshot, 0, rgba.data(), 0, nullptr));
+    }
 }
 
 TEST_CASE("unused legacy subgraphs do not invalidate the text test root graph") {
