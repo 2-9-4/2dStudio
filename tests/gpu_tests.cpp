@@ -115,6 +115,68 @@ LoweredChain lowerMathThresholdSelect(const NodeRegistry& registry, ShaderValueT
 
 } // namespace
 
+
+TEST_CASE("Sands particle subgraph compiles, deposits trails, and persists graph sockets") {
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    const auto found = std::ranges::find_if(builtInSubgraphs(), [](const auto& definition) {
+        return definition.id == "builtin.particles.noise_flow";
+    });
+    REQUIRE(found != builtInSubgraphs().end());
+    const auto errors = validateSubgraph(*found, registry);
+    INFO(nlohmann::json(errors).dump());
+    REQUIRE(errors.empty());
+    REQUIRE(found->stateSlots.size() == 3);
+    REQUIRE(found->stateSlots[0].type == ValueType::VectorField);
+    REQUIRE(found->stateSlots[1].type == ValueType::ScalarField);
+    REQUIRE(found->stateSlots[2].type == ValueType::ScalarField);
+
+    const auto initial = generateSimulationShader(*found, true);
+    const auto update = generateSimulationShader(*found, false);
+    REQUIRE(initial.find("deterministicHash") != std::string::npos);
+    REQUIRE(update.find("particleRng") != std::string::npos);
+    REQUIRE(update.find("simulationFrameIndex") != std::string::npos);
+    REQUIRE(update.find("perlinNoise") != std::string::npos);
+
+    HiddenContext context;
+    GpuRuntime gpu;
+    const GLuint initProgram = gpu.compileCompute(initial, "Sands / initial");
+    const GLuint updateProgram = gpu.compileCompute(update, "Sands / update");
+    glDeleteProgram(initProgram);
+    glDeleteProgram(updateProgram);
+
+    Graph graph;
+    graph.settings = {64, 64, 60};
+    const auto simulation = graph.addNode("subgraph");
+    graph.findNode(simulation)->subgraphId = found->id;
+    graph.findNode(simulation)->parameters = {
+        {"noiseScale", 6.0F}, {"speed", 1.0F}, {"maxJump", 64.0F},
+        {"iterations", 1.0F}};
+    const auto splat = graph.addNode("particle_splat");
+    graph.findNode(splat)->parameters = {
+        {"count", 1000.0F}, {"opacity", 0.375F}, {"retention", 0.996F}};
+    const auto output = graph.addNode("output");
+    graph.addLink(simulation, "positions", splat, "positions");
+    graph.addLink(simulation, "branches", splat, "branches");
+    graph.addLink(splat, "image", output, "image");
+    graph.activeOutput = output;
+    const auto compile = graph.compile(registry);
+    INFO(nlohmann::json(compile.errors).dump());
+    REQUIRE(compile.valid);
+
+    const auto project = serializeProject(graph);
+    const auto restored = deserializeProject(project, registry);
+    REQUIRE(restored.compile(registry).valid);
+
+    GraphRuntime runtime(graph, registry, gpu);
+    for (int i = 0; i < 10; ++i)
+        REQUIRE(runtime.evaluate(static_cast<double>(i) / 60.0, 1.0 / 60.0, true));
+    REQUIRE(runtime.outputImage());
+    const auto pixels = readImage(runtime.outputImage());
+    REQUIRE(std::ranges::all_of(pixels, [](float v) { return std::isfinite(v); }));
+    REQUIRE(std::ranges::any_of(pixels, [](float v) { return v > 0.15F; }));
+}
+
 TEST_CASE("unused legacy subgraphs do not invalidate the text test root graph") {
     NodeRegistry registry;
     registerBuiltInNodes(registry);
