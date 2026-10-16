@@ -45,7 +45,7 @@ void main(){
     // Deterministically stratify the requested count over the state image;
     // its resolution does not change the number of rendered particles.
     int total=size.x*size.y;
-    int i=int((uint(gl_VertexID)*uint(total))/uint(max(1,particleCount)));
+    int i=min(total-1,int((float(gl_VertexID)+0.5)*float(total)/float(max(1,particleCount))));
     ivec2 cell=ivec2(i%size.x,i/size.x);
     vec2 uv=texelFetch(positions,cell,0).rg;
     branch=texelFetch(branches,cell,0).r;
@@ -143,8 +143,10 @@ public:
         }
         auto& gpu=*static_cast<GpuRuntime*>(context.gpu);
         ensureResources(gpu,context.width,context.height);
-        const int count=std::clamp(static_cast<int>(floatAt(inputs,2,1000.0F)),1,
-            std::min({100000,positions.width*positions.height,branches.width*branches.height}));
+        const int capacity=std::min({100000,positions.width*positions.height,
+                                      branches.width*branches.height});
+        if(capacity<=0){outputs[0]=Value{};return;}
+        const int count=std::clamp(static_cast<int>(floatAt(inputs,2,1000.0F)),1,capacity);
         const float retention=std::clamp(floatAt(inputs,3,0.996F),0.0F,1.0F);
         const float opacity=std::clamp(floatAt(inputs,4,0.375F),0.0F,1.0F);
 
@@ -174,6 +176,7 @@ public:
                 throw std::runtime_error("Particle Splat framebuffer incomplete");
         };
         if(clearPending_){
+            glDisable(GL_SCISSOR_TEST);
             const GLfloat clear[4]{0.05F,0.05F,0.05F,1.0F};
             for(GLuint texture:canvas_){
                 attach(texture);
