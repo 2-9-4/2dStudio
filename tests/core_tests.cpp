@@ -161,20 +161,24 @@ NodeRegistry catalogRegistry() {
     textureSample.lowerable = true;
     add(result, std::move(textureSample));
 
-    NodeDescriptor particleStep{"particle_step", 1, "Particle Step", "Simulation",
-        {{"position", "Position", ValueType::VectorField, SocketDirection::Input},
-         {"life", "Life", ValueType::ScalarField, SocketDirection::Input},
-         {"noise", "Noise", ValueType::ScalarField, SocketDirection::Input},
-         {"frame", "Frame", ValueType::Float, SocketDirection::Input, true},
-         {"speed", "Speed", ValueType::Float, SocketDirection::Input, true},
-         {"maxJump", "Max Jump", ValueType::Float, SocketDirection::Input, true},
-         {"seed", "Seed", ValueType::Float, SocketDirection::Input, true},
-         {"position", "Position", ValueType::VectorField, SocketDirection::Output},
-         {"life", "Life", ValueType::ScalarField, SocketDirection::Output},
-         {"branch", "Branch", ValueType::ScalarField, SocketDirection::Output}}, {}};
-    particleStep.lowerable = true;
-    particleStep.producedField = true;
-    add(result, std::move(particleStep));
+    NodeDescriptor separate{"separate_vector", 1, "Separate Vector", "Utility",
+        {{"value", "Vector", SocketContract::VectorNumeric, SocketDirection::Input},
+         {"x", "X", SocketContract::Numeric, SocketDirection::Output},
+         {"y", "Y", SocketContract::Numeric, SocketDirection::Output}}, {}};
+    separate.sockets[1].typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+    separate.sockets[1].typeInputs = {"value"};
+    separate.sockets[2].typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+    separate.sockets[2].typeInputs = {"value"};
+    separate.lowerable = true;
+    add(result, std::move(separate));
+
+    NodeDescriptor pixels{"pixel_delta_to_uv", 1, "Pixel Delta to UV", "Coordinates",
+        {{"delta", "Pixel Delta", SocketContract::VectorNumeric, SocketDirection::Input},
+         {"uvDelta", "UV Delta", SocketContract::VectorNumeric, SocketDirection::Output}}, {}};
+    pixels.sockets[1].typePolicy = SocketDescriptor::TypePolicy::VectorPromotion;
+    pixels.sockets[1].typeInputs = {"delta"};
+    pixels.lowerable = true;
+    add(result, std::move(pixels));
     return result;
 }
 
