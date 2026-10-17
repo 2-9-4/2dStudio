@@ -25,16 +25,16 @@ void main(){
     ivec2 p=ivec2(gl_GlobalInvocationID.xy),s=imageSize(nextImage);
     if(any(greaterThanEqual(p,s)))return;
     vec3 old=texelFetch(previousImage,p,0).rgb;
-    vec3 color=mix(vec3(0.05),old,retention);
+    vec3 color=old*retention;
     imageStore(nextImage,p,vec4(color,1.0));
 })GLSL";
 
 constexpr const char* kVertex = R"GLSL(#version 430
 layout(binding=0)uniform sampler2D positions;
-layout(binding=1)uniform sampler2D branches;
 uniform int particleCount;
 uniform vec2 canvasSize;
-out float branch;
+uniform float marginPixels;
+uniform float pointSize;
 out float weight;
 uint hash(uint h){
     h ^= h>>16u;h*=0x7feb352du;h^=h>>15u;h*=0x846ca68bu;
@@ -48,25 +48,29 @@ void main(){
     int i=min(total-1,int((float(gl_VertexID)+0.5)*float(total)/float(max(1,particleCount))));
     ivec2 cell=ivec2(i%size.x,i/size.x);
     vec2 uv=texelFetch(positions,cell,0).rg;
-    branch=texelFetch(branches,cell,0).r;
     uint h=hash(uint(gl_VertexID)+uint(total)*17u);
     weight=0.25+0.75*float(h>>8u)*(1.0/16777216.0);
-    vec2 inset=vec2(20.0)/canvasSize;
+    if(any(lessThan(uv,vec2(0.0)))||any(greaterThan(uv,vec2(1.0)))) {
+        gl_Position=vec4(3.0,3.0,0.0,1.0);gl_PointSize=0.0;return;
+    }
+    vec2 inset=vec2(marginPixels)/canvasSize;
     uv=clamp(uv,inset,vec2(1.0)-inset);
     gl_Position=vec4(uv*2.0-1.0,0.0,1.0);
-    gl_PointSize=1.0;
+    gl_PointSize=pointSize;
 })GLSL";
 
 constexpr const char* kFragment = R"GLSL(#version 430
-in float branch;
 in float weight;
 uniform float opacity;
+uniform vec3 ink;
+uniform float roundness;
 out vec4 color;
 void main(){
-    // Converted from the original HSB colors (15,90,90) and (175,90,90).
-    vec3 orange=vec3(0.90,0.2925,0.09);
-    vec3 teal=vec3(0.09,0.90,0.8325);
-    color=vec4(mix(teal,orange,step(0.5,branch)),opacity*weight);
+    // Roundness=0: crisp square, 1: circular brush with smoothly antialiased edge.
+    vec2 d=gl_PointCoord-vec2(0.5);
+    float circle=1.0-smoothstep(0.40,0.50,length(d));
+    float coverage=mix(1.0,circle,roundness);
+    color=vec4(ink,opacity*weight*coverage);
 })GLSL";
 
 GLuint shader(GLenum kind,const char* source) {
@@ -110,11 +114,16 @@ public:
     static NodeDescriptor describe() {
         return NodeDescriptorBuilder{"particle_splat",1,"Particle Splat / Trails","Simulation"}
             .input("positions","Particle Positions (UV)",ValueType::VectorField)
-            .input("branches","Orange / Teal Branch",ValueType::ScalarField)
-            .output("image","Accumulated Trails",ValueType::ColorImage)
+                        .output("image","Accumulated Trails",ValueType::ColorImage)
             .integerParameter("count","Visible Particles",1000,1,100000)
             .floatParameter("retention","Frame Retention",0.985F,0.0F,1.0F)
             .floatParameter("opacity","Point Opacity",0.375F,0.0F,1.0F)
+            .floatParameter("r","Red",0.90F,0.0F,1.0F)
+            .floatParameter("g","Green",0.2925F,0.0F,1.0F)
+            .floatParameter("b","Blue",0.09F,0.0F,1.0F)
+            .floatParameter("size","Point Size",1.0F,0.5F,16.0F)
+            .floatParameter("margin","Canvas Inset",20.0F,0.0F,200.0F)
+            .floatParameter("roundness","Round Brush",0.0F,0.0F,1.0F)
             .stateful().timeDependent()
             .build();
     }
@@ -137,18 +146,23 @@ public:
                   std::span<Value> outputs)override{
         if(outputs.empty())return;
         const auto positions=imageAt(inputs,0);
-        const auto branches=imageAt(inputs,1);
-        if(!positions||!branches){
+        if(!positions){
             outputs[0]=Value{};return;
         }
         auto& gpu=*static_cast<GpuRuntime*>(context.gpu);
         ensureResources(gpu,context.width,context.height);
-        const int capacity=std::min({100000,positions.width*positions.height,
-                                      branches.width*branches.height});
+        const int capacity=std::min(100000,positions.width*positions.height);
         if(capacity<=0){outputs[0]=Value{};return;}
-        const int count=std::clamp(static_cast<int>(floatAt(inputs,2,1000.0F)),1,capacity);
-        const float retention=std::clamp(floatAt(inputs,3,0.985F),0.0F,1.0F);
-        const float opacity=std::clamp(floatAt(inputs,4,0.375F),0.0F,1.0F);
+        const int count=std::clamp(static_cast<int>(floatAt(inputs,1,node_support::parameter(parameters_,"count",1000.0F))),1,capacity);
+        const float retention=std::clamp(floatAt(inputs,2,node_support::parameter(parameters_,"retention",0.985F)),0.0F,1.0F);
+        const float opacity=std::clamp(floatAt(inputs,3,node_support::parameter(parameters_,"opacity",0.375F)),0.0F,1.0F);
+
+        const float red=std::clamp(floatAt(inputs,4,node_support::parameter(parameters_,"r",.9F)),0.0F,1.0F);
+        const float green=std::clamp(floatAt(inputs,5,node_support::parameter(parameters_,"g",.2925F)),0.0F,1.0F);
+        const float blue=std::clamp(floatAt(inputs,6,node_support::parameter(parameters_,"b",.09F)),0.0F,1.0F);
+        const float pointSize=std::clamp(floatAt(inputs,7,node_support::parameter(parameters_,"size",1.0F)),.5F,16.0F);
+        const float margin=std::clamp(floatAt(inputs,8,node_support::parameter(parameters_,"margin",20.0F)),0.0F,200.0F);
+        const float roundness=std::clamp(floatAt(inputs,9,node_support::parameter(parameters_,"roundness",0.0F)),0.0F,1.0F);
 
         // GL is shared with ImGui and the preview. Do not leak framebuffer,
         // VAO, viewport, or blend/depth/scissor state into the UI.
@@ -177,7 +191,7 @@ public:
         };
         if(clearPending_){
             glDisable(GL_SCISSOR_TEST);
-            const GLfloat clear[4]{0.05F,0.05F,0.05F,1.0F};
+            const GLfloat clear[4]{0.0F,0.0F,0.0F,1.0F};
             for(GLuint texture:canvas_){
                 attach(texture);
                 glClearBufferfv(GL_COLOR,0,clear);
@@ -202,10 +216,12 @@ public:
             glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
             glUseProgram(pointProgram_);
             bindTexture(0,positions.texture);
-            bindTexture(1,branches.texture);
             uniform(pointProgram_,"positions",0);
-            uniform(pointProgram_,"branches",1);
             uniform(pointProgram_,"particleCount",count);
+            uniform(pointProgram_,"marginPixels",margin);
+            uniform(pointProgram_,"pointSize",pointSize);
+            uniform(pointProgram_,"roundness",roundness);
+            glUniform3f(glGetUniformLocation(pointProgram_,"ink"),red,green,blue);
             glUniform2f(glGetUniformLocation(pointProgram_,"canvasSize"),
                         static_cast<float>(context.width),static_cast<float>(context.height));
             uniform(pointProgram_,"opacity",opacity);
