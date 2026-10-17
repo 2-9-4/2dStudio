@@ -144,6 +144,8 @@ NodeRegistry catalogRegistry() {
 
     NodeDescriptor perlin{"perlin", 1, "Perlin Noise", "Generator",
         {{"scale", "Scale", ValueType::Float, SocketDirection::Input, true},
+         {"offsetX", "Offset X", ValueType::Float, SocketDirection::Input, true},
+         {"offsetY", "Offset Y", ValueType::Float, SocketDirection::Input, true},
          {"image", "Image", ValueType::ScalarField, SocketDirection::Output}}, {}};
     perlin.lowerable = true;
     perlin.producedField = true;
