@@ -182,28 +182,6 @@ NodeRegistry catalogRegistry() {
     pixels.lowerable = true;
     add(result, std::move(pixels));
 
-    // Native image operators can now execute inside pipeline subgraph bodies.
-    NodeDescriptor splat{"particle_splat", 1, "Particle Splat / Trails", "Simulation",
-        {{"positions", "Particle Positions", ValueType::VectorField, SocketDirection::Input},
-         {"count", "Count", ValueType::Float, SocketDirection::Input, true},
-         {"retention", "Retention", ValueType::Float, SocketDirection::Input, true},
-         {"opacity", "Opacity", ValueType::Float, SocketDirection::Input, true},
-         {"r", "R", ValueType::Float, SocketDirection::Input, true},
-         {"g", "G", ValueType::Float, SocketDirection::Input, true},
-         {"b", "B", ValueType::Float, SocketDirection::Input, true},
-         {"size", "Size", ValueType::Float, SocketDirection::Input, true},
-         {"image", "Image", ValueType::ColorImage, SocketDirection::Output}}, {}};
-    add(result, std::move(splat));
-    NodeDescriptor addImages{"image_add", 1, "Add Image Layers", "Compositing",
-        {{"a", "Layer A", ValueType::ColorImage, SocketDirection::Input},
-         {"b", "Layer B", ValueType::ColorImage, SocketDirection::Input},
-         {"gainA", "Gain A", ValueType::Float, SocketDirection::Input, true},
-         {"gainB", "Gain B", ValueType::Float, SocketDirection::Input, true},
-         {"backgroundR", "Background R", ValueType::Float, SocketDirection::Input, true},
-         {"backgroundG", "Background G", ValueType::Float, SocketDirection::Input, true},
-         {"backgroundB", "Background B", ValueType::Float, SocketDirection::Input, true},
-         {"image", "Image", ValueType::ColorImage, SocketDirection::Output}}, {}};
-    add(result, std::move(addImages));
     return result;
 }
 
