@@ -25,15 +25,14 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **Canvas Coordinates** (`coordinates`) — Outputs one Vector Field containing normalized XY
   canvas coordinates. Enable **Pixels** to output pixel-center coordinates instead.
 
-### Particle simulation, splatting and native pipelines
+### Particle simulation and splatting
 
-- **Pixel Delta to UV** (`pixel_delta_to_uv`) — convert pixel velocity to normalized UV.
-- **Particle Splat / Trails** (`particle_splat`) — single-color GPU point deposition with RGB ink, particle count, opacity, fade, brush size/shape, and inset. Ignores masked (-1,-1) slots while clamping live offscreen particles to the configured canvas inset.
-- **Add Image Layers** (`image_add`) — additive two-image compositor with gains and configurable background.
-- **Noise-Driven Particles (Sands)** — editable simulation subgraph exporting **orangePositions** and **tealPositions** separately; the motion, randomization and masks use editable Math/Hash/Select/Vector nodes.
-- **Sands Trails (Two Layers)** — editable **native pipeline subgraph** containing two independent Particle Splat nodes feeding Add Image Layers. Per-layer colors have color pickers.
+- **Pixel Delta to UV** (`pixel_delta_to_uv`) converts pixel velocity to normalized UV.
+- **Particle Splat / Trails** (`particle_splat`) is a single-ink, reusable native GPU node with count, opacity, retention, brush size/shape and inset. Its compact color picker controls RGB, with optional R/G/B pins on one row. Inactive (-1,-1) positions are skipped; live offscreen positions clamp to the inset.
+- **Noise-Driven Particles (Sands)** (`builtin.particles.noise_flow`) is an editable simulation of Perlin, Texture Sample, Hash, Math, Select and Vector operators, with separate **orangePositions** and **tealPositions** outputs and per-branch motion controls.
+- The existing **Mix** node in **Add** mode (factor 1) adds two independently rendered trail images. No Sands-specific compositing node or rendering subgraph is needed.
 
-Shader-lowered simulation subgraphs and native pipeline subgraphs have distinct execution models. Native pipelines support registered non-lowerable GPU nodes; shader-only nodes are not yet supported inside them. See [Sands documentation](noise-particles.md).
+The example places two Particle Splat nodes and Mix in the root graph, downstream of the Sands simulation subgraph. See [Sands example and controls](noise-particles.md).
 
 ### Generators
 
