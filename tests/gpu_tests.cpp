@@ -117,7 +117,7 @@ LoweredChain lowerMathThresholdSelect(const NodeRegistry& registry, ShaderValueT
 } // namespace
 
 
-TEST_CASE("Sands splits particle branches into editable native pipeline splats") {
+TEST_CASE("Sands root graph has separate splats composited by built-in Mix Add") {
     NodeRegistry registry;
     registerBuiltInNodes(registry);
     const auto findBuiltIn = [&](const char* id) {
@@ -126,25 +126,20 @@ TEST_CASE("Sands splits particle branches into editable native pipeline splats")
         });
     };
     const auto simulationDefinition = findBuiltIn("builtin.particles.noise_flow");
-    const auto layersDefinition = findBuiltIn("builtin.particles.sands_layers");
     REQUIRE(simulationDefinition != builtInSubgraphs().end());
-    REQUIRE(layersDefinition != builtInSubgraphs().end());
+    REQUIRE(std::ranges::none_of(builtInSubgraphs(),[](const SubgraphDefinition& def) {
+        return def.id=="builtin.particles.sands_layers";
+    }));
     const auto physicsErrors=validateSubgraph(*simulationDefinition,registry);
-    const auto pipelineErrors=validateSubgraph(*layersDefinition,registry);
     INFO(nlohmann::json(physicsErrors).dump());
-    INFO(nlohmann::json(pipelineErrors).dump());
     REQUIRE(physicsErrors.empty());
-    REQUIRE(pipelineErrors.empty());
     REQUIRE(simulationDefinition->execution == SubgraphExecution::Simulation);
-    REQUIRE(layersDefinition->execution == SubgraphExecution::Pipeline);
     REQUIRE(simulationDefinition->stateSlots.size() == 4);
     REQUIRE(simulationDefinition->stateSlots[0].highPrecision);
     REQUIRE(simulationDefinition->stateSlots[2].highPrecision);
     REQUIRE(simulationDefinition->stateSlots[3].highPrecision);
     REQUIRE(simulationDefinition->interface[simulationDefinition->interface.size()-2].key == "orangePositions");
     REQUIRE(simulationDefinition->interface.back().key == "tealPositions");
-    REQUIRE(std::ranges::count(layersDefinition->body.nodes(),"particle_splat",&NodeRecord::type) == 2);
-    REQUIRE(std::ranges::count(layersDefinition->body.nodes(),"image_add",&NodeRecord::type) == 1);
     REQUIRE(std::ranges::none_of(simulationDefinition->body.nodes(),[](const auto& node) {
         return node.type == "particle_step" || node.type == "particle_splat";
     }));
@@ -172,18 +167,27 @@ TEST_CASE("Sands splits particle branches into editable native pipeline splats")
         {"noiseScale",5.0F},{"speed",1.0F},{"orangeSpeed",1.0F},
         {"tealSpeed",1.0F},{"lifeRate",.1F},{"orangeMin",3.0F},
         {"orangeMax",6.0F},{"angleBins",1200.0F},{"iterations",1.0F}};
-    const auto layers=graph.addNode("subgraph");
-    graph.findNode(layers)->subgraphId=layersDefinition->id;
-    graph.findNode(layers)->parameters={
-        {"count",1000.0F},{"orangeRetention",.985F},{"tealRetention",.985F},
-        {"orangeOpacity",.375F},{"tealOpacity",.375F},
-        {"orangeR",.9F},{"orangeG",.29F},{"orangeB",.09F},
-        {"tealR",.09F},{"tealG",.9F},{"tealB",.83F}};
+    const auto orangeSplat=graph.addNode("particle_splat");
+    graph.findNode(orangeSplat)->parameters={
+        {"count",1000.0F},{"retention",.985F},{"opacity",.375F},
+        {"r",.9F},{"g",.2925F},{"b",.09F},{"size",1.0F}};
+    const auto tealSplat=graph.addNode("particle_splat");
+    graph.findNode(tealSplat)->parameters={
+        {"count",1000.0F},{"retention",.985F},{"opacity",.375F},
+        {"r",.09F},{"g",.9F},{"b",.8325F},{"size",1.0F}};
+    const auto mix=graph.addNode("mix");
+    graph.findNode(mix)->parameters={{"mode",1.0F},{"factor",1.0F}};
     const auto output=graph.addNode("output");
-    graph.addLink(simulation,"orangePositions",layers,"orangePositions");
-    graph.addLink(simulation,"tealPositions",layers,"tealPositions");
-    graph.addLink(layers,"image",output,"image");
+    graph.addLink(simulation,"orangePositions",orangeSplat,"positions");
+    graph.addLink(simulation,"tealPositions",tealSplat,"positions");
+    graph.addLink(orangeSplat,"image",mix,"a");
+    graph.addLink(tealSplat,"image",mix,"b");
+    graph.addLink(mix,"result",output,"image");
     graph.activeOutput=output;
+    REQUIRE(registry.descriptor("mix")!=nullptr);
+    REQUIRE(registry.descriptor("image_add")==nullptr);
+    REQUIRE(std::ranges::count(graph.nodes(),"particle_splat",&NodeRecord::type)==2);
+    REQUIRE(std::ranges::count(graph.nodes(),"mix",&NodeRecord::type)==1);
     const auto compile=graph.compile(registry);
     INFO(nlohmann::json(compile.errors).dump());
     REQUIRE(compile.valid);
@@ -191,11 +195,9 @@ TEST_CASE("Sands splits particle branches into editable native pipeline splats")
 
     Graph custom;
     custom.subgraphs().push_back(*simulationDefinition);
-    custom.subgraphs().push_back(*layersDefinition);
     const auto restored=deserializeProject(serializeProject(custom),registry);
-    REQUIRE(restored.subgraphs().size()==2);
+    REQUIRE(restored.subgraphs().size()==1);
     REQUIRE(restored.subgraphs()[0].stateSlots[2].highPrecision);
-    REQUIRE(restored.subgraphs()[1].execution==SubgraphExecution::Pipeline);
 
     GraphRuntime runtime(graph,registry,gpu);
     REQUIRE(runtime.evaluate(0,1.0/60.0,true));
@@ -222,8 +224,21 @@ TEST_CASE("Sands splits particle branches into editable native pipeline splats")
     REQUIRE(moved>100);
     REQUIRE(runtime.outputImage());
     const auto pixels=readImage(runtime.outputImage());
+    const auto orangePixels=readImage(std::get<ImageHandle>(runtime.values().at(orangeSplat)[0]));
+    const auto tealPixels=readImage(std::get<ImageHandle>(runtime.values().at(tealSplat)[0]));
     REQUIRE(std::ranges::all_of(pixels,[](float value){return std::isfinite(value);}));
     REQUIRE(std::ranges::any_of(pixels,[](float value){return value>.15F;}));
+    REQUIRE(std::ranges::any_of(orangePixels,[](float value){return value>0.1F;}));
+    REQUIRE(std::ranges::any_of(tealPixels,[](float value){return value>0.1F;}));
+    REQUIRE(pixels.size()==orangePixels.size());
+    REQUIRE(pixels.size()==tealPixels.size());
+    // The standard Mix(Add, factor=1) node must reproduce the sum of
+    // the two independent splat surfaces (alpha is not additive).
+    for(std::size_t i=0;i+3<pixels.size();i+=4)
+        for(int channel=0;channel<3;++channel)
+            REQUIRE(std::abs(pixels[i+static_cast<std::size_t>(channel)]-
+                             orangePixels[i+static_cast<std::size_t>(channel)]-
+                             tealPixels[i+static_cast<std::size_t>(channel)])<.05F);
 
     if(const char* snapshot=std::getenv("SANDS_PREVIEW_PATH");snapshot&&*snapshot) {
         graph.settings={160,160,60};
