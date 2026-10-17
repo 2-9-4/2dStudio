@@ -525,6 +525,66 @@ bool renderColorRampPickerPopup(GraphLike& graph) {
     return changed;
 }
 
+// A single compact swatch + three short connection pins replaces the three
+// full-width RGB drag rows and the oversized inline ColorEdit3. Users can still
+// wire R/G/B independently; the full color picker only opens on demand.
+bool renderSplatInkControl(
+    NodeRecord& node, const NodeDescriptor& descriptor,
+    std::unordered_map<std::uintptr_t, PinTarget>& pins,
+    const std::unordered_set<std::string>& connectedInputs) {
+    constexpr std::array<const char*, 3> keys{"r","g","b"};
+    constexpr std::array<const char*, 3> labels{"R","G","B"};
+    constexpr std::array<float, 3> defaults{.90F,.2925F,.09F};
+    float color[3]{};
+    for(std::size_t i=0;i<keys.size();++i)
+        color[i]=node.parameters.value(keys[i],defaults[i]);
+
+    ImGui::BeginGroup();
+    ImGui::TextUnformatted("Ink");
+    ImGui::SameLine(0.0F,8.0F);
+    for(std::size_t i=0;i<keys.size();++i){
+        const auto index=inputSocketIndex(descriptor,keys[i]);
+        if(index<0)continue;
+        const auto id=pinUiId(node.id,static_cast<std::size_t>(index),
+                              SocketDirection::Input);
+        pins.emplace(id,PinTarget{node.id,keys[i],SocketDirection::Input});
+        ed::BeginPin(ed::PinId(id),ed::PinKind::Input);
+        ed::PinPivotAlignment(ImVec2(0.0F,.5F));
+        const auto& socket=descriptor.sockets[static_cast<std::size_t>(index)];
+        ImGui::BeginGroup();
+        const float width=renderTypeSquares(socket.contract,ImGui::GetCursorScreenPos());
+        ImGui::Dummy(ImVec2(width,8.0F));
+        ImGui::SameLine(0.0F,2.0F);
+        ImGui::TextUnformatted(labels[i]);
+        ImGui::EndGroup();
+        ed::EndPin();
+        ImGui::SameLine(0.0F,5.0F);
+    }
+    ImGui::PushID("splatInk");
+    if(ImGui::ColorButton("##swatch",ImVec4(color[0],color[1],color[2],1.0F),
+                          ImGuiColorEditFlags_NoAlpha|ImGuiColorEditFlags_NoDragDrop,
+                          ImVec2(42.0F,19.0F)))
+        ImGui::OpenPopup("Ink color");
+    bool changed=false;
+    if(ImGui::BeginPopup("Ink color")){
+        if(ImGui::ColorPicker3("##picker",color,
+                              ImGuiColorEditFlags_NoAlpha)){
+            for(std::size_t i=0;i<keys.size();++i){
+                const bool connected=connectedInputs.contains(
+                    std::to_string(node.id)+"\x1f"+keys[i]);
+                if(!connected){
+                    node.parameters[keys[i]]=color[i];
+                    changed=true;
+                }
+            }
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::PopID();
+    ImGui::EndGroup();
+    return changed;
+}
+
 // Renders the node box the same way in the root graph and in every editable
 // subgraph body: descriptor title, pin column, parameter rows, per-node editor
 // widgets in the middle column, then output pins in their own trailing column.
@@ -555,6 +615,13 @@ bool renderNodeBody(NodeRecord& node, const NodeDescriptor& descriptor,
             renderSocketPin(node.id, descriptor, socketIndex, pins, outputTypes);
     }
     for (const auto& property : descriptor.parameters) {
+        if (node.type == "particle_splat" &&
+            (property.key == "r" || property.key == "g" || property.key == "b")) {
+            if (property.key == "r" &&
+                renderSplatInkControl(node,descriptor,pins,connectedInputs))
+                changeReported=true;
+            continue;
+        }
         if (node.type == "color_ramp" &&
             (property.key == "r0" || property.key == "g0" || property.key == "b0" ||
              property.key == "r1" || property.key == "g1" || property.key == "b1")) {
@@ -567,36 +634,6 @@ bool renderNodeBody(NodeRecord& node, const NodeDescriptor& descriptor,
         if (renderParameterRow(node.id, descriptor, property, node, popup, pins, outputTypes, connected))
             changeReported = true;
     }
-    // Reusable RGB pickers for native painters and exposed pipeline colors.
-    // The component sliders remain linkable independently in the graph.
-    const auto colorPicker = [&](const char* label, const char* rKey,
-                                 const char* gKey, const char* bKey) {
-        const auto hasParameter = [&](const char* key) {
-            return std::ranges::any_of(descriptor.parameters,
-                [&](const ParameterDescriptor& p) { return p.key == key; });
-        };
-        if (!hasParameter(rKey) || !hasParameter(gKey) || !hasParameter(bKey)) return;
-        const auto def = [&](const char* key) -> float {
-            const auto found = std::ranges::find_if(descriptor.parameters,
-                [&](const ParameterDescriptor& p) { return p.key == key; });
-            return found == descriptor.parameters.end() ? 0.0F : found->defaultValue;
-        };
-        float color[3]{node.parameters.value(rKey, def(rKey)),
-                       node.parameters.value(gKey, def(gKey)),
-                       node.parameters.value(bKey, def(bKey))};
-        ImGui::PushID(label);
-        if (ImGui::ColorEdit3(label, color)) {
-            node.parameters[rKey] = color[0];
-            node.parameters[gKey] = color[1];
-            node.parameters[bKey] = color[2];
-            changeReported = true;
-        }
-        ImGui::PopID();
-    };
-    colorPicker("Ink Color", "r", "g", "b");
-    colorPicker("Orange Ink", "orangeR", "orangeG", "orangeB");
-    colorPicker("Teal Ink", "tealR", "tealG", "tealB");
-    colorPicker("Background", "backgroundR", "backgroundG", "backgroundB");
     ImGui::EndGroup();
     ImGui::SameLine();
     ImGui::BeginGroup();
