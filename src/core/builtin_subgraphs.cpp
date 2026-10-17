@@ -1208,13 +1208,98 @@ SubgraphDefinition noiseDrivenParticles() {
     return result;
 }
 
+SubgraphDefinition sandsTrailLayers() {
+    SubgraphDefinition result;
+    result.id = "builtin.particles.sands_layers";
+    result.version = 1;
+    result.name = "Sands Trails (Two Layers)";
+    result.category = "Compositing";
+    result.execution = SubgraphExecution::Pipeline;
+    result.immutable = true;
+    using K = SubgraphInterfaceKind;
+    const auto scalar = [&](std::string key,std::string label,float value,
+                            float minimum,float maximum) {
+        result.interface.emplace_back(
+            std::move(key),std::move(label),K::Input,ValueType::Float,
+            true,value,minimum,maximum);
+    };
+    result.interface.emplace_back("orangePositions","Orange Positions",K::Input,
+                                   ValueType::VectorField);
+    result.interface.emplace_back("tealPositions","Teal Positions",K::Input,
+                                   ValueType::VectorField);
+    scalar("count","Particle Samples per Layer",1000.0F,1.0F,100000.0F);
+    scalar("orangeRetention","Orange Trail Retention",.985F,0.0F,1.0F);
+    scalar("tealRetention","Teal Trail Retention",.985F,0.0F,1.0F);
+    scalar("orangeOpacity","Orange Point Opacity",.375F,0.0F,1.0F);
+    scalar("tealOpacity","Teal Point Opacity",.375F,0.0F,1.0F);
+    scalar("orangeSize","Orange Point Size",1.0F,.5F,16.0F);
+    scalar("tealSize","Teal Point Size",1.0F,.5F,16.0F);
+    scalar("orangeR","Orange Red",.90F,0.0F,1.0F);
+    scalar("orangeG","Orange Green",.2925F,0.0F,1.0F);
+    scalar("orangeB","Orange Blue",.09F,0.0F,1.0F);
+    scalar("tealR","Teal Red",.09F,0.0F,1.0F);
+    scalar("tealG","Teal Green",.90F,0.0F,1.0F);
+    scalar("tealB","Teal Blue",.8325F,0.0F,1.0F);
+    scalar("orangeGain","Orange Layer Gain",1.0F,0.0F,8.0F);
+    scalar("tealGain","Teal Layer Gain",1.0F,0.0F,8.0F);
+    scalar("backgroundR","Background Red",.05F,0.0F,1.0F);
+    scalar("backgroundG","Background Green",.05F,0.0F,1.0F);
+    scalar("backgroundB","Background Blue",.05F,0.0F,1.0F);
+    result.interface.emplace_back("image","Added Trails",K::Output,
+                                   ValueType::ColorImage);
+
+    auto& body=result.body;
+    const auto orange=addNode(body,"particle_splat","Orange Splat",
+                              {500,70},{{"margin",20.0F},{"roundness",0.0F}});
+    const auto teal=addNode(body,"particle_splat","Teal Splat",
+                            {500,760},{{"margin",20.0F},{"roundness",0.0F}});
+    const auto add=addNode(body,"image_add","Add Independent Layers",
+                           {1080,410});
+    const auto out=addNode(body,"subgraph_output","Composite Image",
+                           {1450,410},{{"key","image"}});
+    link(body,orange,"image",add,"a");
+    link(body,teal,"image",add,"b");
+    link(body,add,"image",out,"value");
+    const auto feed=[&](const char* key,NodeId target,const char* pin,int x,int y) {
+        const auto source=input(body,key,std::string("Control: ")+key,
+                                 {static_cast<float>(x),static_cast<float>(y)});
+        link(body,source,"value",target,pin);
+    };
+    feed("orangePositions",orange,"positions",30,50);
+    feed("tealPositions",teal,"positions",30,760);
+    feed("count",orange,"count",30,210);
+    feed("count",teal,"count",30,920);
+    for (const auto& [key,pin,y]:std::array<std::tuple<const char*,const char*,int>,6>{{
+            {"orangeRetention","retention",340},
+            {"orangeOpacity","opacity",450},
+            {"orangeSize","size",560},
+            {"orangeR","r",670},
+            {"orangeG","g",780},
+            {"orangeB","b",890}}})
+        feed(key,orange,pin,230,y);
+    for (const auto& [key,pin,y]:std::array<std::tuple<const char*,const char*,int>,6>{{
+            {"tealRetention","retention",1040},
+            {"tealOpacity","opacity",1150},
+            {"tealSize","size",1260},
+            {"tealR","r",1370},
+            {"tealG","g",1480},
+            {"tealB","b",1590}}})
+        feed(key,teal,pin,230,y);
+    feed("orangeGain",add,"gainA",800,200);
+    feed("tealGain",add,"gainB",800,320);
+    feed("backgroundR",add,"backgroundR",800,700);
+    feed("backgroundG",add,"backgroundG",800,820);
+    feed("backgroundB",add,"backgroundB",800,940);
+    return result;
+}
+
 } // namespace
 
 const std::vector<SubgraphDefinition>& builtInSubgraphs() {
     static const std::vector<SubgraphDefinition> values{
         discreteReaction(), genericCellularAutomata(), floodFill(),
         skeletonization(), distanceFromNearestWhitePixel(), sdfGenerator(), lenia(),
-        noiseDrivenParticles()};
+        noiseDrivenParticles(), sandsTrailLayers()};
     return values;
 }
 
