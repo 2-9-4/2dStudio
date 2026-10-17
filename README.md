@@ -44,12 +44,13 @@ Inspector and execution-debug settings are session-only. Lowering/type errors an
 errors are attached to the affected region; native evaluation remains available only for nodes
 or parameter modes that explicitly opt out of lowering.
 
-## Noise-driven particle artwork
+## Independent species particle artwork
 
-Open `examples/noise-particles.reaction.json` to explore an editable Sands
-simulation subgraph with separate orange/teal position outputs. Two ordinary
-root-level **Particle Splat / Trails** nodes render the branches in independent
-colors, with compact RGB swatches, opacity, size, and fade controls. The
-existing **Mix** node in Add mode composes the trail images. Particle
-motion exposes branch speed, angle range, life decay, and noise controls.
-See [Sands documentation](docs/noise-particles.md).
+Open `examples/noise-particles.reaction.json`: one external Perlin generator
+feeds two separate, editable **Species 1 Flow (Tangent)** and
+**Species 2 Flow (Sine/Cosine)** simulation subgraphs. Each exposes a
+required scalar `field` image input and emits a single particle positions
+field. There is no inter-species interaction or hidden Perlin generator.
+Root-level Particle Splat nodes color each species independently; the
+existing Mix node (Add mode, factor 1) combines their images.
+See [species flow documentation](docs/noise-particles.md).
