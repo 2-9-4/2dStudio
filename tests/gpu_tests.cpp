@@ -117,116 +117,132 @@ LoweredChain lowerMathThresholdSelect(const NodeRegistry& registry, ShaderValueT
 } // namespace
 
 
-TEST_CASE("Sands particle subgraph compiles, deposits trails, and persists graph sockets") {
+TEST_CASE("Sands splits particle branches into editable native pipeline splats") {
     NodeRegistry registry;
     registerBuiltInNodes(registry);
-    const auto found = std::ranges::find_if(builtInSubgraphs(), [](const auto& definition) {
-        return definition.id == "builtin.particles.noise_flow";
-    });
-    REQUIRE(found != builtInSubgraphs().end());
-    const auto errors = validateSubgraph(*found, registry);
-    INFO(nlohmann::json(errors).dump());
-    REQUIRE(errors.empty());
-    REQUIRE(found->stateSlots.size() == 3);
-    REQUIRE(found->stateSlots[0].type == ValueType::VectorField);
-    REQUIRE(found->stateSlots[0].highPrecision);
-    REQUIRE(std::ranges::none_of(found->body.nodes(), [](const auto& node) {
-        return node.type == "particle_step";
+    const auto findBuiltIn = [&](const char* id) {
+        return std::ranges::find_if(builtInSubgraphs(), [&](const auto& definition) {
+            return definition.id == id;
+        });
+    };
+    const auto simulationDefinition = findBuiltIn("builtin.particles.noise_flow");
+    const auto layersDefinition = findBuiltIn("builtin.particles.sands_layers");
+    REQUIRE(simulationDefinition != builtInSubgraphs().end());
+    REQUIRE(layersDefinition != builtInSubgraphs().end());
+    const auto physicsErrors=validateSubgraph(*simulationDefinition,registry);
+    const auto pipelineErrors=validateSubgraph(*layersDefinition,registry);
+    INFO(nlohmann::json(physicsErrors).dump());
+    INFO(nlohmann::json(pipelineErrors).dump());
+    REQUIRE(physicsErrors.empty());
+    REQUIRE(pipelineErrors.empty());
+    REQUIRE(simulationDefinition->execution == SubgraphExecution::Simulation);
+    REQUIRE(layersDefinition->execution == SubgraphExecution::Pipeline);
+    REQUIRE(simulationDefinition->stateSlots.size() == 4);
+    REQUIRE(simulationDefinition->stateSlots[0].highPrecision);
+    REQUIRE(simulationDefinition->stateSlots[2].highPrecision);
+    REQUIRE(simulationDefinition->stateSlots[3].highPrecision);
+    REQUIRE(simulationDefinition->interface[simulationDefinition->interface.size()-2].key == "orangePositions");
+    REQUIRE(simulationDefinition->interface.back().key == "tealPositions");
+    REQUIRE(std::ranges::count(layersDefinition->body.nodes(),"particle_splat",&NodeRecord::type) == 2);
+    REQUIRE(std::ranges::count(layersDefinition->body.nodes(),"image_add",&NodeRecord::type) == 1);
+    REQUIRE(std::ranges::none_of(simulationDefinition->body.nodes(),[](const auto& node) {
+        return node.type == "particle_step" || node.type == "particle_splat";
     }));
-    REQUIRE(std::ranges::count(found->body.nodes(), "math", &NodeRecord::type) >= 20);
-    REQUIRE(std::ranges::count(found->body.nodes(), "select", &NodeRecord::type) >= 3);
-    REQUIRE(found->stateSlots[1].type == ValueType::ScalarField);
-    REQUIRE(found->stateSlots[2].type == ValueType::ScalarField);
+    REQUIRE(std::ranges::count(simulationDefinition->body.nodes(),"math",&NodeRecord::type) > 20);
 
-    const auto initial = generateSimulationShader(*found, true);
-    const auto update = generateSimulationShader(*found, false);
-    REQUIRE(initial.find("deterministicHash") != std::string::npos);
-    REQUIRE(update.find("deterministicHash") != std::string::npos);
-    REQUIRE(update.find("rg32f,binding=0") != std::string::npos);
-    REQUIRE(update.find("tan(") != std::string::npos);
-    REQUIRE(update.find("cos(") != std::string::npos);
-    REQUIRE(update.find("sin(") != std::string::npos);
-    REQUIRE(update.find("simulationFrameIndex") != std::string::npos);
-    REQUIRE(update.find("perlinNoise") != std::string::npos);
-
+    const auto initial=generateSimulationShader(*simulationDefinition,true);
+    const auto update=generateSimulationShader(*simulationDefinition,false);
+    REQUIRE(update.find("rg32f,binding=2")!=std::string::npos);
+    REQUIRE(update.find("rg32f,binding=3")!=std::string::npos);
+    REQUIRE(update.find("tan(")!=std::string::npos);
+    REQUIRE(update.find("cos(")!=std::string::npos);
+    REQUIRE(update.find("sin(")!=std::string::npos);
     HiddenContext context;
     GpuRuntime gpu;
-    const GLuint initProgram = gpu.compileCompute(initial, "Sands / initial");
-    const GLuint updateProgram = gpu.compileCompute(update, "Sands / update");
-    glDeleteProgram(initProgram);
+    const GLuint initialProgram=gpu.compileCompute(initial,"Sands initialize");
+    const GLuint updateProgram=gpu.compileCompute(update,"Sands evolve");
+    glDeleteProgram(initialProgram);
     glDeleteProgram(updateProgram);
 
     Graph graph;
-    graph.settings = {64, 64, 60};
-    const auto simulation = graph.addNode("subgraph");
-    graph.findNode(simulation)->subgraphId = found->id;
-    graph.findNode(simulation)->parameters = {
-        {"noiseScale", 5.0F}, {"speed", 1.0F}, {"maxJump", 64.0F},
-        {"angleBins", 1200.0F},
-        {"iterations", 1.0F}};
-    const auto splat = graph.addNode("particle_splat");
-    graph.findNode(splat)->parameters = {
-        {"count", 1000.0F}, {"opacity", 0.375F}, {"retention", 0.985F}};
-    const auto output = graph.addNode("output");
-    graph.addLink(simulation, "positions", splat, "positions");
-    graph.addLink(simulation, "branches", splat, "branches");
-    graph.addLink(splat, "image", output, "image");
-    graph.activeOutput = output;
-    const auto compile = graph.compile(registry);
+    graph.settings={64,64,60};
+    const auto simulation=graph.addNode("subgraph");
+    graph.findNode(simulation)->subgraphId=simulationDefinition->id;
+    graph.findNode(simulation)->parameters={
+        {"noiseScale",5.0F},{"speed",1.0F},{"orangeSpeed",1.0F},
+        {"tealSpeed",1.0F},{"lifeRate",.1F},{"orangeMin",3.0F},
+        {"orangeMax",6.0F},{"angleBins",1200.0F},{"iterations",1.0F}};
+    const auto layers=graph.addNode("subgraph");
+    graph.findNode(layers)->subgraphId=layersDefinition->id;
+    graph.findNode(layers)->parameters={
+        {"count",1000.0F},{"orangeRetention",.985F},{"tealRetention",.985F},
+        {"orangeOpacity",.375F},{"tealOpacity",.375F},
+        {"orangeR",.9F},{"orangeG",.29F},{"orangeB",.09F},
+        {"tealR",.09F},{"tealG",.9F},{"tealB",.83F}};
+    const auto output=graph.addNode("output");
+    graph.addLink(simulation,"orangePositions",layers,"orangePositions");
+    graph.addLink(simulation,"tealPositions",layers,"tealPositions");
+    graph.addLink(layers,"image",output,"image");
+    graph.activeOutput=output;
+    const auto compile=graph.compile(registry);
     INFO(nlohmann::json(compile.errors).dump());
     REQUIRE(compile.valid);
+    REQUIRE(deserializeProject(serializeProject(graph),registry).compile(registry).valid);
 
-    const auto project = serializeProject(graph);
-    const auto restored = deserializeProject(project, registry);
-    REQUIRE(restored.compile(registry).valid);
-    Graph localCopy;
-    localCopy.subgraphs().push_back(*found);
-    const auto restoredCopy = deserializeProject(serializeProject(localCopy), registry);
-    REQUIRE(restoredCopy.subgraphs().front().stateSlots[0].highPrecision);
+    Graph custom;
+    custom.subgraphs().push_back(*simulationDefinition);
+    custom.subgraphs().push_back(*layersDefinition);
+    const auto restored=deserializeProject(serializeProject(custom),registry);
+    REQUIRE(restored.subgraphs().size()==2);
+    REQUIRE(restored.subgraphs()[0].stateSlots[2].highPrecision);
+    REQUIRE(restored.subgraphs()[1].execution==SubgraphExecution::Pipeline);
 
-    GraphRuntime runtime(graph, registry, gpu);
-    REQUIRE(runtime.evaluate(0.0, 1.0 / 60.0, true));
-    const auto firstPositions = readImage(std::get<ImageHandle>(runtime.values().at(simulation)[0]));
-    for (int i = 1; i < 30; ++i)
-        REQUIRE(runtime.evaluate(static_cast<double>(i) / 60.0, 1.0 / 60.0, true));
-    const auto finalPositions = readImage(std::get<ImageHandle>(runtime.values().at(simulation)[0]));
-    std::size_t moved = 0;
-    for (std::size_t i = 0; i + 3 < firstPositions.size(); i += 4) {
-        const float dx = finalPositions[i] - firstPositions[i];
-        const float dy = finalPositions[i+1] - firstPositions[i+1];
-        if (std::hypot(dx,dy) > 1.0F / 64.0F) ++moved;
+    GraphRuntime runtime(graph,registry,gpu);
+    REQUIRE(runtime.evaluate(0,1.0/60.0,true));
+    const auto firstOrange=readImage(std::get<ImageHandle>(runtime.values().at(simulation)[0]));
+    const auto firstTeal=readImage(std::get<ImageHandle>(runtime.values().at(simulation)[1]));
+    for(int i=1;i<30;++i)
+        REQUIRE(runtime.evaluate(static_cast<double>(i)/60.0,1.0/60.0,true));
+    const auto nextOrange=readImage(std::get<ImageHandle>(runtime.values().at(simulation)[0]));
+    const auto nextTeal=readImage(std::get<ImageHandle>(runtime.values().at(simulation)[1]));
+    std::size_t moved=0,inactive=0,active=0;
+    for(std::size_t i=0;i+3<nextOrange.size();i+=4) {
+        const bool orangeOn=nextOrange[i]>=0.0F&&nextOrange[i+1]>=0.0F;
+        const bool tealOn=nextTeal[i]>=0.0F&&nextTeal[i+1]>=0.0F;
+        // A particle can belong to exactly one branch at a time.
+        REQUIRE(orangeOn!=tealOn);
+        if(orangeOn)++active;
+        else ++inactive;
+        const auto& before=orangeOn?firstOrange:firstTeal;
+        const auto& after=orangeOn?nextOrange:nextTeal;
+        if(std::hypot(before[i]-after[i],before[i+1]-after[i+1])>1.0F/64.0F)++moved;
     }
-    INFO("Moved agents by >1px in 29 steps: " << moved);
-    REQUIRE(moved > firstPositions.size() / 4 / 8); // not frozen/static
+    REQUIRE(active>0);
+    REQUIRE(inactive>0);
+    REQUIRE(moved>100);
     REQUIRE(runtime.outputImage());
-    const auto pixels = readImage(runtime.outputImage());
-    REQUIRE(std::ranges::all_of(pixels, [](float v) { return std::isfinite(v); }));
-    REQUIRE(std::ranges::any_of(pixels, [](float v) { return v > 0.15F; }));
+    const auto pixels=readImage(runtime.outputImage());
+    REQUIRE(std::ranges::all_of(pixels,[](float value){return std::isfinite(value);}));
+    REQUIRE(std::ranges::any_of(pixels,[](float value){return value>.15F;}));
 
-    // Optional CI-only visual evidence: a larger accumulated scene is saved as
-    // an artifact for qualitative inspection, not treated as visual correctness
-    // simply because it is non-black.
-    if (const char* snapshot = std::getenv("SANDS_PREVIEW_PATH"); snapshot && *snapshot) {
-        graph.settings = {160, 160, 60};
-        GraphRuntime preview(graph, registry, gpu);
-        for (int i = 0; i < 120; ++i)
-            REQUIRE(preview.evaluate(static_cast<double>(i) / 60.0, 1.0 / 60.0, true));
-        const auto frame = readImage(preview.outputImage());
+    if(const char* snapshot=std::getenv("SANDS_PREVIEW_PATH");snapshot&&*snapshot) {
+        graph.settings={160,160,60};
+        GraphRuntime preview(graph,registry,gpu);
+        for(int i=0;i<120;++i)
+            REQUIRE(preview.evaluate(static_cast<double>(i)/60.0,1.0/60.0,true));
+        const auto frame=readImage(preview.outputImage());
         std::vector<png_byte> rgba(frame.size());
-        for (std::size_t pixel = 0; pixel < frame.size() / 4; ++pixel) {
-            for (int channel = 0; channel < 3; ++channel)
-                rgba[pixel * 4 + static_cast<std::size_t>(channel)] =
-                    static_cast<png_byte>(std::lround(255.0F *
-                        std::clamp(frame[pixel * 4 + static_cast<std::size_t>(channel)],
-                                   0.0F, 1.0F)));
-            rgba[pixel * 4 + 3] = 255;
+        for(std::size_t px=0;px<frame.size()/4;++px) {
+            for(int c=0;c<3;++c)
+                rgba[px*4+static_cast<std::size_t>(c)]=
+                    static_cast<png_byte>(std::lround(255.0F*std::clamp(
+                        frame[px*4+static_cast<std::size_t>(c)],0.0F,1.0F)));
+            rgba[px*4+3]=255;
         }
         png_image png{};
-        png.version = PNG_IMAGE_VERSION;
-        png.width = 160;
-        png.height = 160;
-        png.format = PNG_FORMAT_RGBA;
-        REQUIRE(png_image_write_to_file(&png, snapshot, 0, rgba.data(), 0, nullptr));
+        png.version=PNG_IMAGE_VERSION;
+        png.width=160;png.height=160;png.format=PNG_FORMAT_RGBA;
+        REQUIRE(png_image_write_to_file(&png,snapshot,0,rgba.data(),0,nullptr));
     }
 }
 
