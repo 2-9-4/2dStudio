@@ -914,7 +914,7 @@ SubgraphDefinition lenia() {
 SubgraphDefinition noiseDrivenParticles() {
     SubgraphDefinition result;
     result.id = "builtin.particles.noise_flow";
-    result.version = 2;
+    result.version = 3;
     result.name = "Noise-Driven Particles (Sands)";
     result.category = "Simulation";
     result.execution = SubgraphExecution::Simulation;
@@ -924,7 +924,8 @@ SubgraphDefinition noiseDrivenParticles() {
     result.stateSlots = {
         {"position", "Particle Position", ValueType::VectorField, true},
         {"life", "Remaining Life", ValueType::ScalarField},
-        {"branch", "Orange / Teal", ValueType::ScalarField},
+        {"orange", "Orange Positions", ValueType::VectorField, true},
+        {"teal", "Teal Positions", ValueType::VectorField, true},
     };
     result.interface = {
         {"noiseScale", "Noise Scale", SubgraphInterfaceKind::Input, ValueType::Float,
@@ -935,14 +936,28 @@ SubgraphDefinition noiseDrivenParticles() {
          ValueType::Float, true, 1200.0F, 8.0F, 4096.0F, Control::Integer},
         {"maxJump", "Tangent Jump Limit", SubgraphInterfaceKind::Input, ValueType::Float,
          true, 64.0F, 1.0F, 512.0F},
+        {"orangeSpeed", "Orange Speed", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 1.0F, 0.0F, 5.0F},
+        {"tealSpeed", "Teal Speed", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 1.0F, 0.0F, 5.0F},
+        {"lifeRate", "Life Decay", SubgraphInterfaceKind::Input, ValueType::Float,
+         true, 0.1F, 0.001F, 1.0F},
+        {"orangeMin", "Orange Angle Start", SubgraphInterfaceKind::Input,
+         ValueType::Float, true, 3.0F, 0.0F, 6.28F},
+        {"orangeMax", "Orange Angle End", SubgraphInterfaceKind::Input,
+         ValueType::Float, true, 6.0F, 0.0F, 6.28F},
+        {"noiseOffsetX", "Noise Pan X", SubgraphInterfaceKind::Input,
+         ValueType::Float, true, 0.0F, -100.0F, 100.0F},
+        {"noiseOffsetY", "Noise Pan Y", SubgraphInterfaceKind::Input,
+         ValueType::Float, true, 0.0F, -100.0F, 100.0F},
         {"reset", "Reset", SubgraphInterfaceKind::Input, ValueType::Float,
          true, 0.0F, 0.0F, 1.0F, Control::Boolean},
         {"iterations", "Iterations per Frame", SubgraphInterfaceKind::Input,
          ValueType::Float, true, 1.0F, 1.0F, 64.0F, Control::Integer},
-        {"positions", "Particle Positions", SubgraphInterfaceKind::Output,
+        {"orangePositions", "Orange Positions", SubgraphInterfaceKind::Output,
          ValueType::VectorField},
-        {"branches", "Orange / Teal Branch", SubgraphInterfaceKind::Output,
-         ValueType::ScalarField},
+        {"tealPositions", "Teal Positions", SubgraphInterfaceKind::Output,
+         ValueType::VectorField},
     };
 
     auto& body = result.body;
@@ -1004,13 +1019,15 @@ SubgraphDefinition noiseDrivenParticles() {
                                     {520, 0}, {{"slot", 0.0F}});
     const auto initialAge = addNode(body, "simulation_initial_state", "Start Life",
                                     {520, 200}, {{"slot", 1.0F}});
-    const auto initialBranch = addNode(body, "simulation_initial_state", "Start Branch",
+    const auto initialOrange = addNode(body, "simulation_initial_state", "Initial Orange Positions",
                                        {520, 400}, {{"slot", 2.0F}});
+    const auto initialTeal = addNode(body, "simulation_initial_state", "Initial Teal Positions",
+                                       {520, 600}, {{"slot", 3.0F}});
     connect(w(spawnAtStart, "vector"), initialPos, "value");
     connect(w(ageAtStart, "scalar"), initialAge, "value");
-    const auto zero = addNode(body, "float", "Initial Teal", {260, 400},
-                              {{"value", 0.0F}});
-    connect(w(zero, "value"), initialBranch, "value");
+    const auto inactive = vector(body, "Inactive Off-Canvas Position", {260, 400}, -1.0F, -1.0F);
+    connect(w(inactive,"value"), initialOrange, "value");
+    connect(w(inactive,"value"), initialTeal, "value");
 
     // FEEDBACK: three explicit state slots, with the per-agent positions stored
     // in RG32F rather than quantized RG16F.
@@ -1018,8 +1035,10 @@ SubgraphDefinition noiseDrivenParticles() {
                                      {0, 760}, {{"slot", 0.0F}});
     const auto previousLife = addNode(body, "simulation_previous_state", "Previous Life",
                                       {0, 960}, {{"slot", 1.0F}});
-    addNode(body, "simulation_previous_state", "Previous Branch",
+    addNode(body, "simulation_previous_state", "Previous Orange Slots",
             {0, 1160}, {{"slot", 2.0F}});
+    addNode(body, "simulation_previous_state", "Previous Teal Slots",
+            {0, 1260}, {{"slot", 3.0F}});
     const auto pos = w(previousPos, "value");
     const auto life = w(previousLife, "value");
 
@@ -1030,6 +1049,10 @@ SubgraphDefinition noiseDrivenParticles() {
                                 {{"seed", 1.0F}, {"speed", 0.0F}, {"octaves", 4.0F},
                                  {"persistence", 0.5F}, {"lacunarity", 2.0F}});
     connect(w(noiseScale, "value"), perlin, "scale");
+    const auto panX = input(body, "noiseOffsetX", "Noise Pan X", {0, 1570});
+    const auto panY = input(body, "noiseOffsetY", "Noise Pan Y", {0, 1690});
+    connect(w(panX, "value"), perlin, "offsetX");
+    connect(w(panY, "value"), perlin, "offsetY");
     const auto noiseSampler = addNode(body, "texture_sample", "Sample Flow at Particle",
                                       {520, 1420},
                                       {{"addressMode", 1.0F}, {"sampling", 1.0F}});
@@ -1047,10 +1070,12 @@ SubgraphDefinition noiseDrivenParticles() {
                             normalized, {}, {}, {{"b", 6.28318530718F}});
 
     // 3 < angle < 6 determines the orange / teal motion branch.
-    const auto afterThree = calc("Angle >= 3", M::Step, 1680, 1210,
-                                 {}, theta, {}, {{"a", 3.0F}});
-    const auto afterSix = calc("Angle >= 6", M::Step, 1680, 1410,
-                               {}, theta, {}, {{"a", 6.0F}});
+    const auto cutMin = input(body, "orangeMin", "Orange Angular Start", {1460, 1160});
+    const auto cutMax = input(body, "orangeMax", "Orange Angular End", {1460, 1300});
+    const auto afterThree = calc("Angle After Start", M::Step, 1680, 1210,
+                                 w(cutMin,"value"), theta);
+    const auto afterSix = calc("Angle After End", M::Step, 1680, 1410,
+                               w(cutMax,"value"), theta);
     const auto belowSix = calc("Angle < 6", M::Subtract, 1900, 1410,
                                {}, afterSix, {}, {{"a", 1.0F}});
     const auto orange = calc("Orange Region 3..6", M::Multiply, 2120, 1300,
@@ -1108,8 +1133,16 @@ SubgraphDefinition noiseDrivenParticles() {
                             negSin, tealFactor);
     const auto tealStep = vec("Teal Sine Cosine Motion", tealX, negCos, 2340, 2080);
 
+    const auto orangeSpeed = input(body, "orangeSpeed", "Orange Branch Speed", {2350, 1790});
+    const auto tealSpeed = input(body, "tealSpeed", "Teal Branch Speed", {2350, 2260});
+    const auto scaleOrange = vectorMath(body,"Scale Orange Velocity",V::Scale,{2520,1660});
+    connect(orangeStep,scaleOrange,"a");
+    connect(w(orangeSpeed,"value"),scaleOrange,"scalar");
+    const auto scaleTeal = vectorMath(body,"Scale Teal Velocity",V::Scale,{2520,2070});
+    connect(tealStep,scaleTeal,"a");
+    connect(w(tealSpeed,"value"),scaleTeal,"scalar");
     const auto selectedStep = choose("Select Orange / Teal Motion", orange,
-                                     orangeStep, tealStep, 2590, 1820);
+                                     w(scaleOrange), w(scaleTeal), 2770, 1820);
     const auto speed = input(body, "speed", "Particle Motion Speed", {2590, 2110});
     const auto scaledStep = vectorMath(body, "Apply Motion Speed", V::Scale, {2820, 1840});
     connect(selectedStep, scaledStep, "a");
@@ -1130,8 +1163,9 @@ SubgraphDefinition noiseDrivenParticles() {
                              w(ageComponentsB, "x"), w(ageComponentsB, "y"));
     const auto lifeProduct = calc("Nested Random Product 3", M::Multiply, 1030, 2280,
                                   lifeAB, lifeCD);
+    const auto decayRate = input(body,"lifeRate","Life Decay Rate",{1030,2440});
     const auto loss = calc("Life Lost This Step", M::Multiply, 1260, 2280,
-                           lifeProduct, {}, {}, {{"b", .1F}});
+                           lifeProduct,w(decayRate,"value"));
     const auto reducedLife = calc("Subtract Life Lost", M::Subtract, 1490, 2280,
                                   life, loss);
     const auto dead = calc("Dead When Life <= 0", M::Step, 1720, 2280,
@@ -1150,18 +1184,27 @@ SubgraphDefinition noiseDrivenParticles() {
                                  {3770, 1800}, {{"slot", 0.0F}});
     const auto nextLife = addNode(body, "simulation_next_state", "Next Life",
                                   {3770, 2230}, {{"slot", 1.0F}});
-    const auto nextBranch = addNode(body, "simulation_next_state", "Next Branch",
+    const auto orangeOnly = choose("Orange Only / Off Canvas",orange,
+                                   respawnedPosition,w(inactive,"value"),3510,1360);
+    const auto tealFlag = calc("Invert Orange Mask",M::Subtract,3310,1570,
+                              {},orange,{},{{"a",1.0F}});
+    const auto tealOnly = choose("Teal Only / Off Canvas",tealFlag,
+                                 respawnedPosition,w(inactive,"value"),3510,1630);
+    const auto nextOrange = addNode(body, "simulation_next_state", "Next Orange Position",
                                     {3770, 1330}, {{"slot", 2.0F}});
+    const auto nextTeal = addNode(body, "simulation_next_state", "Next Teal Position",
+                                    {3770, 1590}, {{"slot", 3.0F}});
     connect(respawnedPosition, nextPos, "value");
     connect(updatedLife, nextLife, "value");
-    connect(orange, nextBranch, "value");
+    connect(orangeOnly,nextOrange,"value");
+    connect(tealOnly,nextTeal,"value");
 
-    const auto positions = addNode(body, "subgraph_output", "Positions (UV)",
-                                   {4010, 1800}, {{"key", "positions"}});
-    const auto branches = addNode(body, "subgraph_output", "Orange / Teal Region",
-                                  {4010, 1330}, {{"key", "branches"}});
-    connect(w(nextPos, "value"), positions, "value");
-    connect(w(nextBranch, "value"), branches, "value");
+    const auto orangePositions = addNode(body, "subgraph_output", "Orange Particle Positions",
+                                   {4050, 1330}, {{"key", "orangePositions"}});
+    const auto tealPositions = addNode(body, "subgraph_output", "Teal Particle Positions",
+                                  {4050, 1590}, {{"key", "tealPositions"}});
+    connect(w(nextOrange, "value"), orangePositions, "value");
+    connect(w(nextTeal, "value"), tealPositions, "value");
     return result;
 }
 
