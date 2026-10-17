@@ -50,7 +50,9 @@ void main(){
     vec2 uv=texelFetch(positions,cell,0).rg;
     uint h=hash(uint(gl_VertexID)+uint(total)*17u);
     weight=0.25+0.75*float(h>>8u)*(1.0/16777216.0);
-    if(any(lessThan(uv,vec2(0.0)))||any(greaterThan(uv,vec2(1.0)))) {
+    // Masked-out branch slots use an exact sentinel; real agents may roam
+    // outside the canvas and should still render clamped to the inset.
+    if(all(equal(uv,vec2(-1.0)))) {
         gl_Position=vec4(3.0,3.0,0.0,1.0);gl_PointSize=0.0;return;
     }
     vec2 inset=vec2(marginPixels)/canvasSize;
