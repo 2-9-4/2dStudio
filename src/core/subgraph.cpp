@@ -135,8 +135,8 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
     std::vector<std::string> errors;
     if (definition.id.empty()) errors.push_back("Subgraph has an empty id");
     if (definition.name.empty()) errors.push_back("Subgraph has an empty name");
-    if (definition.execution == SubgraphExecution::Pipeline)
-        errors.push_back("Pipeline subgraphs are not supported in this milestone");
+    if (definition.execution == SubgraphExecution::Pipeline && !definition.stateSlots.empty())
+        errors.push_back("Native pipeline subgraphs cannot declare simulation state slots");
 
     std::unordered_set<std::string> interfaceKeys;
     std::unordered_map<std::string, const SubgraphInterfaceItem*> interfaceByKey;
@@ -185,6 +185,12 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
         }
         nodes[node.id] = &node;
         if (node.type == "subgraph") errors.push_back("Nested subgraphs are not supported");
+        if (definition.execution == SubgraphExecution::Pipeline &&
+            node.type.rfind("simulation_", 0) == 0)
+            errors.push_back("Simulation state nodes are not executable in native pipelines");
+        if (definition.execution == SubgraphExecution::Pipeline && registry.contains(node.type) &&
+            registry.descriptor(node.type)->lowerable)
+            errors.push_back("Shader-lowered nodes are not yet supported in native pipelines: " + node.type);
         // Type compilation intentionally resolves all registered descriptors so
         // that simulation bodies and root graphs share the same type result.
         // Runtime simulation execution has a narrower catalog; keep that
@@ -302,8 +308,9 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
                                 link.fromSocket == "value";
                         });
                 });
-            if ((!definition.stateSlots.empty() && !genericNext && !genericChannel) ||
-                (definition.stateSlots.empty() && incoming->fromNode != nextStateId))
+            if (definition.execution == SubgraphExecution::Simulation &&
+                ((!definition.stateSlots.empty() && !genericNext && !genericChannel) ||
+                 (definition.stateSlots.empty() && incoming->fromNode != nextStateId)))
                 errors.push_back("Simulation outputs must expose a Next Simulation State value");
         }
     }
@@ -389,10 +396,11 @@ const NodeDescriptor* resolveSubgraphBodyDescriptorImpl(const SubgraphDefinition
         return &storage;
     }
     const auto* descriptor = registry.descriptor(node.type);
-    if (!descriptor || (enforceExecutionCatalog && !descriptor->lowerable &&
+    if (!descriptor || (enforceExecutionCatalog && definition.execution == SubgraphExecution::Simulation && !descriptor->lowerable &&
                         !isSubgraphBodyNodeType(node.type)))
         return nullptr;
-    if (node.type != "convolution") return descriptor;
+    if (node.type != "convolution" ||
+        definition.execution == SubgraphExecution::Pipeline) return descriptor;
 
     // The root node exposes a native multi-pass escape hatch. A simulation
     // subgraph has no native execution path, so present only its lowerable
