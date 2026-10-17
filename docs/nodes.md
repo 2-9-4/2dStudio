@@ -25,28 +25,15 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **Canvas Coordinates** (`coordinates`) — Outputs one Vector Field containing normalized XY
   canvas coordinates. Enable **Pixels** to output pixel-center coordinates instead.
 
-### Particle simulation and rendering
+### Particle simulation, splatting and native pipelines
 
-- **Pixel Delta to UV** (`pixel_delta_to_uv`) — Lowerable conversion of
-  `Vector Numeric` pixel displacement into normalized UV displacement using
-  the actual canvas pixel size. Supports ordinary vector inputs and spatial
-  vector fields; no particle-specific logic.
+- **Pixel Delta to UV** (`pixel_delta_to_uv`) — convert pixel velocity to normalized UV.
+- **Particle Splat / Trails** (`particle_splat`) — single-color GPU point deposition with RGB ink, particle count, opacity, fade, brush size/shape, and inset. Ignores offscreen positions.
+- **Add Image Layers** (`image_add`) — additive two-image compositor with gains and configurable background.
+- **Noise-Driven Particles (Sands)** — editable simulation subgraph exporting **orangePositions** and **tealPositions** separately; the motion, randomization and masks use editable Math/Hash/Select/Vector nodes.
+- **Sands Trails (Two Layers)** — editable **native pipeline subgraph** containing two independent Particle Splat nodes feeding Add Image Layers. Per-layer colors have color pickers.
 
-- **Particle Splat / Trails** (`particle_splat`) — Native stateful GPU
-  renderer. Its `Particle Positions (UV)` (Vector Field) and `Orange / Teal
-  Branch` (Scalar Field) inputs deposit `Visible Particles` colored points
-  onto a persistent RGBA canvas. Set `Frame Retention` and `Point Opacity`
-  to control fade and deposition. The point rasterizer is a root-only node,
-  since simulation subgraphs use lowerable shader expressions.
-
-- **Noise-Driven Particles (Sands)** (`builtin.particles.noise_flow`) —
-  Editable simulation made entirely of existing Perlin Noise, Texture Sample,
-  Hash, Math, Select, Combine/Separate Vector, Vector Math, simulation state,
-  and the generic Pixel Delta to UV primitive. It publicly exposes Noise
-  Scale, Particle Speed, Direction Quantization, Tangent Jump Limit, Reset,
-  and Iterations per Frame. The private Position slot uses high-precision
-  RG32F storage for subpixel motion. Connect its `positions` and `branches`
-  outputs to Particle Splat. See [the complete graph and example](noise-particles.md).
+Shader-lowered simulation subgraphs and native pipeline subgraphs have distinct execution models. Native pipelines support registered non-lowerable GPU nodes; shader-only nodes are not yet supported inside them. See [Sands documentation](noise-particles.md).
 
 ### Generators
 
