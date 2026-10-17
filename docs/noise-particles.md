@@ -19,7 +19,7 @@ Noise-Driven Particles (shader-lowered simulation)
 
 **Both subgraphs are editable** (select and press Tab). A separate reusable
 `Particle Splat / Trails` node draws one RGB ink from an active-position field;
-positions outside [0,1] are skipped. An `Add Image Layers` node sums two images
+only masked slots at (-1,-1) are skipped. Real offscreen particles are clamped to the canvas inset. An `Add Image Layers` node sums two images
 with independent gains and one background color.
 
 ## Controls
