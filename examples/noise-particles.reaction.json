@@ -9,33 +9,56 @@
     {
       "id": 1,
       "type": "subgraph",
-      "typeVersion": 1,
+      "typeVersion": 3,
       "subgraphId": "builtin.particles.noise_flow",
       "position": [
-        80,
-        100
+        40,
+        160
       ],
       "parameters": {
         "noiseScale": 5,
         "speed": 1,
+        "orangeSpeed": 1,
+        "tealSpeed": 1,
+        "lifeRate": 0.1,
+        "orangeMin": 3,
+        "orangeMax": 6,
+        "noiseOffsetX": 0,
+        "noiseOffsetY": 0,
         "maxJump": 64,
+        "angleBins": 1200,
         "iterations": 1,
-        "reset": 0,
-        "angleBins": 1200
+        "reset": 0
       }
     },
     {
       "id": 2,
-      "type": "particle_splat",
+      "type": "subgraph",
       "typeVersion": 1,
+      "subgraphId": "builtin.particles.sands_layers",
       "position": [
-        430,
-        100
+        400,
+        160
       ],
       "parameters": {
         "count": 1000,
-        "retention": 0.985,
-        "opacity": 0.375
+        "orangeRetention": 0.985,
+        "tealRetention": 0.985,
+        "orangeOpacity": 0.375,
+        "tealOpacity": 0.375,
+        "orangeSize": 1,
+        "tealSize": 1,
+        "orangeR": 0.9,
+        "orangeG": 0.2925,
+        "orangeB": 0.09,
+        "tealR": 0.09,
+        "tealG": 0.9,
+        "tealB": 0.8325,
+        "orangeGain": 1,
+        "tealGain": 1,
+        "backgroundR": 0.05,
+        "backgroundG": 0.05,
+        "backgroundB": 0.05
       }
     },
     {
@@ -43,8 +66,8 @@
       "type": "output",
       "typeVersion": 1,
       "position": [
-        800,
-        100
+        900,
+        160
       ],
       "parameters": {}
     }
@@ -54,22 +77,22 @@
       "id": 1,
       "from": {
         "node": 1,
-        "socket": "positions"
+        "socket": "orangePositions"
       },
       "to": {
         "node": 2,
-        "socket": "positions"
+        "socket": "orangePositions"
       }
     },
     {
       "id": 2,
       "from": {
         "node": 1,
-        "socket": "branches"
+        "socket": "tealPositions"
       },
       "to": {
         "node": 2,
-        "socket": "branches"
+        "socket": "tealPositions"
       }
     },
     {
