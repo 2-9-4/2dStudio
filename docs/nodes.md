@@ -25,14 +25,14 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **Canvas Coordinates** (`coordinates`) — Outputs one Vector Field containing normalized XY
   canvas coordinates. Enable **Pixels** to output pixel-center coordinates instead.
 
-### Particle simulation and splatting
+### Independent species particle flow and splatting
 
-- **Pixel Delta to UV** (`pixel_delta_to_uv`) converts pixel velocity to normalized UV.
-- **Particle Splat / Trails** (`particle_splat`) is a single-ink, reusable native GPU node with count, opacity, retention, brush size/shape and inset. Its compact color picker controls RGB, with optional R/G/B pins on one row. Inactive (-1,-1) positions are skipped; live offscreen positions clamp to the inset.
-- **Noise-Driven Particles (Sands)** (`builtin.particles.noise_flow`) is an editable simulation of Perlin, Texture Sample, Hash, Math, Select and Vector operators, with separate **orangePositions** and **tealPositions** outputs and per-branch motion controls.
-- The existing **Mix** node in **Add** mode (factor 1) adds two independently rendered trail images. No Sands-specific compositing node or rendering subgraph is needed.
+- **Species 1 Flow (Tangent)** (`builtin.particles.species_1_flow`) and **Species 2 Flow (Sine/Cosine)** (`builtin.particles.species_2_flow`) are independent editable simulation subgraphs. Each accepts an external scalar `field` image, independent random seed, speed, jitter and lifetime controls, and exports one `positions` Vector Field. No built-in Perlin or color branch decisions exist inside either species.
+- **Particle Splat / Trails** (`particle_splat`) renders one species' positions with RGB ink, opacity, retention, point size, brush and inset controls. The UI shows a compact swatch and short optional R/G/B pins on one row.
+- **Mix (Add)** (`mix` with mode Add, factor 1) combines both root-level splat images; standard postprocessing can follow.
+- **Pixel Delta to UV** (`pixel_delta_to_uv`) converts pixel velocity to normalized UV inside each simulation.
 
-The example places two Particle Splat nodes and Mix in the root graph, downstream of the Sands simulation subgraph. See [Sands example and controls](noise-particles.md).
+Connect Perlin (or any scalar image source) to each species' `field` socket. See [the example](noise-particles.md).
 
 ### Generators
 
