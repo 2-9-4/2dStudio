@@ -28,7 +28,7 @@ submodes, and the special nodes available inside simulation subgraphs.
 ### Particle simulation, splatting and native pipelines
 
 - **Pixel Delta to UV** (`pixel_delta_to_uv`) — convert pixel velocity to normalized UV.
-- **Particle Splat / Trails** (`particle_splat`) — single-color GPU point deposition with RGB ink, particle count, opacity, fade, brush size/shape, and inset. Ignores offscreen positions.
+- **Particle Splat / Trails** (`particle_splat`) — single-color GPU point deposition with RGB ink, particle count, opacity, fade, brush size/shape, and inset. Ignores masked (-1,-1) slots while clamping live offscreen particles to the configured canvas inset.
 - **Add Image Layers** (`image_add`) — additive two-image compositor with gains and configurable background.
 - **Noise-Driven Particles (Sands)** — editable simulation subgraph exporting **orangePositions** and **tealPositions** separately; the motion, randomization and masks use editable Math/Hash/Select/Vector nodes.
 - **Sands Trails (Two Layers)** — editable **native pipeline subgraph** containing two independent Particle Splat nodes feeding Add Image Layers. Per-layer colors have color pickers.
