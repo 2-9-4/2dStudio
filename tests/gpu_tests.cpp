@@ -417,6 +417,7 @@ TEST_CASE("every built-in simulation template lowers and compiles its default sh
     for (const auto& definition : builtInSubgraphs()) {
         INFO(definition.name);
         REQUIRE(validateSubgraph(definition, registry).empty());
+        if (definition.execution != SubgraphExecution::Simulation) continue;
         const auto initialization = generateSimulationShader(definition, true);
         const auto update = generateSimulationShader(definition, false);
         REQUIRE(initialization.starts_with("#version 430"));
