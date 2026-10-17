@@ -567,6 +567,36 @@ bool renderNodeBody(NodeRecord& node, const NodeDescriptor& descriptor,
         if (renderParameterRow(node.id, descriptor, property, node, popup, pins, outputTypes, connected))
             changeReported = true;
     }
+    // Reusable RGB pickers for native painters and exposed pipeline colors.
+    // The component sliders remain linkable independently in the graph.
+    const auto colorPicker = [&](const char* label, const char* rKey,
+                                 const char* gKey, const char* bKey) {
+        const auto hasParameter = [&](const char* key) {
+            return std::ranges::any_of(descriptor.parameters,
+                [&](const ParameterDescriptor& p) { return p.key == key; });
+        };
+        if (!hasParameter(rKey) || !hasParameter(gKey) || !hasParameter(bKey)) return;
+        const auto def = [&](const char* key) -> float {
+            const auto found = std::ranges::find_if(descriptor.parameters,
+                [&](const ParameterDescriptor& p) { return p.key == key; });
+            return found == descriptor.parameters.end() ? 0.0F : found->defaultValue;
+        };
+        float color[3]{node.parameters.value(rKey, def(rKey)),
+                       node.parameters.value(gKey, def(gKey)),
+                       node.parameters.value(bKey, def(bKey))};
+        ImGui::PushID(label);
+        if (ImGui::ColorEdit3(label, color)) {
+            node.parameters[rKey] = color[0];
+            node.parameters[gKey] = color[1];
+            node.parameters[bKey] = color[2];
+            changeReported = true;
+        }
+        ImGui::PopID();
+    };
+    colorPicker("Ink Color", "r", "g", "b");
+    colorPicker("Orange Ink", "orangeR", "orangeG", "orangeB");
+    colorPicker("Teal Ink", "tealR", "tealG", "tealB");
+    colorPicker("Background", "backgroundR", "backgroundG", "backgroundB");
     ImGui::EndGroup();
     ImGui::SameLine();
     ImGui::BeginGroup();
