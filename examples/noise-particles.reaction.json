@@ -12,8 +12,8 @@
       "typeVersion": 3,
       "subgraphId": "builtin.particles.noise_flow",
       "position": [
-        40,
-        160
+        35,
+        130
       ],
       "parameters": {
         "noiseScale": 5,
@@ -33,41 +33,67 @@
     },
     {
       "id": 2,
-      "type": "subgraph",
+      "type": "particle_splat",
       "typeVersion": 1,
-      "subgraphId": "builtin.particles.sands_layers",
+      "label": "Orange Trails",
       "position": [
-        400,
-        160
+        430,
+        70
       ],
       "parameters": {
         "count": 1000,
-        "orangeRetention": 0.985,
-        "tealRetention": 0.985,
-        "orangeOpacity": 0.375,
-        "tealOpacity": 0.375,
-        "orangeSize": 1,
-        "tealSize": 1,
-        "orangeR": 0.9,
-        "orangeG": 0.2925,
-        "orangeB": 0.09,
-        "tealR": 0.09,
-        "tealG": 0.9,
-        "tealB": 0.8325,
-        "orangeGain": 1,
-        "tealGain": 1,
-        "backgroundR": 0.05,
-        "backgroundG": 0.05,
-        "backgroundB": 0.05
+        "retention": 0.985,
+        "opacity": 0.375,
+        "r": 0.9,
+        "g": 0.2925,
+        "b": 0.09,
+        "size": 1,
+        "margin": 20,
+        "roundness": 0
       }
     },
     {
       "id": 3,
+      "type": "particle_splat",
+      "typeVersion": 1,
+      "label": "Teal Trails",
+      "position": [
+        430,
+        620
+      ],
+      "parameters": {
+        "count": 1000,
+        "retention": 0.985,
+        "opacity": 0.375,
+        "r": 0.09,
+        "g": 0.9,
+        "b": 0.8325,
+        "size": 1,
+        "margin": 20,
+        "roundness": 0
+      }
+    },
+    {
+      "id": 4,
+      "type": "mix",
+      "typeVersion": 1,
+      "label": "Add Orange + Teal",
+      "position": [
+        805,
+        310
+      ],
+      "parameters": {
+        "mode": 1,
+        "factor": 1
+      }
+    },
+    {
+      "id": 5,
       "type": "output",
       "typeVersion": 1,
       "position": [
-        900,
-        160
+        1100,
+        310
       ],
       "parameters": {}
     }
@@ -81,7 +107,7 @@
       },
       "to": {
         "node": 2,
-        "socket": "orangePositions"
+        "socket": "positions"
       }
     },
     {
@@ -91,8 +117,8 @@
         "socket": "tealPositions"
       },
       "to": {
-        "node": 2,
-        "socket": "tealPositions"
+        "node": 3,
+        "socket": "positions"
       }
     },
     {
@@ -102,10 +128,32 @@
         "socket": "image"
       },
       "to": {
+        "node": 4,
+        "socket": "a"
+      }
+    },
+    {
+      "id": 4,
+      "from": {
         "node": 3,
+        "socket": "image"
+      },
+      "to": {
+        "node": 4,
+        "socket": "b"
+      }
+    },
+    {
+      "id": 5,
+      "from": {
+        "node": 4,
+        "socket": "result"
+      },
+      "to": {
+        "node": 5,
         "socket": "image"
       }
     }
   ],
-  "activeOutput": 3
+  "activeOutput": 5
 }
