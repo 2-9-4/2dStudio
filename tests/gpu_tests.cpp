@@ -207,8 +207,8 @@ TEST_CASE("Sands splits particle branches into editable native pipeline splats")
     const auto nextTeal=readImage(std::get<ImageHandle>(runtime.values().at(simulation)[1]));
     std::size_t moved=0,inactive=0,active=0;
     for(std::size_t i=0;i+3<nextOrange.size();i+=4) {
-        const bool orangeOn=nextOrange[i]>=0.0F&&nextOrange[i+1]>=0.0F;
-        const bool tealOn=nextTeal[i]>=0.0F&&nextTeal[i+1]>=0.0F;
+        const bool orangeOn=!(nextOrange[i]==-1.0F&&nextOrange[i+1]==-1.0F);
+        const bool tealOn=!(nextTeal[i]==-1.0F&&nextTeal[i+1]==-1.0F);
         // A particle can belong to exactly one branch at a time.
         REQUIRE(orangeOn!=tealOn);
         if(orangeOn)++active;
