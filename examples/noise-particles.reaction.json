@@ -1,0 +1,219 @@
+{
+  "formatVersion": 4,
+  "project": {
+    "width": 512,
+    "height": 512,
+    "targetFps": 60
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "type": "perlin",
+      "typeVersion": 1,
+      "label": "Shared External Flow Field",
+      "position": [
+        35,
+        80
+      ],
+      "parameters": {
+        "seed": 1,
+        "scale": 5,
+        "octaves": 4,
+        "persistence": 0.5,
+        "lacunarity": 2,
+        "speed": 0,
+        "offsetX": 0,
+        "offsetY": 0
+      }
+    },
+    {
+      "id": 2,
+      "type": "subgraph",
+      "typeVersion": 1,
+      "subgraphId": "builtin.particles.species_1_flow",
+      "label": "Species 1 / Tangent",
+      "position": [
+        370,
+        90
+      ],
+      "parameters": {
+        "seed": 14,
+        "speed": 1,
+        "horizontalMin": 1,
+        "horizontalMax": 3,
+        "angleBins": 1200,
+        "maxJump": 64,
+        "lifeRate": 0.1,
+        "iterations": 1,
+        "reset": 0
+      }
+    },
+    {
+      "id": 3,
+      "type": "subgraph",
+      "typeVersion": 1,
+      "subgraphId": "builtin.particles.species_2_flow",
+      "label": "Species 2 / Sine Cosine",
+      "position": [
+        370,
+        580
+      ],
+      "parameters": {
+        "seed": 314,
+        "speed": 1,
+        "horizontalMin": 0.1,
+        "horizontalMax": 1,
+        "angleBins": 1200,
+        "lifeRate": 0.1,
+        "iterations": 1,
+        "reset": 0
+      }
+    },
+    {
+      "id": 4,
+      "type": "particle_splat",
+      "typeVersion": 1,
+      "label": "Species 1 Trails",
+      "position": [
+        800,
+        70
+      ],
+      "parameters": {
+        "count": 1000,
+        "retention": 0.985,
+        "opacity": 0.375,
+        "r": 0.9,
+        "g": 0.2925,
+        "b": 0.09,
+        "size": 1,
+        "margin": 20,
+        "roundness": 0
+      }
+    },
+    {
+      "id": 5,
+      "type": "particle_splat",
+      "typeVersion": 1,
+      "label": "Species 2 Trails",
+      "position": [
+        800,
+        570
+      ],
+      "parameters": {
+        "count": 1000,
+        "retention": 0.985,
+        "opacity": 0.375,
+        "r": 0.09,
+        "g": 0.9,
+        "b": 0.8325,
+        "size": 1,
+        "margin": 20,
+        "roundness": 0
+      }
+    },
+    {
+      "id": 6,
+      "type": "mix",
+      "typeVersion": 1,
+      "label": "Combine Species (Add)",
+      "position": [
+        1210,
+        350
+      ],
+      "parameters": {
+        "mode": 1,
+        "factor": 1
+      }
+    },
+    {
+      "id": 7,
+      "type": "output",
+      "typeVersion": 1,
+      "position": [
+        1490,
+        350
+      ],
+      "parameters": {}
+    }
+  ],
+  "links": [
+    {
+      "id": 1,
+      "from": {
+        "node": 1,
+        "socket": "image"
+      },
+      "to": {
+        "node": 2,
+        "socket": "field"
+      }
+    },
+    {
+      "id": 2,
+      "from": {
+        "node": 1,
+        "socket": "image"
+      },
+      "to": {
+        "node": 3,
+        "socket": "field"
+      }
+    },
+    {
+      "id": 3,
+      "from": {
+        "node": 2,
+        "socket": "positions"
+      },
+      "to": {
+        "node": 4,
+        "socket": "positions"
+      }
+    },
+    {
+      "id": 4,
+      "from": {
+        "node": 3,
+        "socket": "positions"
+      },
+      "to": {
+        "node": 5,
+        "socket": "positions"
+      }
+    },
+    {
+      "id": 5,
+      "from": {
+        "node": 4,
+        "socket": "image"
+      },
+      "to": {
+        "node": 6,
+        "socket": "a"
+      }
+    },
+    {
+      "id": 6,
+      "from": {
+        "node": 5,
+        "socket": "image"
+      },
+      "to": {
+        "node": 6,
+        "socket": "b"
+      }
+    },
+    {
+      "id": 7,
+      "from": {
+        "node": 6,
+        "socket": "result"
+      },
+      "to": {
+        "node": 7,
+        "socket": "image"
+      }
+    }
+  ],
+  "activeOutput": 7
+}

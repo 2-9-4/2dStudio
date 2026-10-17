@@ -54,3 +54,5 @@ address behavior before calling it and set the sampled source as both `requiresI
 `neighborhoodSocket`. This keeps the source materialized rather than attempting to sample an
 in-region SSA value. Simulation state samplers take raw normalized coordinates; each consumer,
 not the state accessor, owns wrapping/clamping semantics.
+
+Particle rendering: Sands uses TWO independent, editable simulation subgraphs, "builtin.particles.species_1_flow" (tangent) and "builtin.particles.species_2_flow" (sine/cosine). Each has exactly two feedback slots (position RG32F and lifetime), accepts an EXTERNAL required scalar image input named "field", and produces one vector field output "positions". No color-specific branches or hardwired internal Perlin; the root example wires one Perlin source to both. Two root-level Particle Splat nodes provide ink color and feed the standard Mix(Add, factor=1) node. Don't recreate giant rendering subgraphs or a bespoke image adder. Keep splat ink UI compact. Test independent movement, external image wiring, and Mix(Add) compositing.

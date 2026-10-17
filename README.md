@@ -44,12 +44,13 @@ Inspector and execution-debug settings are session-only. Lowering/type errors an
 errors are attached to the affected region; native evaluation remains available only for nodes
 or parameter modes that explicitly opt out of lowering.
 
-## Current boundaries
+## Independent species particle artwork
 
-- Linux and OpenGL 4.3 compute are the supported first target.
-- Graphs are acyclic; simulation subgraphs contain a controlled private feedback boundary.
-- Custom subgraphs are currently created by duplicating a built-in definition. Blank creation, wrapping selections, nesting, and recursion are not supported yet.
-- There is no timeline, undo/redo, runtime plugin ABI, or saved simulation state yet.
-- Images are linear RGBA16F GPU textures. Reaction state uses RG16F textures.
-
-See [docs/adding-a-node.md](docs/adding-a-node.md) for the node extension interface and [docs/smoke-test.md](docs/smoke-test.md) for the interactive acceptance pass.
+Open `examples/noise-particles.reaction.json`: one external Perlin generator
+feeds two separate, editable **Species 1 Flow (Tangent)** and
+**Species 2 Flow (Sine/Cosine)** simulation subgraphs. Each exposes a
+required scalar `field` image input and emits a single particle positions
+field. There is no inter-species interaction or hidden Perlin generator.
+Root-level Particle Splat nodes color each species independently; the
+existing Mix node (Add mode, factor 1) combines their images.
+See [species flow documentation](docs/noise-particles.md).

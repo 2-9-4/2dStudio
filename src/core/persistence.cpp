@@ -113,7 +113,8 @@ nlohmann::json serializeSubgraph(const SubgraphDefinition& definition) {
     }
     nlohmann::json stateSlots = nlohmann::json::array();
     for (const auto& slot : definition.stateSlots)
-        stateSlots.push_back({{"key", slot.key}, {"label", slot.label}, {"type", toString(slot.type)}});
+        stateSlots.push_back({{"key", slot.key}, {"label", slot.label},
+                              {"type", toString(slot.type)}, {"highPrecision", slot.highPrecision}});
     nlohmann::json nodes = nlohmann::json::array();
     for (const auto& node : definition.body.nodes()) nodes.push_back(serializeNode(node));
     nlohmann::json links = nlohmann::json::array();
@@ -163,6 +164,7 @@ SubgraphDefinition deserializeSubgraph(const nlohmann::json& value,
         slot.label = entry.value("label", slot.key);
         const auto type = entry.value("type", std::string("scalar_field"));
         slot.type = persistedValueType(type).value_or(ValueType::ScalarField);
+        slot.highPrecision = entry.value("highPrecision", false);
         result.stateSlots.push_back(std::move(slot));
     }
     const auto& nodes = value.at("nodes");

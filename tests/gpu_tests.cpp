@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <numeric>
 #include <unordered_map>
@@ -114,6 +115,174 @@ LoweredChain lowerMathThresholdSelect(const NodeRegistry& registry, ShaderValueT
 }
 
 } // namespace
+
+
+TEST_CASE("independent species flow graphs sample an external field and mix their splats") {
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    const auto findSpecies=[&](const char* id){
+        return std::ranges::find_if(builtInSubgraphs(),[&](const auto& def){
+            return def.id==id;
+        });
+    };
+    const auto species1=findSpecies("builtin.particles.species_1_flow");
+    const auto species2=findSpecies("builtin.particles.species_2_flow");
+    REQUIRE(species1!=builtInSubgraphs().end());
+    REQUIRE(species2!=builtInSubgraphs().end());
+    REQUIRE(std::ranges::none_of(builtInSubgraphs(),[](const auto& def){
+        return def.id=="builtin.particles.noise_flow" ||
+               def.id=="builtin.particles.sands_layers";
+    }));
+    for(const auto& species:{&*species1,&*species2}){
+        INFO(species->name);
+        const auto errors=validateSubgraph(*species,registry);
+        INFO(nlohmann::json(errors).dump());
+        REQUIRE(errors.empty());
+        REQUIRE(species->execution==SubgraphExecution::Simulation);
+        REQUIRE(species->stateSlots.size()==2);
+        REQUIRE(species->stateSlots.front().highPrecision);
+        REQUIRE(species->interface.front().key=="field");
+        REQUIRE(species->interface.front().contract==SocketContract::ScalarFieldOnly);
+        REQUIRE(species->interface.back().key=="positions");
+        REQUIRE(std::ranges::count(species->body.nodes(),"texture_sample",
+                                   &NodeRecord::type)==1);
+        REQUIRE(std::ranges::count(species->body.nodes(),"simulation_next_state",
+                                   &NodeRecord::type)==2);
+        REQUIRE(std::ranges::none_of(species->body.nodes(),[](const auto& node){
+            return node.type=="perlin" || node.type=="particle_step" ||
+                   node.type=="particle_splat" || node.type=="simulation_channel";
+        }));
+        const auto initial=generateSimulationShader(*species,true);
+        const auto update=generateSimulationShader(*species,false);
+        REQUIRE(initial.find("deterministicHash")!=std::string::npos);
+        REQUIRE(update.find("deterministicHash")!=std::string::npos);
+        REQUIRE(update.find("rg32f,binding=0")!=std::string::npos);
+        REQUIRE(update.find("perlinNoise")==std::string::npos);
+        REQUIRE(update.find("texture(")!=std::string::npos);
+        HiddenContext local;
+        GpuRuntime gpu;
+        const GLuint initProgram=gpu.compileCompute(initial,"Species initial");
+        const GLuint stepProgram=gpu.compileCompute(update,"Species update");
+        glDeleteProgram(initProgram);
+        glDeleteProgram(stepProgram);
+    }
+    const auto tangentShader=generateSimulationShader(*species1,false);
+    const auto sineShader=generateSimulationShader(*species2,false);
+    REQUIRE(tangentShader.find("tan(")!=std::string::npos);
+    REQUIRE(tangentShader.find("cos(")==std::string::npos);
+    REQUIRE(sineShader.find("sin(")!=std::string::npos);
+    REQUIRE(sineShader.find("cos(")!=std::string::npos);
+    REQUIRE(sineShader.find("tan(")==std::string::npos);
+
+    HiddenContext context;
+    GpuRuntime gpu;
+    Graph graph;
+    graph.settings={64,64,60};
+    const auto field=graph.addNode("perlin");
+    graph.findNode(field)->parameters={
+        {"seed",1.0F},{"scale",5.0F},{"speed",0.0F},
+        {"octaves",4.0F},{"persistence",.5F},{"lacunarity",2.0F}};
+    const auto simulation1=graph.addNode("subgraph");
+    graph.findNode(simulation1)->subgraphId=species1->id;
+    graph.findNode(simulation1)->parameters={
+        {"seed",14.0F},{"speed",1.0F},{"horizontalMin",1.0F},
+        {"horizontalMax",3.0F},{"lifeRate",.1F},{"maxJump",64.0F},
+        {"angleBins",1200.0F},{"iterations",1.0F}};
+    const auto simulation2=graph.addNode("subgraph");
+    graph.findNode(simulation2)->subgraphId=species2->id;
+    graph.findNode(simulation2)->parameters={
+        {"seed",314.0F},{"speed",1.0F},{"horizontalMin",.1F},
+        {"horizontalMax",1.0F},{"lifeRate",.1F},
+        {"angleBins",1200.0F},{"iterations",1.0F}};
+    const auto splat1=graph.addNode("particle_splat");
+    graph.findNode(splat1)->parameters={
+        {"count",1000.0F},{"retention",.985F},{"opacity",.375F},
+        {"r",.9F},{"g",.2925F},{"b",.09F}};
+    const auto splat2=graph.addNode("particle_splat");
+    graph.findNode(splat2)->parameters={
+        {"count",1000.0F},{"retention",.985F},{"opacity",.375F},
+        {"r",.09F},{"g",.9F},{"b",.8325F}};
+    const auto mix=graph.addNode("mix");
+    graph.findNode(mix)->parameters={{"mode",1.0F},{"factor",1.0F}};
+    const auto output=graph.addNode("output");
+    graph.addLink(field,"image",simulation1,"field");
+    graph.addLink(field,"image",simulation2,"field");
+    graph.addLink(simulation1,"positions",splat1,"positions");
+    graph.addLink(simulation2,"positions",splat2,"positions");
+    graph.addLink(splat1,"image",mix,"a");
+    graph.addLink(splat2,"image",mix,"b");
+    graph.addLink(mix,"result",output,"image");
+    graph.activeOutput=output;
+    const auto compile=graph.compile(registry);
+    INFO(nlohmann::json(compile.errors).dump());
+    REQUIRE(compile.valid);
+    REQUIRE(std::ranges::count(graph.nodes(),"subgraph",&NodeRecord::type)==2);
+    REQUIRE(std::ranges::count(graph.nodes(),"particle_splat",&NodeRecord::type)==2);
+    REQUIRE(std::ranges::count(graph.nodes(),"perlin",&NodeRecord::type)==1);
+    REQUIRE(deserializeProject(serializeProject(graph),registry).compile(registry).valid);
+    Graph custom;
+    custom.subgraphs().push_back(*species1);
+    custom.subgraphs().push_back(*species2);
+    const auto restored=deserializeProject(serializeProject(custom),registry);
+    REQUIRE(restored.subgraphs().size()==2);
+    REQUIRE(restored.subgraphs()[0].stateSlots.front().highPrecision);
+    REQUIRE(restored.subgraphs()[1].stateSlots.front().highPrecision);
+
+    GraphRuntime runtime(graph,registry,gpu);
+    REQUIRE(runtime.evaluate(0.0,1.0/60.0,true));
+    const auto first1=readImage(std::get<ImageHandle>(runtime.values().at(simulation1)[0]));
+    const auto first2=readImage(std::get<ImageHandle>(runtime.values().at(simulation2)[0]));
+    for(int i=1;i<30;++i)
+        REQUIRE(runtime.evaluate(static_cast<double>(i)/60.0,1.0/60.0,true));
+    const auto next1=readImage(std::get<ImageHandle>(runtime.values().at(simulation1)[0]));
+    const auto next2=readImage(std::get<ImageHandle>(runtime.values().at(simulation2)[0]));
+    std::size_t moved1=0,moved2=0,different=0;
+    for(std::size_t i=0;i+3<next1.size();i+=4){
+        const auto dx1=next1[i]-first1[i],dy1=next1[i+1]-first1[i+1];
+        const auto dx2=next2[i]-first2[i],dy2=next2[i+1]-first2[i+1];
+        if(std::hypot(dx1,dy1)>1.0F/64.0F)++moved1;
+        if(std::hypot(dx2,dy2)>1.0F/64.0F)++moved2;
+        if(std::hypot(next1[i]-next2[i],next1[i+1]-next2[i+1])>1.0F/64.0F)++different;
+    }
+    INFO("Species 1 moved: "<<moved1<<" Species 2 moved: "<<moved2);
+    REQUIRE(moved1>100);
+    REQUIRE(moved2>100);
+    REQUIRE(different>100);
+    REQUIRE(runtime.outputImage());
+    const auto final=readImage(runtime.outputImage());
+    const auto ink1=readImage(std::get<ImageHandle>(runtime.values().at(splat1)[0]));
+    const auto ink2=readImage(std::get<ImageHandle>(runtime.values().at(splat2)[0]));
+    REQUIRE(final.size()==ink1.size());
+    REQUIRE(final.size()==ink2.size());
+    REQUIRE(std::ranges::all_of(final,[](float v){return std::isfinite(v);}));
+    REQUIRE(std::ranges::any_of(ink1,[](float v){return v>.1F;}));
+    REQUIRE(std::ranges::any_of(ink2,[](float v){return v>.1F;}));
+    for(std::size_t i=0;i+3<final.size();i+=4)
+        for(int c=0;c<3;++c)
+            REQUIRE(std::abs(final[i+static_cast<std::size_t>(c)]-
+                             ink1[i+static_cast<std::size_t>(c)]-
+                             ink2[i+static_cast<std::size_t>(c)])<.05F);
+
+    if(const char* snapshot=std::getenv("SANDS_PREVIEW_PATH");snapshot&&*snapshot){
+        graph.settings={160,160,60};
+        GraphRuntime preview(graph,registry,gpu);
+        for(int i=0;i<120;++i)
+            REQUIRE(preview.evaluate(static_cast<double>(i)/60.0,1.0/60.0,true));
+        const auto frame=readImage(preview.outputImage());
+        std::vector<png_byte> rgba(frame.size());
+        for(std::size_t pixel=0;pixel<frame.size()/4;++pixel){
+            for(int c=0;c<3;++c)
+                rgba[pixel*4+static_cast<std::size_t>(c)]=
+                    static_cast<png_byte>(std::lround(255.0F*std::clamp(
+                        frame[pixel*4+static_cast<std::size_t>(c)],0.0F,1.0F)));
+            rgba[pixel*4+3]=255;
+        }
+        png_image png{};
+        png.version=PNG_IMAGE_VERSION;
+        png.width=160;png.height=160;png.format=PNG_FORMAT_RGBA;
+        REQUIRE(png_image_write_to_file(&png,snapshot,0,rgba.data(),0,nullptr));
+    }
+}
 
 TEST_CASE("unused legacy subgraphs do not invalidate the text test root graph") {
     NodeRegistry registry;
@@ -286,6 +455,7 @@ TEST_CASE("every built-in simulation template lowers and compiles its default sh
     for (const auto& definition : builtInSubgraphs()) {
         INFO(definition.name);
         REQUIRE(validateSubgraph(definition, registry).empty());
+        if (definition.execution != SubgraphExecution::Simulation) continue;
         const auto initialization = generateSimulationShader(definition, true);
         const auto update = generateSimulationShader(definition, false);
         REQUIRE(initialization.starts_with("#version 430"));
