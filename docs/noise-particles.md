@@ -1,56 +1,46 @@
-# Sands: composable particle flow and trail layers
-
-Based on SamuelYAN's p5.js sketch. The motion is constructed from editable
-nodes, rather than reproducing p5.js RNG sequences exactly.
+# Sands: editable particle flow with ordinary rendering nodes
 
 Open `examples/noise-particles.reaction.json` in Reaction Studio.
 
-## Composition
-
 ```text
-Noise-Driven Particles (shader-lowered simulation)
-    ├── orangePositions → Particle Splat: orange ink ──┐
-    └── tealPositions   → Particle Splat: teal ink   ──┤
-                         [Sands Trails native pipeline] │
-                                    Add Image Layers ←──┘
-                                          │
-                                        Output
+Noise-Driven Particles (editable simulation subgraph)
+    ├── Orange Positions → Particle Splat / Trails ─┐
+    └── Teal Positions   → Particle Splat / Trails ─┤
+                                                 Mix (Add, factor = 1)
+                                                        │
+                                                     Output
 ```
 
-**Both subgraphs are editable** (select and press Tab). A separate reusable
-`Particle Splat / Trails` node draws one RGB ink from an active-position field;
-only masked slots at (-1,-1) are skipped. Real offscreen particles are clamped to the canvas inset. An `Add Image Layers` node sums two images
-with independent gains and one background color.
+The **only** subgraph in the example is the particle simulation. Its motion,
+angular branching, lifetime and respawn are editable Math/Hash/Select/Vector
+nodes. Particle Splat is a normal, reusable **root-graph** native GPU node;
+there are two entirely independent instances. The existing **Mix** node
+composes them, in Add mode with factor 1. No bespoke two-splat subgraph
+or image-addition node is required.
 
 ## Controls
 
-The physics subgraph exposes Noise Scale, Noise Pan X/Y, Orange Angle Start/End,
-Direction Quantization, common Particle Speed, separate Orange/Teal Speed,
-Life Decay, tangent jump limit and simulation iterations. The body contains
-visible Math, Hash, Select, Texture Sample, and Vector Math operations.
+Physics: Noise Scale, Noise Pan X/Y, Orange Angle Start/End, Direction
+Quantization, common Particle Speed, separate Orange/Teal Speed, Life Decay,
+tangent jump cap, and simulation iterations. The two output Vector Fields
+use an exact (-1,-1) sentinel for inactive branch members; live positions
+may travel out of bounds.
 
-The Trails native pipeline exposes independent ink RGB, opacity, trail retention,
-point size, and layer gains, plus particle sample count and background RGB.
-The app provides RGB color pickers on both pipeline and native splat nodes.
-Open the pipeline body to adjust each splat's canvas inset or point roundness.
+Each Particle Splat: count, individual RGB ink, point opacity, frame
+retention, point size, margin and roundness. The color UI has three small
+optional R/G/B input pins and one compact swatch, which opens a full color
+picker; no permanently expanded three-channel controls are needed.
 
-Positions use RG32F feedback and 32-bit exported textures, preserving subpixel
-movement. Both color branches share the underlying particle simulation.
+The renderer skips the inactive (-1,-1) sentinel and clamps real live
+particles to the canvas inset. Each splat retains its own trail history.
+Color mixing and additional postprocessing use existing root nodes.
 
-## Execution design
+Position state and exported branch fields use 32-bit GPU textures to
+preserve subpixel motion. The simulation is still one particle per image
+texel rather than a packed SSBO; cost scales with canvas resolution.
 
-Simulation subgraphs run shader-lowered pixel expressions. Native pipeline
-subgraphs execute ordinary registered **native** GPU nodes in topological order,
-including framebuffer rasterization and additive compositing. This is a
-reusable feature beyond Sands; native pipelines currently do not accept
-shader-only operators or nested subgraphs.
+## Validation
 
-Simulation still stores one agent per state-image texel (not a compact particle
-buffer), so work scales with image resolution. Rendering state is transient;
-reopening a project starts fresh. Reopen the updated example to pick up the
-new built-ins; older project-local duplicated subgraphs remain unchanged.
-
-## Tests
-
-CI checks branch-exclusivity, motion, RG32F precision, project serialization,
-native pipeline rendering, and a longer screenshot artifact for visual review.
+CI checks separately masked branches, continuous movement, shader validity,
+both root-level splats, built-in Mix Add composition, serialization and a
+120-frame accumulated PNG preview artifact.
