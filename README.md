@@ -46,19 +46,10 @@ or parameter modes that explicitly opt out of lowering.
 
 ## Noise-driven particle artwork
 
-Open `examples/noise-particles.reaction.json` to explore a composable Sands
-particle system. Its editable simulation subgraph exposes separate orange/teal
-particle position fields; an editable native pipeline subgraph runs two
-independent RGB point splats, then adds their images. Color pickers and
-per-branch movement, opacity, size, retention, and noise controls are included.
+Open `examples/noise-particles.reaction.json` to explore an editable Sands
+simulation subgraph with separate orange/teal position outputs. Two ordinary
+root-level **Particle Splat / Trails** nodes render the branches in independent
+colors, with compact RGB swatches, opacity, size, and fade controls. The
+existing **Mix** node in Add mode composes the trail images. Particle
+motion exposes branch speed, angle range, life decay, and noise controls.
 See [Sands documentation](docs/noise-particles.md).
-
-## Current boundaries
-
-- Linux and OpenGL 4.3 compute are the supported first target.
-- Graphs are acyclic; simulation subgraphs contain a controlled private feedback boundary.
-- Custom subgraphs are currently created by duplicating a built-in definition. Blank creation, wrapping selections, nesting, and recursion are not supported yet.
-- There is no timeline, undo/redo, runtime plugin ABI, or saved simulation state yet.
-- Images are linear RGBA16F GPU textures. Reaction state uses RG16F textures.
-
-See [docs/adding-a-node.md](docs/adding-a-node.md) for the node extension interface and [docs/smoke-test.md](docs/smoke-test.md) for the interactive acceptance pass.
