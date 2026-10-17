@@ -346,8 +346,11 @@ NodeDescriptor describeSubgraph(const SubgraphDefinition& definition) {
                                       SocketDirection::Output});
         }
     }
-    result.timeDependent = definition.execution == SubgraphExecution::Simulation;
-    result.stateful = definition.execution == SubgraphExecution::Simulation;
+    // Native pipelines can contain persistent GPU renderers. Treat the
+    // boundary as stateful/time-dependent so graph caching and Reset Simulation
+    // cannot silently freeze or retain stale nested rendering state.
+    result.timeDependent = true;
+    result.stateful = true;
     return result;
 }
 
