@@ -782,135 +782,6 @@ private:
     bool resetSinceLastStep_ = false;
 };
 
-// A native pipeline is an ordinary editable, feed-forward graph evaluated in
-// topological order. Unlike simulation subgraphs it can host nodes with GPU
-// framebuffer side effects (particle splat, multi-pass compositing, etc.).
-// Shader-lowered-only nodes are rejected until native pipelines share the
-// root graph's fusion planner. This keeps the API honest and deterministic.
-class NativePipelineSubgraphNode final : public node_support::ParameterNode {
-public:
-    NativePipelineSubgraphNode(SubgraphDefinition definition,const NodeRegistry& registry)
-        : definition_(std::move(definition)),descriptor_(describeSubgraph(definition_)),
-          registry_(registry),compiled_(compileSubgraphBody(definition_,registry_)) {
-        if(!compiled_.valid)
-            throw std::runtime_error(compiled_.errors.front());
-        for(const auto& node:definition_.body.nodes()) {
-            if(node.type=="subgraph_input"||node.type=="subgraph_output")continue;
-            auto instance=registry_.create(node.type);
-            if(!instance)throw std::runtime_error("Unsupported native pipeline node: "+node.type);
-            instances_.emplace(node.id,std::move(instance));
-        }
-    }
-
-    const NodeDescriptor& descriptor()const override{return descriptor_;}
-
-    void reset(EvaluationContext& context)override {
-        for(auto& [_,instance]:instances_)instance->reset(context);
-    }
-
-    void evaluate(EvaluationContext& context,std::span<const Value> inputs,
-                  std::span<Value> outputs)override {
-        // Per-frame local table; only the NodeInstances retain mutable GPU state.
-        std::unordered_map<NodeId,std::unordered_map<std::string,Value>> values;
-        const auto& nodes=definition_.body;
-        for(const NodeId id:compiled_.order){
-            const auto* record=nodes.findNode(id);
-            if(!record)continue;
-            auto& produced=values[id];
-            if(record->type=="subgraph_input"){
-                const auto key=record->parameters.value("key",std::string{});
-                std::size_t index=0;
-                for(const auto& port:definition_.interface){
-                    if(port.kind!=SubgraphInterfaceKind::Input)continue;
-                    if(port.key==key){
-                        // Parent inputs use precisely the public interface order.
-                        Value value=index<inputs.size()?inputs[index]:Value{};
-                        const bool connected=!std::holds_alternative<std::monostate>(value);
-                        if(!connected&&fixedType(port.contract)==ValueType::Float)
-                            value=node_support::parameter(parameters_,key.c_str(),port.defaultValue);
-                        produced["value"]=value;
-                        produced["connected"]=connected?1.0F:0.0F;
-                        break;
-                    }
-                    ++index;
-                }
-                continue;
-            }
-            if(record->type=="subgraph_output"){
-                const auto linked=std::find_if(nodes.links().begin(),nodes.links().end(),
-                    [&](const LinkRecord& link){return link.toNode==id&&link.toSocket=="value";});
-                if(linked!=nodes.links().end())
-                    produced["value"]=values[linked->fromNode][linked->fromSocket];
-                continue;
-            }
-
-            const auto instance=instances_.find(id);
-            if(instance==instances_.end())continue;
-            NodeDescriptor resolved;
-            const auto* nodeDescriptor=resolveSubgraphBodyDescriptor(
-                definition_,*record,registry_,resolved);
-            if(!nodeDescriptor)throw std::runtime_error("Native pipeline descriptor missing");
-            nlohmann::json nodeParameters=record->parameters;
-            std::vector<Value> nodeInputs;
-            std::vector<std::string> outputKeys;
-            for(const auto& socket:nodeDescriptor->sockets){
-                if(socket.direction==SocketDirection::Output){
-                    outputKeys.push_back(socket.key);
-                    continue;
-                }
-                const auto linked=std::find_if(nodes.links().begin(),nodes.links().end(),
-                    [&](const LinkRecord& link){
-                        return link.toNode==id&&link.toSocket==socket.key;
-                    });
-                Value value{};
-                if(linked!=nodes.links().end()) {
-                    const auto found=values[linked->fromNode].find(linked->fromSocket);
-                    if(found!=values[linked->fromNode].end())value=found->second;
-                }else{
-                    const auto param=std::find_if(nodeDescriptor->parameters.begin(),
-                        nodeDescriptor->parameters.end(),
-                        [&](const ParameterDescriptor& p){return p.key==socket.key;});
-                    if(param!=nodeDescriptor->parameters.end()){
-                        const auto val=node_support::parameter(
-                            nodeParameters,param->key.c_str(),param->defaultValue);
-                        value=val;
-                    }
-                }
-                if(const auto* scalar=std::get_if<float>(&value);scalar&&
-                   nodeParameters.is_object())
-                    for(const auto& param:nodeDescriptor->parameters)
-                        if(param.key==socket.key)nodeParameters[socket.key]=*scalar;
-                nodeInputs.push_back(value);
-            }
-            instance->second->setParameters(nodeParameters);
-            std::vector<Value> nodeOutputs(outputKeys.size());
-            instance->second->evaluate(context,nodeInputs,nodeOutputs);
-            for(std::size_t index=0;index<outputKeys.size();++index)
-                produced[outputKeys[index]]=nodeOutputs[index];
-        }
-        std::size_t outputIndex=0;
-        for(const auto& port:definition_.interface){
-            if(port.kind!=SubgraphInterfaceKind::Output)continue;
-            const auto endpoint=std::find_if(nodes.nodes().begin(),nodes.nodes().end(),
-                [&](const NodeRecord& node){
-                    return node.type=="subgraph_output"&&
-                        node.parameters.value("key",std::string{})==port.key;
-                });
-            if(outputIndex<outputs.size()){
-                outputs[outputIndex]=endpoint==nodes.nodes().end()?Value{}:
-                    values[endpoint->id]["value"];
-            }
-            ++outputIndex;
-        }
-    }
-private:
-    SubgraphDefinition definition_;
-    NodeDescriptor descriptor_;
-    const NodeRegistry& registry_;
-    CompileResult compiled_;
-    std::unordered_map<NodeId,std::unique_ptr<NodeInstance>> instances_;
-};
-
 } // namespace
 
 std::string generateSimulationShader(const SubgraphDefinition& definition, bool initialization) {
@@ -921,10 +792,10 @@ std::string generateSimulationShader(const SubgraphDefinition& definition, bool 
 
 std::unique_ptr<NodeInstance> createSubgraphInstance(const SubgraphDefinition& definition,
                                                      const NodeRegistry& registry) {
+    if (definition.execution != SubgraphExecution::Simulation)
+        throw std::runtime_error("Pipeline subgraphs are not executable in this milestone");
     const auto errors = validateSubgraph(definition, registry);
     if (!errors.empty()) throw std::runtime_error(errors.front());
-    if (definition.execution == SubgraphExecution::Pipeline)
-        return std::make_unique<NativePipelineSubgraphNode>(definition, registry);
     return std::make_unique<SimulationSubgraphNode>(definition, registry);
 }
 
