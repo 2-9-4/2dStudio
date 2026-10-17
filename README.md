@@ -46,19 +46,12 @@ or parameter modes that explicitly opt out of lowering.
 
 ## Noise-driven particle artwork
 
-Try the example of SamuelYAN-inspired stochastic flow particles:
-
-```sh
-./build/reaction_studio examples/noise-particles.reaction.json
-```
-
-The **Noise-Driven Particles (Sands)** built-in subgraph is editable (select
-and press Tab) and drives a separate **Particle Splat / Trails** node that
-rasterizes the evolving particle positions as fading orange/teal points.
-Parameters expose noise frequency, motion speed, tangent singularity clamp,
-particle count, point opacity and trail retention. The motion and lifetime\nlogic are composed from standard Math/Hash/Select/Vector nodes (not a monolithic\nparticle integrator). See
-[docs/noise-particles.md](docs/noise-particles.md) for architecture,
-performance limits and differences from the original sketch.
+Open `examples/noise-particles.reaction.json` to explore a composable Sands
+particle system. Its editable simulation subgraph exposes separate orange/teal
+particle position fields; an editable native pipeline subgraph runs two
+independent RGB point splats, then adds their images. Color pickers and
+per-branch movement, opacity, size, retention, and noise controls are included.
+See [Sands documentation](docs/noise-particles.md).
 
 ## Current boundaries
 
