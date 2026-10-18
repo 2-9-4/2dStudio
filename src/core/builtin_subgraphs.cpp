@@ -944,9 +944,9 @@ SubgraphDefinition speciesFlow() {
         {"lifeRate", "Life Decay", K::Input, ValueType::Float,
          true, 0.1F, 0.001F, 1.0F},
         {"motionMode", "Motion", K::Input, ValueType::Float,
-         true, 0.0F, 0.0F, 1.0F, Control::Enum, {"Tangent", "Sine / Cosine"}},
+         true, 0.0F, 0.0F, 1.0F, Control::Enum},
         {"depositMode", "Deposit In", K::Input, ValueType::Float,
-         true, 0.0F, 0.0F, 1.0F, Control::Enum, {"Inside Range", "Outside Range"}},
+         true, 0.0F, 0.0F, 1.0F, Control::Enum},
         // Both species must use identical thresholds to get complementary
         // territories. The example wires two shared Float nodes into these.
         {"regionStart", "Region Angle Start", K::Input, ValueType::Float,
@@ -954,6 +954,11 @@ SubgraphDefinition speciesFlow() {
         {"regionEnd", "Region Angle End", K::Input, ValueType::Float,
          true, 6.0F, 0.0F, 6.2831853F},
     };
+    // The final SubgraphInterfaceItem constructor argument is a STRING role,
+    // not enumOptions. Assign options explicitly: braced pairs in that slot
+    // can invoke std::string(first,last) and throw basic_string::_M_create.
+    result.interface[7].enumOptions = {"Tangent", "Sine / Cosine"};
+    result.interface[8].enumOptions = {"Inside Range", "Outside Range"};
     result.interface.insert(result.interface.end(), {
         {"maxJump", "Tangent Jump Limit", K::Input, ValueType::Float,
          true, 64.0F, 1.0F, 512.0F},
