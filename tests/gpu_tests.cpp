@@ -493,6 +493,51 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     }
 }
 
+TEST_CASE("Species Flow extended nonlinear modes run as different instances of one definition") {
+    HiddenContext context;
+    NodeRegistry registry;registerBuiltInNodes(registry);
+    std::vector<std::vector<float>> frames;
+    for(int mode=0;mode<5;++mode){
+        Graph graph;graph.settings={48,48,60};
+        const auto perlin=graph.addNode("perlin");
+        graph.findNode(perlin)->parameters={{"seed",1.0F},{"scale",5.0F},
+                                            {"octaves",4.0F},{"speed",0.0F}};
+        const auto flow=graph.addNode("subgraph");
+        graph.findNode(flow)->subgraphId="builtin.particles.species_flow";
+        graph.findNode(flow)->parameters={
+            {"motionMode",static_cast<float>(mode)},{"depositMode",0.0F},
+            {"regionStart",0.0F},{"regionEnd",6.2831853F},
+            {"speed",1.0F},{"seed",14.0F},{"horizontalMin",1.0F},
+            {"horizontalMax",3.0F},{"maxJump",64.0F},{"angleBins",1200.0F},
+            {"lifeRate",.1F},{"iterations",1.0F}};
+        graph.addLink(perlin,"image",flow,"field");
+        REQUIRE(graph.compile(registry).valid);
+        GpuRuntime gpu;
+        GraphRuntime runtime(graph,registry,gpu);
+        for(int frame=0;frame<20;++frame)
+            REQUIRE(runtime.evaluate(static_cast<double>(frame)/60.0,1.0/60.0,true));
+        const auto values=readImage(std::get<ImageHandle>(runtime.values().at(flow)[0]));
+        std::size_t valid=0;
+        for(std::size_t pixel=0;pixel<values.size();pixel+=4) {
+            REQUIRE(std::isfinite(values[pixel]));
+            REQUIRE(std::isfinite(values[pixel+1]));
+            if(values[pixel]>=0.0F && values[pixel]<1.0F &&
+               values[pixel+1]>=0.0F && values[pixel+1]<1.0F)++valid;
+        }
+        INFO("nonlinear motion mode "<<mode<<" visible particles "<<valid);
+        REQUIRE(valid>200);
+        frames.push_back(values);
+    }
+    for(std::size_t mode=1;mode<frames.size();++mode){
+        std::size_t different=0;
+        for(std::size_t pixel=0;pixel<frames.front().size();pixel+=4)
+            if(std::hypot(frames.front()[pixel]-frames[mode][pixel],
+                          frames.front()[pixel+1]-frames[mode][pixel+1])>.02F)
+                ++different;
+        REQUIRE(different>50);
+    }
+}
+
 TEST_CASE("Fractal Noise modes are seeded editable scalar fields and compose into Curl Field") {
     HiddenContext context;
     NodeRegistry registry;registerBuiltInNodes(registry);
