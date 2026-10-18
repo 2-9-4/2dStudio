@@ -20,11 +20,16 @@ read-only input; substitute another scalar image generator for Perlin.
 
 ## Per-instance controls
 
-- **Motion** dropdown: **Tangent** or **Sine / Cosine**, independent of ink
+- **Motion** dropdown: **Tangent**, **Sine / Cosine**, **Double Angle**,
+  **Harmonic Rosette**, or **Soft Tangent**, independent of ink
   deposit mode. Tangent computes
   `(clamp(tan(theta), ±maxJump) * random(horizontalMin,horizontalMax),
   clamp(tan(theta), ±maxJump))`; Sine/Cosine computes
   `(-sin(theta) * random(horizontalMin,horizontalMax), -cos(theta))`.
+  Double Angle uses `(cos(2theta)*jitter, sin(2theta))`, Rosette
+  `(sin(3theta)*jitter, cos(5theta))`, and Soft Tangent
+  `(tanh(2*clampedTan)*jitter, tanh(2*clampedTan))`.
+  The last three laws are built from ordinary editable Math nodes.
 - **Deposit In** dropdown: **Inside Range** or **Outside Range**, evaluated at
   the particle's *final* position against the external field. The inside
   range is `[regionStart,regionEnd)` in radians, using the quantized field angle.
@@ -39,6 +44,19 @@ Changing either dropdown affects just that instance. Both trig algorithms
 and the inside/outside decision are constructed from ordinary **editable**
 Math, Vector Math, Sample and Select nodes—not hardcoded C++ branches or
 bespoke native simulation kernels.
+
+## More reusable noise and nonlinear tools
+
+The **Fractal Noise** generator outputs a scalar field in five styles:
+gradient fBm, billow, ridged, sharp turbulence and value fBm, with
+independent octave/seed/frequency/gain controls and an optional warped
+coordinate-field input. Replace the example Perlin node with it, or
+compose multiple noises using Math and Mix.
+
+The **Curl Field** node converts any scalar field into a perpendicular
+gradient Vector Field for downstream vector processing. The generic Math
+node also supports Tanh, Sinh, Cosh, Sinc and Softsign for shaping movement
+or field values. None of these nodes knows about species or ink.
 
 ## Independent physics, complementary appearance
 
