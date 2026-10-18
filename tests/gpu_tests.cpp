@@ -539,6 +539,121 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     }
 }
 
+TEST_CASE("two Species Flow instances fade complementary ink smoothly with weighted splats") {
+    HiddenContext context;
+    NodeRegistry registry;registerBuiltInNodes(registry);
+    Graph graph;graph.settings={64,64,60};
+    const auto noise=graph.addNode("perlin");
+    graph.findNode(noise)->parameters={
+        {"seed",5.0F},{"scale",5.0F},{"octaves",4.0F},
+        {"persistence",.5F},{"lacunarity",2.0F},{"speed",0.0F}};
+    const auto first=graph.addNode("subgraph");
+    const auto second=graph.addNode("subgraph");
+    for(const auto id:{first,second}){
+        graph.findNode(id)->subgraphId="builtin.particles.species_flow";
+        graph.findNode(id)->parameters={
+            {"seed",77.0F},{"speed",1.0F},{"horizontalMin",1.0F},
+            {"horizontalMax",3.0F},{"angleBins",1200.0F},
+            {"lifeRate",.1F},{"maxJump",64.0F},
+            {"motionMode",0.0F},{"iterations",1.0F},
+            {"regionStart",3.0F},{"regionEnd",6.0F},{"transitionWidth",.8F}};
+        graph.addLink(noise,"image",id,"field");
+    }
+    graph.findNode(first)->parameters["depositMode"]=0.0F;
+    graph.findNode(second)->parameters["depositMode"]=1.0F;
+    const auto width=graph.addNode("float");
+    graph.findNode(width)->parameters={{"value",.8F}};
+    graph.addLink(width,"value",first,"transitionWidth");
+    graph.addLink(width,"value",second,"transitionWidth");
+    const auto weighted=graph.addNode("particle_splat");
+    const auto unweighted=graph.addNode("particle_splat");
+    for(const auto id:{weighted,unweighted})
+        graph.findNode(id)->parameters={
+            {"count",1800.0F},{"retention",0.0F},{"opacity",.8F},
+            {"size",2.0F},{"margin",0.0F},
+            {"r",1.0F},{"g",0.0F},{"b",0.0F}};
+    graph.addLink(first,"positions",weighted,"positions");
+    graph.addLink(first,"weights",weighted,"weights");
+    graph.addLink(first,"positions",unweighted,"positions");
+    // Force both species' opacity fields to be materialized.
+    const auto secondSplat=graph.addNode("particle_splat");
+    graph.addLink(second,"positions",secondSplat,"positions");
+    graph.addLink(second,"weights",secondSplat,"weights");
+    REQUIRE(graph.compile(registry).valid);
+
+    GpuRuntime gpu;
+    {
+        GraphRuntime runtime(graph,registry,gpu);
+        for(int frame=0;frame<8;++frame)
+            REQUIRE(runtime.evaluate(static_cast<double>(frame)/60.0,1.0/60.0,true));
+        const auto a=readImage(std::get<ImageHandle>(runtime.values().at(first)[1]));
+        const auto b=readImage(std::get<ImageHandle>(runtime.values().at(second)[1]));
+        const auto positionsA=readImage(
+            std::get<ImageHandle>(runtime.values().at(first)[0]));
+        const auto positionsB=readImage(
+            std::get<ImageHandle>(runtime.values().at(second)[0]));
+        REQUIRE(a.size()==b.size());
+        REQUIRE(a.size()==positionsA.size());
+        std::size_t fractional=0,fullA=0,fullB=0;
+        for(std::size_t i=0;i+3<a.size();i+=4){
+            INFO("slot="<<(i/4));
+            REQUIRE(std::isfinite(a[i]));
+            REQUIRE(std::isfinite(b[i]));
+            REQUIRE(a[i]>=0.0F);
+            REQUIRE(a[i]<=1.0F);
+            REQUIRE(b[i]>=0.0F);
+            REQUIRE(b[i]<=1.0F);
+            REQUIRE(a[i]+b[i]==Catch::Approx(1.0F).margin(.004F));
+            if(a[i]>.05F&&a[i]<.95F){
+                ++fractional;
+                REQUIRE(positionsA[i]!=-1.0F);
+                REQUIRE(positionsB[i]!=-1.0F);
+                REQUIRE(positionsA[i]==Catch::Approx(positionsB[i]).margin(1e-6F));
+                REQUIRE(positionsA[i+1]==Catch::Approx(positionsB[i+1]).margin(1e-6F));
+            }
+            if(a[i]>.995F)++fullA;
+            if(b[i]>.995F)++fullB;
+        }
+        INFO("fractional="<<fractional<<" fullA="<<fullA<<" fullB="<<fullB);
+        REQUIRE(fractional>100);
+        REQUIRE(fullA>100);
+        REQUIRE(fullB>100);
+
+        const auto soft=readImage(
+            std::get<ImageHandle>(runtime.values().at(weighted)[0]));
+        const auto hard=readImage(
+            std::get<ImageHandle>(runtime.values().at(unweighted)[0]));
+        REQUIRE(soft.size()==hard.size());
+        float reduction=0.0F;
+        for(std::size_t i=0;i<soft.size();i+=4){
+            REQUIRE(std::isfinite(soft[i]));
+            REQUIRE(std::isfinite(hard[i]));
+            REQUIRE(soft[i]<=hard[i]+.004F);
+            reduction+=hard[i]-soft[i];
+        }
+        INFO("weighted reduction="<<reduction);
+        REQUIRE(reduction>1.0F);
+    }
+
+    // Zero transition width exactly reproduces the old disjoint position
+    // masks, while the opacity channels still complement one another.
+    graph.findNode(width)->parameters={{"value",0.0F}};
+    GraphRuntime hardRuntime(graph,registry,gpu);
+    for(int frame=0;frame<6;++frame)
+        REQUIRE(hardRuntime.evaluate(static_cast<double>(frame)/60.0,1.0/60.0,true));
+    const auto a=readImage(std::get<ImageHandle>(hardRuntime.values().at(first)[1]));
+    const auto b=readImage(std::get<ImageHandle>(hardRuntime.values().at(second)[1]));
+    const auto pA=readImage(std::get<ImageHandle>(hardRuntime.values().at(first)[0]));
+    const auto pB=readImage(std::get<ImageHandle>(hardRuntime.values().at(second)[0]));
+    for(std::size_t i=0;i+3<a.size();i+=4){
+        REQUIRE(a[i]+b[i]==Catch::Approx(1.0F).margin(.004F));
+        REQUIRE((a[i]<.01F || a[i]>.99F));
+        const bool visA=!(pA[i]==-1.0F && pA[i+1]==-1.0F);
+        const bool visB=!(pB[i]==-1.0F && pB[i+1]==-1.0F);
+        REQUIRE(visA!=visB);
+    }
+}
+
 TEST_CASE("Species Flow extended nonlinear modes run as different instances of one definition") {
     HiddenContext context;
     NodeRegistry registry;registerBuiltInNodes(registry);
