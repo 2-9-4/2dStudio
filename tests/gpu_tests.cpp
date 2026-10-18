@@ -542,7 +542,7 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
 TEST_CASE("two Species Flow instances fade complementary ink smoothly with weighted splats") {
     HiddenContext context;
     NodeRegistry registry;registerBuiltInNodes(registry);
-    Graph graph;graph.settings={64,64,60};
+    Graph graph;graph.settings={160,160,60};
     const auto noise=graph.addNode("perlin");
     graph.findNode(noise)->parameters={
         {"seed",5.0F},{"scale",5.0F},{"octaves",4.0F},
@@ -569,8 +569,8 @@ TEST_CASE("two Species Flow instances fade complementary ink smoothly with weigh
     const auto unweighted=graph.addNode("particle_splat");
     for(const auto id:{weighted,unweighted})
         graph.findNode(id)->parameters={
-            {"count",1800.0F},{"retention",0.0F},{"opacity",.8F},
-            {"size",2.0F},{"margin",8.0F},
+            {"count",1800.0F},{"retention",.985F},{"opacity",.8F},
+            {"size",2.0F},{"margin",20.0F},
             {"r",1.0F},{"g",0.0F},{"b",0.0F}};
     graph.addLink(first,"positions",weighted,"positions");
     graph.addLink(first,"weights",weighted,"weights");
@@ -591,7 +591,7 @@ TEST_CASE("two Species Flow instances fade complementary ink smoothly with weigh
     GpuRuntime gpu;
     {
         GraphRuntime runtime(graph,registry,gpu);
-        for(int frame=0;frame<8;++frame)
+        for(int frame=0;frame<45;++frame)
             REQUIRE(runtime.evaluate(static_cast<double>(frame)/60.0,1.0/60.0,true));
         const auto a=readImage(std::get<ImageHandle>(runtime.values().at(first)[1]));
         const auto b=readImage(std::get<ImageHandle>(runtime.values().at(second)[1]));
