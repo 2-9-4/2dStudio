@@ -955,7 +955,7 @@ SubgraphDefinition speciesFlow() {
         {"regionEnd", "Region Angle End", K::Input, ValueType::Float,
          true, 6.0F, 0.0F, 6.2831853F},
         {"transitionWidth", "Boundary Fade (radians)", K::Input, ValueType::Float,
-         true, 0.45F, 0.0F, 3.1415926F},
+         true, 0.0F, 0.0F, 3.1415926F},
     };
     // The final SubgraphInterfaceItem constructor argument is a STRING role,
     // not enumOptions. Assign options explicitly: braced pairs in that slot
