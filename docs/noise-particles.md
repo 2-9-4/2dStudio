@@ -57,6 +57,15 @@ trail histories and ink colors; the existing **Mix (Add, factor 1)** combines
 them. The splat UI has a compact color swatch and independently connectable
 R/G/B pins.
 
+## Saved-project compatibility
+
+Projects saved using the former built-ins
+`builtin.particles.species_1_flow` and
+`builtin.particles.species_2_flow` are automatically migrated on load
+to the single `builtin.particles.species_flow` definition. Their former
+motion mode and inside/outside deposition rule are reconstructed, with
+existing per-instance controls preserved.
+
 ## Validation
 
 CI validates that only one species-flow definition is registered, verifies
