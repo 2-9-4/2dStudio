@@ -49,11 +49,16 @@ or parameter modes that explicitly opt out of lowering.
 Open `examples/noise-particles.reaction.json`: an external Perlin image
 feeds **two instances of the same editable Species Flow subgraph**, with
 independent RNG, position/lifetime feedback, speed, and horizontal jitter.
-Each instance selects **Motion** (`Tangent` or `Sine / Cosine`) and
+Each instance selects **Motion** (Tangent, Sine/Cosine, Double Angle,
+Harmonic Rosette, or Soft Tangent) and
 **Deposit In** (`Inside Range` or `Outside Range`) through dropdowns.
 Shared region threshold Float nodes preserve complementary visible
 territories without inter-species forces or shared state.
 The simulation only emits normalized particle positions; ordinary
 root-level Particle Splat nodes assign colors and the existing Mix(Add)
 node composes the trails. Perlin is never hardcoded into the subgraph.
+General-purpose **Fractal Noise** (fBm, billow, ridged, sharp turbulence,
+value fBm) and **Curl Field** generators can be used anywhere in the graph,
+alongside existing Perlin/Worley, Wave and Domain Warp nodes. The Math
+node also offers Tanh, Sinh, Cosh, Sinc and Softsign.
 See [Species Flow docs](docs/noise-particles.md).
