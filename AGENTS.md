@@ -55,6 +55,14 @@ address behavior before calling it and set the sampled source as both `requiresI
 in-region SSA value. Simulation state samplers take raw normalized coordinates; each consumer,
 not the state accessor, owns wrapping/clamping semantics.
 
+SubgraphInterfaceItem C++ FOOTGUN: constructor argument #10 is `role` (std::string),
+not `enumOptions`. NEVER pass a brace-list of enum strings there: it can
+mistakenly call the string iterator-pair overload and throw
+`basic_string::_M_create` when constructing the entire built-in catalog.
+Instead construct the Enum interface item with Control::Enum and then set
+`item.enumOptions = {...}` explicitly; ideally redesign this API to use
+named builder arguments.
+
 Particle rendering: Sands must have exactly ONE registered Species Flow built-in
 (`builtin.particles.species_flow`) instantiated twice on the root graph,
 not separate C++ implementations or two cloned subgraph definitions. Both
