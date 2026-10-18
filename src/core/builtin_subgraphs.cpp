@@ -944,7 +944,7 @@ SubgraphDefinition speciesFlow() {
         {"lifeRate", "Life Decay", K::Input, ValueType::Float,
          true, 0.1F, 0.001F, 1.0F},
         {"motionMode", "Motion", K::Input, ValueType::Float,
-         true, 0.0F, 0.0F, 1.0F, Control::Enum},
+         true, 0.0F, 0.0F, 4.0F, Control::Enum},
         {"depositMode", "Deposit In", K::Input, ValueType::Float,
          true, 0.0F, 0.0F, 1.0F, Control::Enum},
         // Both species must use identical thresholds to get complementary
@@ -957,7 +957,8 @@ SubgraphDefinition speciesFlow() {
     // The final SubgraphInterfaceItem constructor argument is a STRING role,
     // not enumOptions. Assign options explicitly: braced pairs in that slot
     // can invoke std::string(first,last) and throw basic_string::_M_create.
-    result.interface[7].enumOptions = {"Tangent", "Sine / Cosine"};
+    result.interface[7].enumOptions = {"Tangent", "Sine / Cosine",
+        "Double Angle", "Harmonic Rosette", "Soft Tangent"};
     result.interface[8].enumOptions = {"Inside Range", "Outside Range"};
     result.interface.insert(result.interface.end(), {
         {"maxJump", "Tangent Jump Limit", K::Input, ValueType::Float,
@@ -1111,9 +1112,51 @@ SubgraphDefinition speciesFlow() {
                            cosine,{},{},{{"b",-1.0F}});
     const auto sineStep=vectorFrom("Sine Cosine Velocity",sineX,negCos,2440,2300);
 
-    const auto motion=input(body,"motionMode","Motion Dropdown",{2440,2590});
-    const auto velocity=choose("Choose Motion Rule",w(motion,"value"),
-                               sineStep,tangentStep,2700,1820);
+    // More geometric laws; combine the existing ordinary math nodes so each
+    // mode is editable rather than introducing an opaque motion kernel.
+    const auto twice=calc("Double Angle",M::Multiply,1830,2520,
+                          theta,{},{},{{"b",2.0F}});
+    const auto doubleX=calc("Double Angle Cosine",M::Cosine,2050,2520,twice);
+    const auto doubleY=calc("Double Angle Sine",M::Sine,2050,2660,twice);
+    const auto doubleScaledX=calc("Double Angle Jitter",M::Multiply,2270,2520,
+                                  doubleX,xMagnitude);
+    const auto doubleStep=vectorFrom("Double Angle Velocity",
+                                     doubleScaledX,doubleY,2490,2550);
+
+    const auto triple=calc("Triple Angle",M::Multiply,1830,2920,
+                           theta,{},{},{{"b",3.0F}});
+    const auto quintuple=calc("Quintuple Angle",M::Multiply,1830,3060,
+                              theta,{},{},{{"b",5.0F}});
+    const auto rosetteX=calc("Rosette Sine",M::Sine,2050,2920,triple);
+    const auto rosetteY=calc("Rosette Cosine",M::Cosine,2050,3060,quintuple);
+    const auto rosetteScaledX=calc("Rosette Jitter",M::Multiply,2270,2920,
+                                   rosetteX,xMagnitude);
+    const auto rosetteStep=vectorFrom("Harmonic Rosette Velocity",
+                                      rosetteScaledX,rosetteY,2490,2980);
+
+    const auto tanBoost=calc("Tangent Compression Gain",M::Multiply,2220,3410,
+                             safeTan,{},{},{{"b",2.0F}});
+    const auto softTan=calc("Smoothly Bounded Tangent",M::HyperbolicTangent,
+                            2450,3410,tanBoost);
+    const auto softX=calc("Soft Tangent Jitter",M::Multiply,2680,3410,
+                          softTan,xMagnitude);
+    const auto softStep=vectorFrom("Soft Tangent Velocity",softX,softTan,2910,3410);
+
+    const auto motion=input(body,"motionMode","Motion Dropdown",{2440,3760});
+    const auto selectAt=[&](std::string label,float threshold,Wire high,Wire low,
+                            int cx,int cy)->Wire {
+        const auto condition=calc(label+" Threshold",M::Step,cx-220,cy+125,
+                                  {},w(motion,"value"),{},{{"a",threshold}});
+        return choose(std::move(label),condition,high,low,cx,cy);
+    };
+    const auto mode01=selectAt("Sine or Tangent",.5F,
+                               sineStep,tangentStep,2900,1820);
+    const auto mode012=selectAt("Double Angle or Earlier Modes",1.5F,
+                                doubleStep,mode01,3180,2150);
+    const auto mode0123=selectAt("Rosette or Earlier Modes",2.5F,
+                                 rosetteStep,mode012,3440,2470);
+    const auto velocity=selectAt("Choose Motion Rule",3.5F,
+                                 softStep,mode0123,3710,2810);
     const auto speed=input(body,"speed","Particle Motion Speed",{2440,2100});
     const auto gain=vectorMath(body,"Apply Species Speed",V::Scale,{2700,1820});
     connect(velocity,gain,"a");
