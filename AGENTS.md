@@ -55,4 +55,19 @@ address behavior before calling it and set the sampled source as both `requiresI
 in-region SSA value. Simulation state samplers take raw normalized coordinates; each consumer,
 not the state accessor, owns wrapping/clamping semantics.
 
-Particle rendering: Sands uses TWO independent, editable simulation subgraphs, "builtin.particles.species_1_flow" (tangent) and "builtin.particles.species_2_flow" (sine/cosine). Each has exactly two feedback slots (position RG32F and lifetime), accepts an EXTERNAL required scalar image input named "field", and produces one vector field output "positions". No color-specific branches or hardwired internal Perlin; the root example wires one Perlin source to both. Two root-level Particle Splat nodes provide ink color and feed the standard Mix(Add, factor=1) node. CRITICAL: each species' output positions are masked by the shared external field's quantized angle: tangent species inside [regionStart,regionEnd), sine/cosine outside. The root example wires two shared Float controls (3 and 6 radians) to both species. Only their EXPORT positions receive (-1,-1) when masked; state feedback remains unmasked. This complementary territorial masking is essential to the visual effect, even though physics is independent. Don't recreate giant rendering subgraphs or a bespoke image adder. Keep splat ink UI compact. Test independent movement, external image wiring, and Mix(Add) compositing.
+Particle rendering: Sands must have exactly ONE registered Species Flow built-in
+(`builtin.particles.species_flow`) instantiated twice on the root graph,
+not separate C++ implementations or two cloned subgraph definitions. Both
+trigonometric motion branches are regular editable nodes, chosen by the
+`motionMode` enum (0 Tangent, 1 Sine/Cosine). Deposition is independently
+chosen by `depositMode` enum (0 Inside, 1 Outside), checked against common
+`regionStart`/`regionEnd` radians at final particle position. Both sample
+the externally supplied scalar `field`; no baked-in Perlin. The example
+wires two shared Float controls to both instances for complementary borders.
+One instance has private position RG32F, lifetime, and output-only visible
+RG32F state slots; ONLY the first two feed back into physics. Positions
+outside the chosen territory are exported as (-1,-1), which splat ignores.
+Two ordinary root splats provide ink and feed existing Mix(Add, factor 1).
+Keep swatches compact. Tests must verify the actual enum parameter
+interface and both paths, shared definition identity, independent motion,
+complementary visibility, persistence and Mix compositing.
