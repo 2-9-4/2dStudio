@@ -29,7 +29,7 @@
     {
       "id": 2,
       "type": "subgraph",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "subgraphId": "builtin.particles.species_1_flow",
       "label": "Species 1 / Tangent",
       "position": [
@@ -45,13 +45,15 @@
         "maxJump": 64,
         "lifeRate": 0.1,
         "iterations": 1,
-        "reset": 0
+        "reset": 0,
+        "regionStart": 3,
+        "regionEnd": 6
       }
     },
     {
       "id": 3,
       "type": "subgraph",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "subgraphId": "builtin.particles.species_2_flow",
       "label": "Species 2 / Sine Cosine",
       "position": [
@@ -66,7 +68,9 @@
         "angleBins": 1200,
         "lifeRate": 0.1,
         "iterations": 1,
-        "reset": 0
+        "reset": 0,
+        "regionStart": 3,
+        "regionEnd": 6
       }
     },
     {
@@ -134,6 +138,32 @@
         350
       ],
       "parameters": {}
+    },
+    {
+      "id": 8,
+      "type": "float",
+      "typeVersion": 1,
+      "label": "Shared Region Start (radians)",
+      "position": [
+        45,
+        550
+      ],
+      "parameters": {
+        "value": 3
+      }
+    },
+    {
+      "id": 9,
+      "type": "float",
+      "typeVersion": 1,
+      "label": "Shared Region End (radians)",
+      "position": [
+        45,
+        780
+      ],
+      "parameters": {
+        "value": 6
+      }
     }
   ],
   "links": [
@@ -212,6 +242,50 @@
       "to": {
         "node": 7,
         "socket": "image"
+      }
+    },
+    {
+      "id": 8,
+      "from": {
+        "node": 8,
+        "socket": "value"
+      },
+      "to": {
+        "node": 2,
+        "socket": "regionStart"
+      }
+    },
+    {
+      "id": 9,
+      "from": {
+        "node": 8,
+        "socket": "value"
+      },
+      "to": {
+        "node": 3,
+        "socket": "regionStart"
+      }
+    },
+    {
+      "id": 10,
+      "from": {
+        "node": 9,
+        "socket": "value"
+      },
+      "to": {
+        "node": 2,
+        "socket": "regionEnd"
+      }
+    },
+    {
+      "id": 11,
+      "from": {
+        "node": 9,
+        "socket": "value"
+      },
+      "to": {
+        "node": 3,
+        "socket": "regionEnd"
       }
     }
   ],
