@@ -128,7 +128,7 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     const auto species=findSpecies("builtin.particles.species_flow");
     REQUIRE(species!=builtInSubgraphs().end());
     REQUIRE(species->id=="builtin.particles.species_flow");
-    REQUIRE(species->version==1);
+    REQUIRE(species->version==2);
     REQUIRE(std::ranges::count_if(builtInSubgraphs(),[](const auto& def){
         return def.id.starts_with("builtin.particles.");
     })==1);
@@ -154,17 +154,35 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     INFO(nlohmann::json(errors).dump());
     REQUIRE(errors.empty());
     REQUIRE(species->execution==SubgraphExecution::Simulation);
-    REQUIRE(species->stateSlots.size()==3);
+    REQUIRE(species->stateSlots.size()==4);
     REQUIRE(species->stateSlots.front().highPrecision);
-    REQUIRE(species->stateSlots.back().highPrecision);
-    REQUIRE(species->stateSlots.back().key=="visible");
+    REQUIRE(species->stateSlots[2].highPrecision);
+    REQUIRE(species->stateSlots[2].key=="visible");
+    REQUIRE(species->stateSlots[3].key=="inkWeight");
+    REQUIRE(species->stateSlots[3].type==ValueType::ScalarField);
     REQUIRE(species->interface.front().key=="field");
     REQUIRE(species->interface.front().contract==SocketContract::ScalarFieldOnly);
-    REQUIRE(species->interface.back().key=="positions");
+    REQUIRE(species->interface[species->interface.size()-2].key=="positions");
+    REQUIRE(species->interface.back().key=="weights");
+    REQUIRE(species->interface.back().contract==SocketContract::ScalarFieldOnly);
+    const auto fadeInput=std::ranges::find_if(species->interface,[](const auto& item){
+        return item.key=="transitionWidth";
+    });
+    REQUIRE(fadeInput!=species->interface.end());
+    REQUIRE(fadeInput->defaultValue==0.0F);
     REQUIRE(std::ranges::count(species->body.nodes(),"texture_sample",
                                &NodeRecord::type)==2);
     REQUIRE(std::ranges::count(species->body.nodes(),"simulation_next_state",
-                               &NodeRecord::type)==3);
+                               &NodeRecord::type)==4);
+    REQUIRE(std::ranges::any_of(species->body.nodes(),[](const auto& n){
+        return n.label=="Smooth Entrance";
+    }));
+    REQUIRE(std::ranges::any_of(species->body.nodes(),[](const auto& n){
+        return n.label=="Smooth Exit";
+    }));
+    REQUIRE(std::ranges::any_of(species->body.nodes(),[](const auto& n){
+        return n.label=="Hard or Soft Territory";
+    }));
     for(const auto label:{"Choose Motion Rule","Choose Inside or Outside Range",
                           "Visible Only in Assigned Territory",
                           "Sample Field at Deposited Position"})
@@ -203,12 +221,15 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
             }));
         }
     }
-    const auto visiblePrevious=std::ranges::find_if(species->body.nodes(),
-        [](const auto& node){return node.label=="Prior Visible Positions (Unused)";});
-    REQUIRE(visiblePrevious!=species->body.nodes().end());
-    REQUIRE(std::ranges::none_of(species->body.links(),[&](const auto& edge){
-        return edge.fromNode==visiblePrevious->id;
-    }));
+    for(const auto label:{"Prior Visible Positions (Unused)","Prior Ink Weight (Unused)"}){
+        const auto previous=std::ranges::find_if(species->body.nodes(),[&](const auto& n){
+            return n.label==label;
+        });
+        REQUIRE(previous!=species->body.nodes().end());
+        REQUIRE(std::ranges::none_of(species->body.links(),[&](const auto& edge){
+            return edge.fromNode==previous->id;
+        }));
+    }
     REQUIRE(std::ranges::none_of(species->body.nodes(),[](const auto& n){
         return n.type=="perlin" || n.type=="particle_step" ||
                n.type=="particle_splat" || n.type=="simulation_channel";
@@ -249,14 +270,15 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
         {"seed",14.0F},{"speed",1.0F},{"horizontalMin",1.0F},
         {"horizontalMax",3.0F},{"lifeRate",.1F},{"maxJump",64.0F},
         {"angleBins",1200.0F},{"iterations",1.0F},
-        {"motionMode",0.0F},{"depositMode",0.0F}};
+        {"motionMode",0.0F},{"depositMode",0.0F},{"transitionWidth",0.0F}};
     const auto simulation2=graph.addNode("subgraph");
     graph.findNode(simulation2)->subgraphId=species->id;
     graph.findNode(simulation2)->parameters={
         {"seed",314.0F},{"speed",1.0F},{"horizontalMin",.1F},
         {"horizontalMax",1.0F},{"lifeRate",.1F},
         {"angleBins",1200.0F},{"iterations",1.0F},
-        {"motionMode",1.0F},{"depositMode",1.0F},{"maxJump",64.0F}};
+        {"motionMode",1.0F},{"depositMode",1.0F},{"maxJump",64.0F},
+        {"transitionWidth",0.0F}};
     const auto regionStart=graph.addNode("float");
     graph.findNode(regionStart)->parameters={{"value",3.0F}};
     const auto regionEnd=graph.addNode("float");
@@ -280,6 +302,8 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     }
     graph.addLink(simulation1,"positions",splat1,"positions");
     graph.addLink(simulation2,"positions",splat2,"positions");
+    graph.addLink(simulation1,"weights",splat1,"weights");
+    graph.addLink(simulation2,"weights",splat2,"weights");
     graph.addLink(splat1,"image",mix,"a");
     graph.addLink(splat2,"image",mix,"b");
     graph.addLink(mix,"result",output,"image");
@@ -294,6 +318,12 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     REQUIRE(graph.findNode(simulation1)->parameters.value("depositMode",-1.0F)==0.0F);
     REQUIRE(graph.findNode(simulation2)->parameters.value("depositMode",-1.0F)==1.0F);
     REQUIRE(std::ranges::count(graph.nodes(),"particle_splat",&NodeRecord::type)==2);
+    REQUIRE(registry.descriptor("particle_splat")->version==2);
+    const auto splatDesc=registry.descriptor("particle_splat");
+    REQUIRE(std::ranges::any_of(splatDesc->sockets,[](const auto& item){
+        return item.key=="weights" && item.optional &&
+               item.contract==SocketContract::ScalarFieldOnly;
+    }));
     REQUIRE(std::ranges::count(graph.nodes(),"perlin",&NodeRecord::type)==1);
     REQUIRE(std::ranges::count(graph.nodes(),"float",&NodeRecord::type)==2);
     REQUIRE(deserializeProject(serializeProject(graph),registry).compile(registry).valid);
