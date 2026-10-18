@@ -138,7 +138,8 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
                             "builtin.particles.species_2_flow"})
         REQUIRE(findSpecies(legacy)==builtInSubgraphs().end());
     for(const auto& [key,options]:std::array<std::pair<std::string,std::vector<std::string>>,2>{
-            std::pair{"motionMode",std::vector<std::string>{"Tangent","Sine / Cosine"}},
+            std::pair{"motionMode",std::vector<std::string>{"Tangent","Sine / Cosine",
+                "Double Angle","Harmonic Rosette","Soft Tangent"}},
             std::pair{"depositMode",std::vector<std::string>{"Inside Range","Outside Range"}}}){
         const auto param=std::ranges::find_if(species->interface,[&](const auto& item){
             return item.key==key;
@@ -147,7 +148,7 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
         REQUIRE(param->control==ParameterDescriptor::Control::Enum);
         REQUIRE(param->enumOptions==options);
         REQUIRE(param->minimum==0.0F);
-        REQUIRE(param->maximum==1.0F);
+        REQUIRE(param->maximum==(key=="motionMode"?4.0F:1.0F));
     }
     const auto errors=validateSubgraph(*species,registry);
     INFO(nlohmann::json(errors).dump());
@@ -206,6 +207,7 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     REQUIRE(update.find("tan(")!=std::string::npos);
     REQUIRE(update.find("sin(")!=std::string::npos);
     REQUIRE(update.find("cos(")!=std::string::npos);
+    REQUIRE(update.find("tanh(")!=std::string::npos);
     // Shader-only validation uses its own hidden OpenGL context. Destroy it
     // before the runtime test creates another GLFW context.
     {
