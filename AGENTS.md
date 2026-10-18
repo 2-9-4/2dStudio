@@ -138,13 +138,19 @@ chosen by `depositMode` enum (0 Inside, 1 Outside), checked against common
 `regionStart`/`regionEnd` radians at final particle position. Both sample
 the externally supplied scalar `field`; no baked-in Perlin. The example
 wires two shared Float controls to both instances for complementary borders.
-One instance has private position RG32F, lifetime, and output-only visible
-RG32F state slots; ONLY the first two feed back into physics. Positions
-outside the chosen territory are exported as (-1,-1), which splat ignores.
-Two ordinary root splats provide ink and feed existing Mix(Add, factor 1).
-Keep swatches compact. Tests must verify the actual enum parameter
-interface and both paths, shared definition identity, independent motion,
-complementary visibility, persistence and Mix compositing.
+Each instance has private position RG32F, lifetime, output-only visible
+RG32F, and output-only scalar ink-weight state slots; ONLY the first two feed
+back into physics. The `transitionWidth` input controls smoothly blended
+territory weights around the shared `regionStart`/`regionEnd` angular
+thresholds. Width 0 restores the hard binary masks for old saved projects.
+The example connects one shared fade Float to both instances, and routes
+both `positions` and `weights` to their respective ordinary root-level
+Particle Splats. Splats accept optional scalar per-agent opacity weights,
+defaulting to fully opaque when unconnected; do not introduce a
+species-specific compositor. The two splats feed Mix(Add, factor 1).
+Keep swatches compact. Tests must verify complementary fractional weights
+(sum 1 for coincident particle positions), hard-edge compatibility, actual
+weighted splat rasterization, independent motion, persistence, and Mix.
 
 Noise toolkit: Fractal Noise is ONE generic Scalar Field node with gradient fBm,
 billow, ridged, sharp turbulence, and value fBm modes; it accepts optional
