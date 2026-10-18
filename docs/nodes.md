@@ -98,6 +98,10 @@ with opposite deposit modes and different motion modes. See
     sign and trigonometric operations.
   - **Modulo**, **Step**, **Hypotenuse**, **Smoothstep**, and **Multiply Accumulate** —
     remaining utility operations.
+  - **Tanh**, **Sinh**, **Cosh** — hyperbolic nonlinear transforms; Sinh/Cosh
+    inputs are clamped to ±15 to prevent overflow.
+  - **Sinc** — unnormalized sin(x)/x with a stable series limit at zero;
+    **Softsign** — x/(1+abs(x)), a bounded response useful for stable velocity fields.
 
 - **Vector Math** (`vector_math`) — Performs explicit 2D vector operations on a Vector or
   Vector Field. The active operation determines which sockets are visible: for example,
@@ -142,6 +146,21 @@ with opposite deposit modes and different motion modes. See
 - **Color to Luminance** (`color_luminance`) — Explicitly narrows a Color Image to a weighted
   RGB luminance Scalar Field.
 - **Color to RG** (`color_rg`) — Explicitly narrows a Color Image to an RG Vector Field.
+
+### Procedural noise fields
+
+- **Fractal Noise** (`fractal_noise`) — a reusable Scalar Field generator
+  with selectable **Gradient fBm, Billow, Ridged, Sharp Turbulence, Value fBm**.
+  Optional Vector Numeric Coordinates (defaults to canvas UV) allow Domain Warp;
+  optional Numeric Frequency accepts per-pixel modulation. Seed, Octaves,
+  Gain, Lacunarity, and XY Offset are exposed as parameters. It outputs a
+  clamped 0–1 scalar image suitable for any field consumer, not only particles.
+- **Curl Field** (`curl_field`) — turns any Scalar Field (Perlin, Fractal,
+  Worley, image-derived, etc.) into a perpendicular-gradient Vector Field,
+  using central differences and configurable Strength and optional normalized
+  direction. A general vector-field operator, not a particle-only feature.
+- Existing **Worley / Voronoi Noise**, **Domain Warp**, **Gradient**, and
+  **Wave** remain independent composable primitives.
 
 ### Filters and utilities
 
