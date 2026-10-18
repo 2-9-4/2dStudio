@@ -31,6 +31,8 @@ void main(){
 
 constexpr const char* kVertex = R"GLSL(#version 430
 layout(binding=0)uniform sampler2D positions;
+layout(binding=1)uniform sampler2D particleWeights;
+uniform int hasParticleWeights;
 uniform int particleCount;
 uniform vec2 canvasSize;
 uniform float marginPixels;
@@ -50,6 +52,10 @@ void main(){
     vec2 uv=texelFetch(positions,cell,0).rg;
     uint h=hash(uint(gl_VertexID)+uint(total)*17u);
     weight=0.25+0.75*float(h>>8u)*(1.0/16777216.0);
+    // Optional per-agent opacity image, indexed by particle slot, not the
+    // output canvas UV. No weight input => identical legacy splat behavior.
+    if(hasParticleWeights!=0)
+        weight*=clamp(texelFetch(particleWeights,cell,0).r,0.0,1.0);
     // Masked-out branch slots use an exact sentinel; real agents may roam
     // outside the canvas and should still render clamped to the inset.
     if(all(equal(uv,vec2(-1.0)))) {
@@ -114,9 +120,10 @@ GLuint makeProgram() {
 class ParticleSplatNode final : public node_support::ParameterNode {
 public:
     static NodeDescriptor describe() {
-        return NodeDescriptorBuilder{"particle_splat",1,"Particle Splat / Trails","Simulation"}
+        return NodeDescriptorBuilder{"particle_splat",2,"Particle Splat / Trails","Simulation"}
             .input("positions","Particle Positions (UV)",ValueType::VectorField)
-                        .output("image","Accumulated Trails",ValueType::ColorImage)
+            .optionalInput("weights","Particle Opacity Weights",ValueType::ScalarField)
+            .output("image","Accumulated Trails",ValueType::ColorImage)
             .integerParameter("count","Visible Particles",1000,1,100000)
             .floatParameter("retention","Frame Retention",0.985F,0.0F,1.0F)
             .floatParameter("opacity","Point Opacity",0.375F,0.0F,1.0F)
@@ -148,6 +155,9 @@ public:
                   std::span<Value> outputs)override{
         if(outputs.empty())return;
         const auto positions=imageAt(inputs,0);
+        const auto weights=imageAt(inputs,1);
+        if(weights && (weights.width!=positions.width || weights.height!=positions.height))
+            throw std::invalid_argument("Particle Splat weights must match particle positions dimensions");
         if(!positions){
             outputs[0]=Value{};return;
         }
@@ -219,6 +229,9 @@ public:
             glUseProgram(pointProgram_);
             bindTexture(0,positions.texture);
             uniform(pointProgram_,"positions",0);
+            if(weights)bindTexture(1,weights.texture);
+            uniform(pointProgram_,"particleWeights",1);
+            uniform(pointProgram_,"hasParticleWeights",weights?1:0);
             uniform(pointProgram_,"particleCount",count);
             uniform(pointProgram_,"marginPixels",margin);
             uniform(pointProgram_,"pointSize",pointSize);
