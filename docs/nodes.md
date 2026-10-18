@@ -25,14 +25,31 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **Canvas Coordinates** (`coordinates`) — Outputs one Vector Field containing normalized XY
   canvas coordinates. Enable **Pixels** to output pixel-center coordinates instead.
 
-### Independent species particle flow and splatting
+### Reusable species particle flow and splatting
 
-- **Species 1 Flow (Tangent)** (`builtin.particles.species_1_flow`) and **Species 2 Flow (Sine/Cosine)** (`builtin.particles.species_2_flow`) are independent editable simulation subgraphs. Each accepts an external scalar `field` image, independent random seed, speed, jitter and lifetime controls, and exports one `positions` Vector Field. Both read the **same regionStart/regionEnd interval** (shared Float controls in the example). Species 1 exposes positions inside that field-angle territory; Species 2 exposes positions outside it. The invisible sentinel is only applied to the exported position, never to physics feedback. No built-in Perlin or color-specific simulation semantics exist.
-- **Particle Splat / Trails** (`particle_splat`) renders one species' positions with RGB ink, opacity, retention, point size, brush and inset controls. The UI shows a compact swatch and short optional R/G/B pins on one row.
-- **Mix (Add)** (`mix` with mode Add, factor 1) combines both root-level splat images; standard postprocessing can follow.
-- **Pixel Delta to UV** (`pixel_delta_to_uv`) converts pixel velocity to normalized UV inside each simulation.
+- **Species Flow** (`builtin.particles.species_flow`) is one reusable,
+  editable simulation subgraph. Instantiate it multiple times for independent
+  particle systems. It accepts an external scalar `field` image and exports
+  `positions` (Vector Field), with no baked-in Perlin and no color-specific
+  behavior. **Motion** is a dropdown (`Tangent` / `Sine / Cosine`);
+  **Deposit In** is an independent dropdown (`Inside Range` /
+  `Outside Range`). `regionStart` and `regionEnd` are radians defining the
+  visible `[start,end)` interval. Ineligible exported positions receive the
+  `(-1,-1)` sentinel; physical position/lifetime feedback keeps evolving.
+  Also exposes Seed, Speed, Horizontal Jitter Min/Max, Angle Bins, Life Decay,
+  Tangent Jump Limit, Reset, and Iterations. Three GPU slots (position,
+  lifetime, export-only visible positions) support this interface.
+- **Particle Splat / Trails** (`particle_splat`) is a standard root-level
+  native splat with optional R/G/B pins, compact color swatch, opacity,
+  retention, size, brush roundness, and canvas inset.
+- **Mix (Add)** (`mix`, mode Add and factor 1) composites independent
+  splat histories with no special image-add node.
+- **Pixel Delta to UV** (`pixel_delta_to_uv`) converts pixel motion to UV
+  coordinates within the Species Flow graph.
 
-Connect Perlin (or any scalar image source) to each species' `field` socket. See [the example](noise-particles.md).
+The example wires one Perlin field into two *instances of the same subgraph*,
+with opposite deposit modes and different motion modes. See
+[Species Flow artwork](noise-particles.md).
 
 ### Generators
 
