@@ -44,17 +44,16 @@ Inspector and execution-debug settings are session-only. Lowering/type errors an
 errors are attached to the affected region; native evaluation remains available only for nodes
 or parameter modes that explicitly opt out of lowering.
 
-## Independent species particle artwork
+## Species Flow particle artwork
 
-Open `examples/noise-particles.reaction.json`: one external Perlin generator
-feeds two separate, editable **Species 1 Flow (Tangent)** and
-**Species 2 Flow (Sine/Cosine)** simulation subgraphs. Each exposes a
-required scalar `field` image input and emits a single particle positions
-field. There is no inter-species interaction or hidden Perlin generator.
-Two shared Float nodes set the same field-angle region interval on both:
-Species 1 deposits inside, Species 2 outside, restoring the original
-complementary spatial territories **without coupling their physics**.
-Only exported positions are masked; both simulations continue moving.
-Root-level Particle Splat nodes color each species independently; the
-existing Mix node (Add mode, factor 1) combines their images.
-See [species flow documentation](docs/noise-particles.md).
+Open `examples/noise-particles.reaction.json`: an external Perlin image
+feeds **two instances of the same editable Species Flow subgraph**, with
+independent RNG, position/lifetime feedback, speed, and horizontal jitter.
+Each instance selects **Motion** (`Tangent` or `Sine / Cosine`) and
+**Deposit In** (`Inside Range` or `Outside Range`) through dropdowns.
+Shared region threshold Float nodes preserve complementary visible
+territories without inter-species forces or shared state.
+The simulation only emits normalized particle positions; ordinary
+root-level Particle Splat nodes assign colors and the existing Mix(Add)
+node composes the trails. Perlin is never hardcoded into the subgraph.
+See [Species Flow docs](docs/noise-particles.md).
