@@ -4,6 +4,70 @@
 
 The built-in-node guide describes GPU lowering, parameter serialization, and editor controls.
 
+## Architecture philosophy — start generic, not feature-specific
+
+The aim is a *small composable visual programming language* for procedural art, not
+a catalog of hardcoded artworks. Before implementing an example, identify its
+**minimal reusable building blocks**, define their typed inputs/outputs and
+orthogonal controls, and assemble the example entirely from those blocks.
+Treat project examples as graph compositions, NOT as reasons for special-purpose
+C++ pipelines. It should be possible to change the aesthetic by reconnecting
+existing nodes rather than asking for another kernel rewrite.
+
+- **Separate physics, data sources, rendering, and compositing.** A particle
+  simulation outputs positions; a separate Splat owns ink and trail history;
+  Mix composites images. Noise is an external input, never embedded in the
+  particle simulation. Geometry and colors don't belong in motion semantics.
+- **Build one parameterized definition, instantiate many times.** When two
+  subgraphs differ only by one trigonometric function, numeric range, mask
+  polarity, seed, or color, those are **independent exposed parameters** (enum,
+  float, field, or vector socket). Don't fork subgraphs, add color-coded IDs,
+  or generate near-duplicate C++ definitions. Avoid one-argument built-in
+  factories that merely produce redundant copies of the same topology.
+- **Orthogonal selection is a core principle.** Choosing a velocity law must
+  not dictate where deposition is allowed. Expose separate controls for
+  algorithm, region, polarity, seed, gain, etc.; model their implementation
+  as ordinary math/Select nodes visible and editable in the graph.
+- **The absence of force coupling does not imply the absence of shared visual
+  rules.** Two particle species can have independent lifetimes and positions
+  while being spatially partitioned by a shared read-only field and
+  complementary output masks. Audit *both* physical behavior and visual
+  constraints before splitting an old simulation. Mask output positions,
+  never feedback, unless that is the user's explicit requirement.
+- **Prefer general math and field operators to custom artwork nodes.** Add
+  nonlinear functions to the canonical Math operation vocabulary; make noise
+  a scalar field that any flow, color ramp, or domain warp can consume. Reuse
+  existing Perlin, Worley, Domain Warp, Wave, Gradient, Combine/Separate,
+  Select, Splat, and Mix nodes before proposing a new family.
+- **Check the catalog before adding nodes.** Assess whether the request is
+  expressible with existing operations or a simple selector. When a new node
+  is justified, it should be useful outside the originating example and
+  obey the existing typing, serialization, CPU/GPU, and UI conventions.
+- **Plan architecture before wiring the example.** Write down the graph at
+  the root and subgraph levels, state ownership, socket semantics, and
+  compositional controls first. Avoid implementing a monolith that then
+  requires multiple rounds of de-monolithization into a generic graph.
+- **Test both abstraction and aesthetic invariants.** Tests should enforce
+  only one registered Species Flow definition, independent per-instance
+  RNG/state, correct enum behavior, correct shared-field territory masks,
+  positive/nontrivial output, Mix(Add) semantics, and saved-project migration.
+  Add checks of actual rendered/sampled field values, not only node IDs.
+- **Preserve persisted enum IDs.** Append rather than reorder Math operation
+  IDs and motion modes; when replacing identifiers, migrate old projects.
+  Keep shader lowering and CPU numeric implementations consistent and add a
+  GPU test for genuinely new operations.
+
+Potential footguns and ergonomics to improve:
+- SubgraphInterfaceItem's final positional constructor argument is
+  **std::string role**, not enumOptions. Assign enumOptions explicitly or
+  replace that positional constructor with a safe named builder.
+- The simulation engine currently requires a Next State node as its output
+  endpoint, so a presentation-only masked output uses a third state slot;
+  don't confuse that bookkeeping requirement with physics coupling.
+- Headless OpenGL regression tests must have sequential hidden contexts and
+  scoped GPU runtime lifetimes to avoid teardown crashes. Keep new tests
+  bounded in resolution and frame count.
+
 When a root node is also available in a simulation subgraph, keep its custom editor available in
 the subgraph canvas. Exclude any native-only controls from the contextual subgraph descriptor and
 validate persisted values that would prevent simulation shader lowering.
