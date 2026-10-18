@@ -491,6 +491,118 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     }
 }
 
+TEST_CASE("Fractal Noise modes are seeded editable scalar fields and compose into Curl Field") {
+    HiddenContext context;
+    NodeRegistry registry;registerBuiltInNodes(registry);
+    const auto* fractalDesc=registry.descriptor("fractal_noise");
+    const auto* curlDesc=registry.descriptor("curl_field");
+    REQUIRE(fractalDesc!=nullptr);
+    REQUIRE(curlDesc!=nullptr);
+    REQUIRE(fractalDesc->sockets.back().contract==SocketContract::ScalarFieldOnly);
+    REQUIRE(curlDesc->sockets.back().contract==SocketContract::VectorFieldOnly);
+    const auto modeParam=std::ranges::find(fractalDesc->parameters,"mode",
+                                            &ParameterDescriptor::key);
+    REQUIRE(modeParam!=fractalDesc->parameters.end());
+    REQUIRE(modeParam->enumOptions.size()==5);
+    std::vector<std::vector<float>> images;
+    for(int mode=0;mode<5;++mode) {
+        Graph graph;graph.settings={48,48,60};
+        const auto noise=graph.addNode("fractal_noise");
+        graph.findNode(noise)->parameters={
+            {"mode",static_cast<float>(mode)},{"frequency",7.0F},{"seed",31.0F},
+            {"octaves",5.0F},{"gain",.52F},{"lacunarity",2.0F},
+            {"offsetX",0.0F},{"offsetY",0.0F}};
+        const auto curl=graph.addNode("curl_field");
+        graph.findNode(curl)->parameters={{"strength",16.0F},{"normalize",0.0F}};
+        graph.addLink(noise,"image",curl,"source");
+        REQUIRE(graph.compile(registry).valid);
+        GpuRuntime gpu;
+        GraphRuntime runtime(graph,registry,gpu);
+        REQUIRE(runtime.evaluate(0.0,0.0,false));
+        const auto field=std::get<ImageHandle>(runtime.values().at(noise)[0]);
+        const auto vectors=std::get<ImageHandle>(runtime.values().at(curl)[0]);
+        REQUIRE(field.semanticType==ValueType::ScalarField);
+        REQUIRE(vectors.semanticType==ValueType::VectorField);
+        const auto pixels=readImage(field);
+        const auto curls=readImage(vectors);
+        REQUIRE(pixels.size()==48U*48U*4U);
+        REQUIRE(curls.size()==pixels.size());
+        float minimum=1.0F,maximum=0.0F;
+        std::size_t dynamicVectors=0;
+        for(std::size_t pixel=0;pixel<pixels.size();pixel+=4){
+            const float value=pixels[pixel];
+            REQUIRE(std::isfinite(value));
+            REQUIRE(value>=0.0F);
+            REQUIRE(value<=1.0F);
+            minimum=std::min(minimum,value);
+            maximum=std::max(maximum,value);
+            REQUIRE(std::isfinite(curls[pixel]));
+            REQUIRE(std::isfinite(curls[pixel+1]));
+            if(std::hypot(curls[pixel],curls[pixel+1])>.01F)
+                ++dynamicVectors;
+        }
+        INFO("style="<<mode<<" min="<<minimum<<" max="<<maximum
+             <<" nonzero curls="<<dynamicVectors);
+        REQUIRE(maximum-minimum>.02F);
+        REQUIRE(dynamicVectors>200);
+        images.push_back(pixels);
+    }
+    for(std::size_t style=1;style<images.size();++style){
+        std::size_t differences=0;
+        for(std::size_t k=0;k<images.front().size();k+=4)
+            if(std::abs(images.front()[k]-images[style][k])>.01F)
+                ++differences;
+        REQUIRE(differences>200);
+    }
+
+    // Changing only the seed or coordinate domain must affect the noise;
+    // this remains a generic coordinate-field generator, not a Perlin clone.
+    Graph warped;warped.settings={48,48,60};
+    const auto coords=warped.addNode("domain_warp");
+    warped.findNode(coords)->parameters={{"xOffset",.13F},{"yOffset",-.08F},
+                                        {"strength",1.0F}};
+    const auto base=warped.addNode("fractal_noise");
+    const auto shifted=warped.addNode("fractal_noise");
+    warped.findNode(base)->parameters={{"mode",2.0F},{"seed",11.0F},
+                                       {"frequency",6.0F},{"octaves",4.0F}};
+    warped.findNode(shifted)->parameters={{"mode",2.0F},{"seed",27.0F},
+                                          {"frequency",6.0F},{"octaves",4.0F}};
+    warped.addLink(coords,"coordinates",shifted,"coordinates");
+    REQUIRE(warped.compile(registry).valid);
+    GpuRuntime gpu;
+    GraphRuntime runtime(warped,registry,gpu);
+    REQUIRE(runtime.evaluate(0,0,false));
+    const auto a=readImage(std::get<ImageHandle>(runtime.values().at(base)[0]));
+    const auto c=readImage(std::get<ImageHandle>(runtime.values().at(shifted)[0]));
+    REQUIRE(a.size()==c.size());
+    std::size_t changed=0;
+    for(std::size_t i=0;i<a.size();i+=4)
+        if(std::abs(a[i]-c[i])>.01F)++changed;
+    REQUIRE(changed>300);
+}
+
+TEST_CASE("new nonlinear Math operations preserve finite values and stable limits") {
+    REQUIRE(kMathOperationNames[31]=="Tanh");
+    REQUIRE(kMathOperationNames[32]=="Sinh");
+    REQUIRE(kMathOperationNames[33]=="Cosh");
+    REQUIRE(kMathOperationNames[34]=="Sinc");
+    REQUIRE(kMathOperationNames[35]=="Softsign");
+    REQUIRE(applyMathOperation(MathOperation::Sinc,0,0,0,0,1,0,1)==Catch::Approx(1.0F));
+    REQUIRE(applyMathOperation(MathOperation::Sinc,.001F,0,0,0,1,0,1)==
+            Catch::Approx(std::sin(.001F)/.001F).margin(.0001F));
+    REQUIRE(applyMathOperation(MathOperation::HyperbolicTangent,2,0,0,0,1,0,1)==
+            Catch::Approx(std::tanh(2.0F)));
+    REQUIRE(applyMathOperation(MathOperation::Softsign,-2,0,0,0,1,0,1)==
+            Catch::Approx(-2.0F/3.0F));
+    for(const auto value:{-30.0F,0.0F,30.0F})
+        for(const auto operation:{MathOperation::HyperbolicSine,
+                                  MathOperation::HyperbolicCosine,
+                                  MathOperation::Sinc,
+                                  MathOperation::Softsign,
+                                  MathOperation::HyperbolicTangent})
+            REQUIRE(std::isfinite(applyMathOperation(operation,value,0,0,0,1,0,1)));
+}
+
 TEST_CASE("unused legacy subgraphs do not invalidate the text test root graph") {
     NodeRegistry registry;
     registerBuiltInNodes(registry);
