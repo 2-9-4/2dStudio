@@ -135,6 +135,13 @@ TEST_CASE("independent species flow graphs sample an external field and mix thei
     }));
     for(const auto& species:{&*species1,&*species2}){
         INFO(species->name);
+        REQUIRE(species->version==2);
+        REQUIRE(std::ranges::any_of(species->interface,[](const auto& item){
+            return item.key=="regionStart";
+        }));
+        REQUIRE(std::ranges::any_of(species->interface,[](const auto& item){
+            return item.key=="regionEnd";
+        }));
         const auto errors=validateSubgraph(*species,registry);
         INFO(nlohmann::json(errors).dump());
         REQUIRE(errors.empty());
@@ -145,7 +152,15 @@ TEST_CASE("independent species flow graphs sample an external field and mix thei
         REQUIRE(species->interface.front().contract==SocketContract::ScalarFieldOnly);
         REQUIRE(species->interface.back().key=="positions");
         REQUIRE(std::ranges::count(species->body.nodes(),"texture_sample",
-                                   &NodeRecord::type)==1);
+                                   &NodeRecord::type)==2);
+        // Territory clipping is a final output transformation, not a new
+        // feedback state or another force between species.
+        REQUIRE(std::ranges::any_of(species->body.nodes(),[](const auto& node){
+            return node.label=="Visible Only in Assigned Territory";
+        }));
+        REQUIRE(std::ranges::any_of(species->body.nodes(),[](const auto& node){
+            return node.label=="Sample Field at Deposited Position";
+        }));
         REQUIRE(std::ranges::count(species->body.nodes(),"simulation_next_state",
                                    &NodeRecord::type)==2);
         REQUIRE(std::ranges::none_of(species->body.nodes(),[](const auto& node){
@@ -194,6 +209,10 @@ TEST_CASE("independent species flow graphs sample an external field and mix thei
         {"seed",314.0F},{"speed",1.0F},{"horizontalMin",.1F},
         {"horizontalMax",1.0F},{"lifeRate",.1F},
         {"angleBins",1200.0F},{"iterations",1.0F}};
+    const auto regionStart=graph.addNode("float");
+    graph.findNode(regionStart)->parameters={{"value",3.0F}};
+    const auto regionEnd=graph.addNode("float");
+    graph.findNode(regionEnd)->parameters={{"value",6.0F}};
     const auto splat1=graph.addNode("particle_splat");
     graph.findNode(splat1)->parameters={
         {"count",1000.0F},{"retention",.985F},{"opacity",.375F},
@@ -207,6 +226,10 @@ TEST_CASE("independent species flow graphs sample an external field and mix thei
     const auto output=graph.addNode("output");
     graph.addLink(field,"image",simulation1,"field");
     graph.addLink(field,"image",simulation2,"field");
+    for(const auto species:{simulation1,simulation2}){
+        graph.addLink(regionStart,"value",species,"regionStart");
+        graph.addLink(regionEnd,"value",species,"regionEnd");
+    }
     graph.addLink(simulation1,"positions",splat1,"positions");
     graph.addLink(simulation2,"positions",splat2,"positions");
     graph.addLink(splat1,"image",mix,"a");
@@ -219,6 +242,7 @@ TEST_CASE("independent species flow graphs sample an external field and mix thei
     REQUIRE(std::ranges::count(graph.nodes(),"subgraph",&NodeRecord::type)==2);
     REQUIRE(std::ranges::count(graph.nodes(),"particle_splat",&NodeRecord::type)==2);
     REQUIRE(std::ranges::count(graph.nodes(),"perlin",&NodeRecord::type)==1);
+    REQUIRE(std::ranges::count(graph.nodes(),"float",&NodeRecord::type)==2);
     REQUIRE(deserializeProject(serializeProject(graph),registry).compile(registry).valid);
     Graph custom;
     custom.subgraphs().push_back(*species1);
@@ -236,18 +260,87 @@ TEST_CASE("independent species flow graphs sample an external field and mix thei
         REQUIRE(runtime.evaluate(static_cast<double>(i)/60.0,1.0/60.0,true));
     const auto next1=readImage(std::get<ImageHandle>(runtime.values().at(simulation1)[0]));
     const auto next2=readImage(std::get<ImageHandle>(runtime.values().at(simulation2)[0]));
+    // Read back the shared input field and independently classify the
+    // exported positions by sampling the same field at each final position.
+    // This verifies actual spatial separation, not just a masked-count test.
+    const auto fieldImage=std::get<ImageHandle>(runtime.values().at(field)[0]);
+    const auto fieldPixels=readImage(fieldImage);
+    const int width=fieldImage.width,height=fieldImage.height;
+    REQUIRE(width>2);
+    REQUIRE(height>2);
+    const auto sampleAngle=[&](float u,float v){
+        const auto axis=[](float coord,int size){
+            const float wrap=coord-std::floor(coord);
+            const float inside=std::clamp(wrap,.5F/size,1.0F-.5F/size);
+            const float pixel=inside*size-.5F;
+            const int lo=std::clamp(static_cast<int>(std::floor(pixel)),0,size-1);
+            const int hi=std::min(lo+1,size-1);
+            return std::array<float,3>{static_cast<float>(lo),
+                                       static_cast<float>(hi),pixel-lo};
+        };
+        const auto cx=axis(u,width),cy=axis(v,height);
+        const int x0=static_cast<int>(cx[0]),x1=static_cast<int>(cx[1]);
+        const int y0=static_cast<int>(cy[0]),y1=static_cast<int>(cy[1]);
+        const auto at=[&](int x,int y){
+            return fieldPixels[(static_cast<std::size_t>(y)*width+x)*4];
+        };
+        const auto a=std::lerp(at(x0,y0),at(x1,y0),cx[2]);
+        const auto b=std::lerp(at(x0,y1),at(x1,y1),cx[2]);
+        const float level=std::lerp(a,b,cy[2]);
+        return std::round(level*1200.0F)*(6.28318530718F/1200.0F);
+    };
     std::size_t moved1=0,moved2=0,different=0;
+    std::size_t visible1=0,visible2=0,hidden1=0,hidden2=0;
+    std::size_t checked1=0,checked2=0,wrongTerritory=0;
+    const auto masked=[](const auto& image,std::size_t index){
+        return image[index]==-1.0F && image[index+1]==-1.0F;
+    };
     for(std::size_t i=0;i+3<next1.size();i+=4){
-        const auto dx1=next1[i]-first1[i],dy1=next1[i+1]-first1[i+1];
-        const auto dx2=next2[i]-first2[i],dy2=next2[i+1]-first2[i+1];
-        if(std::hypot(dx1,dy1)>1.0F/64.0F)++moved1;
-        if(std::hypot(dx2,dy2)>1.0F/64.0F)++moved2;
-        if(std::hypot(next1[i]-next2[i],next1[i+1]-next2[i+1])>1.0F/64.0F)++different;
+        const bool firstA=!masked(first1,i),firstB=!masked(first2,i);
+        const bool shownA=!masked(next1,i),shownB=!masked(next2,i);
+        if(shownA){
+            ++visible1;
+            if(firstA && std::hypot(next1[i]-first1[i],next1[i+1]-first1[i+1])>
+               1.0F/64.0F) ++moved1;
+            if(std::isfinite(next1[i]) && std::isfinite(next1[i+1])){
+                const auto theta=sampleAngle(next1[i],next1[i+1]);
+                if(theta>2.98F && theta<6.02F){
+                    ++checked1;
+                    if(theta<3.0F || theta>=6.0F)++wrongTerritory;
+                }
+            }
+        }else ++hidden1;
+        if(shownB){
+            ++visible2;
+            if(firstB && std::hypot(next2[i]-first2[i],next2[i+1]-first2[i+1])>
+               1.0F/64.0F) ++moved2;
+            if(std::isfinite(next2[i]) && std::isfinite(next2[i+1])){
+                const auto theta=sampleAngle(next2[i],next2[i+1]);
+                if(theta<2.98F || (theta>3.02F && theta<5.98F) ||
+                   theta>6.02F){
+                    ++checked2;
+                    if(theta>=3.0F && theta<6.0F)++wrongTerritory;
+                }
+            }
+        }else ++hidden2;
+        if(shownA && shownB &&
+           std::hypot(next1[i]-next2[i],next1[i+1]-next2[i+1])>1.0F/64.0F)
+            ++different;
     }
-    INFO("Species 1 moved: "<<moved1<<" Species 2 moved: "<<moved2);
-    REQUIRE(moved1>100);
-    REQUIRE(moved2>100);
-    REQUIRE(different>100);
+    INFO("Species 1 visible "<<visible1<<" hidden "<<hidden1<<" moved "<<moved1
+         <<" | Species 2 visible "<<visible2<<" hidden "<<hidden2
+         <<" moved "<<moved2<<" | checked territories "<<checked1<<"/"
+         <<checked2<<" wrong "<<wrongTerritory);
+    REQUIRE(visible1>100);
+    REQUIRE(visible2>100);
+    REQUIRE(hidden1>100);
+    REQUIRE(hidden2>100);
+    REQUIRE(moved1>40);
+    REQUIRE(moved2>40);
+    REQUIRE(different>50);
+    REQUIRE(checked1>100);
+    REQUIRE(checked2>100);
+    REQUIRE(wrongTerritory==0);
     REQUIRE(runtime.outputImage());
     const auto final=readImage(runtime.outputImage());
     const auto ink1=readImage(std::get<ImageHandle>(runtime.values().at(splat1)[0]));
