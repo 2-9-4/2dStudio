@@ -29,7 +29,7 @@
     {
       "id": 2,
       "type": "subgraph",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "subgraphId": "builtin.particles.species_flow",
       "label": "Species A • Tangent / Inside",
       "position": [
@@ -49,13 +49,14 @@
         "regionStart": 3,
         "regionEnd": 6,
         "motionMode": 0,
-        "depositMode": 0
+        "depositMode": 0,
+        "transitionWidth": 0.45
       }
     },
     {
       "id": 3,
       "type": "subgraph",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "subgraphId": "builtin.particles.species_flow",
       "label": "Species B • Sine-Cosine / Outside",
       "position": [
@@ -75,13 +76,14 @@
         "regionEnd": 6,
         "motionMode": 1,
         "depositMode": 1,
-        "maxJump": 64
+        "maxJump": 64,
+        "transitionWidth": 0.45
       }
     },
     {
       "id": 4,
       "type": "particle_splat",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "label": "Species 1 Trails",
       "position": [
         800,
@@ -102,7 +104,7 @@
     {
       "id": 5,
       "type": "particle_splat",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "label": "Species 2 Trails",
       "position": [
         800,
@@ -168,6 +170,19 @@
       ],
       "parameters": {
         "value": 6
+      }
+    },
+    {
+      "id": 10,
+      "type": "float",
+      "typeVersion": 1,
+      "label": "Shared Boundary Fade (radians)",
+      "position": [
+        45,
+        1010
+      ],
+      "parameters": {
+        "value": 0.45
       }
     }
   ],
@@ -291,6 +306,50 @@
       "to": {
         "node": 3,
         "socket": "regionEnd"
+      }
+    },
+    {
+      "id": 12,
+      "from": {
+        "node": 10,
+        "socket": "value"
+      },
+      "to": {
+        "node": 2,
+        "socket": "transitionWidth"
+      }
+    },
+    {
+      "id": 13,
+      "from": {
+        "node": 10,
+        "socket": "value"
+      },
+      "to": {
+        "node": 3,
+        "socket": "transitionWidth"
+      }
+    },
+    {
+      "id": 14,
+      "from": {
+        "node": 2,
+        "socket": "weights"
+      },
+      "to": {
+        "node": 4,
+        "socket": "weights"
+      }
+    },
+    {
+      "id": 15,
+      "from": {
+        "node": 3,
+        "socket": "weights"
+      },
+      "to": {
+        "node": 5,
+        "socket": "weights"
       }
     }
   ],
