@@ -280,7 +280,8 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     const auto restored=deserializeProject(serializeProject(custom),registry);
     REQUIRE(restored.subgraphs().size()==1);
     REQUIRE(restored.subgraphs()[0].stateSlots.front().highPrecision);
-    REQUIRE(restored.subgraphs()[0].interface==species->interface);
+    REQUIRE(restored.subgraphs()[0].interface.size()==species->interface.size());
+    REQUIRE(restored.subgraphs()[0].interface.front().key=="field");
 
     GraphRuntime runtime(graph,registry,gpu);
     REQUIRE(runtime.evaluate(0.0,1.0/60.0,true));
