@@ -29,9 +29,9 @@
     {
       "id": 2,
       "type": "subgraph",
-      "typeVersion": 2,
-      "subgraphId": "builtin.particles.species_1_flow",
-      "label": "Species 1 / Tangent",
+      "typeVersion": 1,
+      "subgraphId": "builtin.particles.species_flow",
+      "label": "Species A • Tangent / Inside",
       "position": [
         370,
         90
@@ -47,15 +47,17 @@
         "iterations": 1,
         "reset": 0,
         "regionStart": 3,
-        "regionEnd": 6
+        "regionEnd": 6,
+        "motionMode": 0,
+        "depositMode": 0
       }
     },
     {
       "id": 3,
       "type": "subgraph",
-      "typeVersion": 2,
-      "subgraphId": "builtin.particles.species_2_flow",
-      "label": "Species 2 / Sine Cosine",
+      "typeVersion": 1,
+      "subgraphId": "builtin.particles.species_flow",
+      "label": "Species B • Sine-Cosine / Outside",
       "position": [
         370,
         580
@@ -70,7 +72,10 @@
         "iterations": 1,
         "reset": 0,
         "regionStart": 3,
-        "regionEnd": 6
+        "regionEnd": 6,
+        "motionMode": 1,
+        "depositMode": 1,
+        "maxJump": 64
       }
     },
     {
