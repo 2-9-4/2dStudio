@@ -570,7 +570,7 @@ TEST_CASE("two Species Flow instances fade complementary ink smoothly with weigh
     for(const auto id:{weighted,unweighted})
         graph.findNode(id)->parameters={
             {"count",1800.0F},{"retention",0.0F},{"opacity",.8F},
-            {"size",2.0F},{"margin",0.0F},
+            {"size",2.0F},{"margin",8.0F},
             {"r",1.0F},{"g",0.0F},{"b",0.0F}};
     graph.addLink(first,"positions",weighted,"positions");
     graph.addLink(first,"weights",weighted,"weights");
