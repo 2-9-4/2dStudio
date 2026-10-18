@@ -387,6 +387,59 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
                              ink1[i+static_cast<std::size_t>(c)]-
                              ink2[i+static_cast<std::size_t>(c)])<.05F);
 
+    // Same definition, same RNG/physics, opposite deposit-mode enums:
+    // EVERY agent must be visible in exactly one instance. This checks the
+    // actual parameter-driven range inversion, not merely graph structure.
+    Graph complementary=deserializeProject(serializeProject(graph),registry);
+    complementary.findNode(simulation2)->parameters=
+        complementary.findNode(simulation1)->parameters;
+    complementary.findNode(simulation2)->parameters["depositMode"]=1.0F;
+    {
+        GraphRuntime paired(complementary,registry,gpu);
+        for(int frameIndex=0;frameIndex<10;++frameIndex)
+            REQUIRE(paired.evaluate(static_cast<double>(frameIndex)/60.0,1.0/60.0,true));
+        const auto insideImage=readImage(
+            std::get<ImageHandle>(paired.values().at(simulation1)[0]));
+        const auto outsideImage=readImage(
+            std::get<ImageHandle>(paired.values().at(simulation2)[0]));
+        REQUIRE(insideImage.size()==outsideImage.size());
+        std::size_t insideCount=0,outsideCount=0;
+        for(std::size_t i=0;i+3<insideImage.size();i+=4){
+            const bool insideVisible=!(insideImage[i]==-1.0F &&
+                                       insideImage[i+1]==-1.0F);
+            const bool outsideVisible=!(outsideImage[i]==-1.0F &&
+                                        outsideImage[i+1]==-1.0F);
+            REQUIRE(insideVisible!=outsideVisible);
+            insideCount+=insideVisible;
+            outsideCount+=outsideVisible;
+        }
+        REQUIRE(insideCount>100);
+        REQUIRE(outsideCount>100);
+    }
+
+    // Holding everything else equal (including depositMode) and changing
+    // ONLY the motion-mode enum must produce different physical trajectories.
+    complementary.findNode(simulation2)->parameters["depositMode"]=0.0F;
+    complementary.findNode(simulation2)->parameters["motionMode"]=1.0F;
+    {
+        GraphRuntime modes(complementary,registry,gpu);
+        for(int frameIndex=0;frameIndex<20;++frameIndex)
+            REQUIRE(modes.evaluate(static_cast<double>(frameIndex)/60.0,1.0/60.0,true));
+        const auto tangent=readImage(
+            std::get<ImageHandle>(modes.values().at(simulation1)[0]));
+        const auto sine=readImage(
+            std::get<ImageHandle>(modes.values().at(simulation2)[0]));
+        REQUIRE(tangent.size()==sine.size());
+        std::size_t differentMotion=0;
+        for(std::size_t i=0;i+3<tangent.size();i+=4){
+            if(tangent[i]==-1.0F && tangent[i+1]==-1.0F)continue;
+            if(sine[i]==-1.0F && sine[i+1]==-1.0F)continue;
+            if(std::hypot(tangent[i]-sine[i],tangent[i+1]-sine[i+1])>1.0F/64.0F)
+                ++differentMotion;
+        }
+        REQUIRE(differentMotion>50);
+    }
+
     if(const char* snapshot=std::getenv("SANDS_PREVIEW_PATH");snapshot&&*snapshot){
         graph.settings={160,160,60};
         GraphRuntime preview(graph,registry,gpu);
