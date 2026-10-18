@@ -304,6 +304,9 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     REQUIRE(migrated.findNode(simulation1)->parameters.at("depositMode")==0.0F);
     REQUIRE(migrated.findNode(simulation2)->parameters.at("depositMode")==1.0F);
 
+    // Keep runtime ownership sequential: simulation textures and GL contexts
+    // must be released before the next comparison runtime is constructed.
+    {
     GraphRuntime runtime(graph,registry,gpu);
     REQUIRE(runtime.evaluate(0.0,1.0/60.0,true));
     const auto first1=readImage(std::get<ImageHandle>(runtime.values().at(simulation1)[0]));
@@ -407,6 +410,8 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
             REQUIRE(std::abs(final[i+static_cast<std::size_t>(c)]-
                              ink1[i+static_cast<std::size_t>(c)]-
                              ink2[i+static_cast<std::size_t>(c)])<.05F);
+
+    }
 
     // Same definition, same RNG/physics, opposite deposit-mode enums:
     // EVERY agent must be visible in exactly one instance. This checks the
