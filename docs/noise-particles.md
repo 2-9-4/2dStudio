@@ -44,9 +44,11 @@ quantization, life-decay rate, reset and iterations per frame. Species 1
 also exposes its tangent jump cap.
 
 The body of each subgraph comprises ordinary editable Hash, Texture Sample,
-Math, Select and Vector operations and two feedback slots (position and
-lifetime). Positions are stored/exported in 32-bit textures for smooth
-subpixel motion. Each species consumes separate GPU state but reads the
+Math, Select and Vector operations and two behavioral feedback slots (position and
+lifetime), plus one **presentation-only visible-positions state slot**.
+The extra state slot is required because subgraph outputs must come from
+a Next State endpoint; it is **never consumed by the motion logic**.
+Positions are stored/exported in 32-bit textures for smooth subpixel motion. Each species consumes separate GPU state but reads the
 same external source image, producing complementary visible territories.
 
 ## Rendering and UI
