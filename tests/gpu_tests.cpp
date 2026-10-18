@@ -182,10 +182,26 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
         });
         REQUIRE(inputNode!=species->body.nodes().end());
         REQUIRE(selector!=species->body.nodes().end());
-        REQUIRE(std::ranges::any_of(species->body.links(),[&](const auto& edge){
-            return edge.fromNode==inputNode->id && edge.toNode==selector->id &&
-                   edge.toSocket=="condition";
-        }));
+        if(inputKey=="motionMode"){
+            // Five-mode selection uses Step threshold nodes, not a direct
+            // enum→Select link as the original two-mode implementation did.
+            const auto threshold=std::ranges::find_if(species->body.nodes(),
+                [](const auto& node){return node.label=="Choose Motion Rule Threshold";});
+            REQUIRE(threshold!=species->body.nodes().end());
+            REQUIRE(std::ranges::any_of(species->body.links(),[&](const auto& edge){
+                return edge.fromNode==inputNode->id && edge.toNode==threshold->id &&
+                       edge.toSocket=="b";
+            }));
+            REQUIRE(std::ranges::any_of(species->body.links(),[&](const auto& edge){
+                return edge.fromNode==threshold->id && edge.toNode==selector->id &&
+                       edge.toSocket=="condition";
+            }));
+        } else {
+            REQUIRE(std::ranges::any_of(species->body.links(),[&](const auto& edge){
+                return edge.fromNode==inputNode->id && edge.toNode==selector->id &&
+                       edge.toSocket=="condition";
+            }));
+        }
     }
     const auto visiblePrevious=std::ranges::find_if(species->body.nodes(),
         [](const auto& node){return node.label=="Prior Visible Positions (Unused)";});
