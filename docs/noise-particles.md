@@ -1,76 +1,67 @@
-# Independent species flow / external field
+# Sands — reusable Species Flow simulation
 
 Open `examples/noise-particles.reaction.json` in Reaction Studio.
 
 ```text
-Perlin Noise (or ANY other scalar image source)
-  ├── field → Species 1 Flow (Tangent)      → Particle Splat → Mix(Add) → Output
-  └── field → Species 2 Flow (Sine/Cosine) → Particle Splat ─┘
+                           ┌─► Species Flow instance A ─► Splat A ─┐
+External Perlin or image ──┤    Motion: Tangent                     Mix(Add) ─► Output
+                           │    Deposit: Inside [3,6)              │
+                           └─► Species Flow instance B ─► Splat B ─┘
+                                Motion: Sine / Cosine
+                                Deposit: Outside [3,6)
 ```
 
-**Both simulations are distinct editable subgraphs** with entirely separate
-position and lifetime feedback. The shared field is read-only: species do
-not collide, interact or alter each other's simulation states. The root
-example shares one Perlin node, but you can connect any scalar image from
-another generator, imported image (after converting to a scalar field), or
-processing graph. Perlin is not generated inside either species subgraph.
+**There is exactly ONE built-in Species Flow subgraph**
+(`builtin.particles.species_flow`). The two root nodes are **instances of the
+same definition**, not copies or separately maintained templates. They have
+independent position/lifetime state and their own seed, speed, jitter,
+and rendering behavior. The shared scalar `field` image is an external,
+read-only input; substitute another scalar image generator for Perlin.
 
-Both emit just one `positions` Vector Field. **The exported positions are
-territory-masked:** both species sample the same external field at their final
-particle coordinates. Species 1 deposits only where the quantized field angle
-is in the shared interval **[3, 6) radians**; Species 2 deposits only outside
-that interval. Masked positions are emitted as `(-1, -1)` and ignored by the
-splat node. The underlying position/lifetime state is **never masked**, so
-particles keep moving and may cross the invisible side of a boundary.
+## Per-instance controls
 
-Two root-level **Float** controls for Region Start and Region End are wired to
-**both** species, ensuring their territories always remain complementary.
-Moving the region limits shifts the territory boundaries without adding
-inter-species collision or coupling. Color remains exclusively a property of
-each ordinary root-level Particle Splat node. Both splats feed Mix(Add, 1).
+- **Motion** dropdown: **Tangent** or **Sine / Cosine**, independent of ink
+  deposit mode. Tangent computes
+  `(clamp(tan(theta), ±maxJump) * random(horizontalMin,horizontalMax),
+  clamp(tan(theta), ±maxJump))`; Sine/Cosine computes
+  `(-sin(theta) * random(horizontalMin,horizontalMax), -cos(theta))`.
+- **Deposit In** dropdown: **Inside Range** or **Outside Range**, evaluated at
+  the particle's *final* position against the external field. The inside
+  range is `[regionStart,regionEnd)` in radians, using the quantized field angle.
+- **Region Angle Start** and **Region Angle End** are float inputs, adjustable
+  per instance. The example wires **the same two Float nodes** to both,
+  keeping the two territories complementary.
+- **Seed, Particle Speed, Horizontal Jitter Min/Max, Direction Quantization,
+  Life Decay, Tangent Jump Limit, Reset, Iterations per Frame** remain
+  adjustable. Tangent Jump Limit has no effect in Sine/Cosine mode.
 
-## Motion
+Changing either dropdown affects just that instance. Both trig algorithms
+and the inside/outside decision are constructed from ordinary **editable**
+Math, Vector Math, Sample and Select nodes—not hardcoded C++ branches or
+bespoke native simulation kernels.
 
-Species 1 uses `(clamp(tan(theta))*random(min,max), clamp(tan(theta)))`.
-Species 2 uses `(-sin(theta)*random(min,max), -cos(theta))`.
-Both interpret their input field value as a quantized fraction of 2π,
-sampled at their moving particle position. A **second field sample at the
-newly integrated/respawned position** decides which species gets to render
-there, avoiding deposition across a boundary after a movement step.
+## Independent physics, complementary appearance
 
-Their parameters expose
-independent random seeds, speed, horizontal jitter min/max, direction
-quantization, life-decay rate, reset and iterations per frame. Species 1
-also exposes its tangent jump cap.
+Each instance has three GPU state slots: high precision **position**,
+**lifetime**, and high precision **visible positions**. Only position and life
+feed back into the motion system; the third is output-only because the current
+simulation engine requires outputs to come from a Next State endpoint.
 
-The body of each subgraph comprises ordinary editable Hash, Texture Sample,
-Math, Select and Vector operations and two behavioral feedback slots (position and
-lifetime), plus one **presentation-only visible-positions state slot**.
-The extra state slot is required because subgraph outputs must come from
-a Next State endpoint; it is **never consumed by the motion logic**.
-Positions are stored/exported in 32-bit textures for smooth subpixel motion. Each species consumes separate GPU state but reads the
-same external source image, producing complementary visible territories.
+At deposition time, an ineligible agent's *exported* position is `(-1,-1)`,
+which Particle Splat ignores. Its underlying simulated position/life still
+advance. Separate flows therefore produce complementary visual territories
+without any collision, force, or cross-species simulation feedback.
 
-## Rendering and UI
+Two ordinary root-level **Particle Splat / Trails** nodes retain independent
+trail histories and ink colors; the existing **Mix (Add, factor 1)** combines
+them. The splat UI has a compact color swatch and independently connectable
+R/G/B pins.
 
-Each root-level Particle Splat has independent RGB ink, point count,
-opacity, retention, point size, brush roundness and canvas margin.
-The compact Ink swatch opens a picker while the R/G/B pins remain
-individually connectable, on one narrow row.
+## Validation
 
-## Performance
-
-Each species still simulates one agent per canvas texel rather than using
-a compact SSBO, so two species have roughly twice the per-pixel simulation
-work of a single species at the same resolution. The independent species
-populations are not pixel-by-pixel reproductions of the old shared
-population, but complementary visibility is restored by masking the final
-output positions using the common field.
-
-## Tests
-
-CI checks that both species subgraphs compile without internal Perlin nodes,
-both sample an external field and move independently, **both have visible
-and hidden particles assigned by complementary angular territories**, root
-splat images are nontrivial, and built-in Mix(Add) produces their sum.
-Also exports a 120-frame `sands-preview` image artifact.
+CI validates that only one species-flow definition is registered, verifies
+both enum dropdown options, compiles the shared shader with tangent and
+sine/cosine math, runs two parameterized instances against an external image,
+checks visible particles' territorial assignment, independently evolving
+state, serialization, and pixelwise Mix(Add) composition, then generates
+a 120-frame `sands-preview` artifact.
