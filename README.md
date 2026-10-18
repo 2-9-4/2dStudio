@@ -51,6 +51,10 @@ feeds two separate, editable **Species 1 Flow (Tangent)** and
 **Species 2 Flow (Sine/Cosine)** simulation subgraphs. Each exposes a
 required scalar `field` image input and emits a single particle positions
 field. There is no inter-species interaction or hidden Perlin generator.
+Two shared Float nodes set the same field-angle region interval on both:
+Species 1 deposits inside, Species 2 outside, restoring the original
+complementary spatial territories **without coupling their physics**.
+Only exported positions are masked; both simulations continue moving.
 Root-level Particle Splat nodes color each species independently; the
 existing Mix node (Add mode, factor 1) combines their images.
 See [species flow documentation](docs/noise-particles.md).
