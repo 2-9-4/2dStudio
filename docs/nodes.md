@@ -34,13 +34,18 @@ submodes, and the special nodes available inside simulation subgraphs.
   behavior. **Motion** is a dropdown (`Tangent` / `Sine / Cosine`);
   **Deposit In** is an independent dropdown (`Inside Range` /
   `Outside Range`). `regionStart` and `regionEnd` are radians defining the
-  visible `[start,end)` interval. Ineligible exported positions receive the
-  `(-1,-1)` sentinel; physical position/lifetime feedback keeps evolving.
+  visible `[start,end)` interval. The **Boundary Fade** (`transitionWidth`)
+  input smoothly crossfades both sides of each boundary; 0 uses the original
+  hard cutoff. Besides `positions`, the subgraph exports per-agent scalar
+  `weights` for independent splat opacity. Positions are `(-1,-1)` only
+  where their weight is zero; physical state remains unaffected.
   Also exposes Seed, Speed, Horizontal Jitter Min/Max, Angle Bins, Life Decay,
-  Tangent Jump Limit, Reset, and Iterations. Three GPU slots (position,
-  lifetime, export-only visible positions) support this interface.
+  Tangent Jump Limit, Reset, and Iterations. Four GPU slots (position,
+  lifetime, export-only visible positions and ink weights) support this interface.
 - **Particle Splat / Trails** (`particle_splat`) is a standard root-level
-  native splat with optional R/G/B pins, compact color swatch, opacity,
+  native splat with a **generic optional `weights` Scalar Field input**
+  (per-particle opacity multiplier). Unconnected weights default to 1,
+  preserving old graph behavior. Also exposes independent RGB ink, opacity,
   retention, size, brush roundness, and canvas inset.
 - **Mix (Add)** (`mix`, mode Add and factor 1) composites independent
   splat histories with no special image-add node.
