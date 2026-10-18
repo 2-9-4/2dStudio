@@ -576,6 +576,17 @@ std::string mathGlslExpression(MathOperation operation,
     case MathOperation::MultiplyAccumulate:
         return "(" + a + "*" + convert(operands.at(1)) + "+" +
                convert(operands.at(2)) + ")";
+    case MathOperation::HyperbolicTangent: return "tanh(" + a + ")";
+    case MathOperation::HyperbolicSine: return "sinh(clamp(" + a + "," +
+        scalar("-15.0") + "," + scalar("15.0") + "))";
+    case MathOperation::HyperbolicCosine: return "cosh(clamp(" + a + "," +
+        scalar("-15.0") + "," + scalar("15.0") + "))";
+    case MathOperation::Sinc:
+        return "mix(sin(" + a + ")*sign(" + a + ")/max(abs(" + a + ")," +
+               scalar("1e-4") + ")," + scalar("1.0") + "-(" + a + "*" + a +
+               ")/6.0," + scalar("1.0") + "-step(" + scalar("1e-4") +
+               ",abs(" + a + ")))";
+    case MathOperation::Softsign: return "(" + a + "/(1.0+abs(" + a + ")))";
     }
     return a;
 }
