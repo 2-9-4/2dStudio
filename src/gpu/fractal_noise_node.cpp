@@ -71,7 +71,7 @@ void main(){
         float n=noiseValue(p,mode==4);
         if(mode==1) n=abs(n)*2.0-1.0;            // Billow
         else if(mode==2) {float r=1.0-abs(n);n=(r*r)*2.0-1.0;} // Ridged
-        else if(mode==3) n=abs(n)*2.0-1.0;       // Turbulence
+        else if(mode==3) n=2.0*abs(n*n)-1.0;     // Sharp turbulence
         sum+=n*amplitude;
         weight+=amplitude;
         amplitude*=gain;
@@ -90,7 +90,7 @@ public:
              {"frequency","Frequency",SocketContract::Numeric,SocketDirection::Input,true},
              {"image","Scalar Field",ValueType::ScalarField,SocketDirection::Output}},
             {{"mode","Noise Style",0.0F,0.0F,4.0F,ParameterDescriptor::Control::Enum,
-              {"Gradient fBm","Billow","Ridged","Turbulence","Value fBm"}},
+              {"Gradient fBm","Billow","Ridged","Sharp Turbulence","Value fBm"}},
              {"frequency","Frequency",5.0F,-100.0F,100.0F},
              {"seed","Seed",0.0F,-100000.0F,100000.0F},
              {"octaves","Octaves",4.0F,1.0F,8.0F,ParameterDescriptor::Control::Integer},
