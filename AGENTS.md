@@ -129,9 +129,11 @@ named builder arguments.
 
 Particle rendering: Sands must have exactly ONE registered Species Flow built-in
 (`builtin.particles.species_flow`) instantiated twice on the root graph,
-not separate C++ implementations or two cloned subgraph definitions. Both
-trigonometric motion branches are regular editable nodes, chosen by the
-`motionMode` enum (0 Tangent, 1 Sine/Cosine). Deposition is independently
+not separate C++ implementations or two cloned subgraph definitions. All
+motion laws are ordinary editable Math/Vector/Select nodes, chosen by the
+stable `motionMode` enum (0 Tangent, 1 Sine/Cosine, 2 Double Angle,
+3 Harmonic Rosette, 4 Soft Tangent). Append future values; do not renumber
+existing saved modes. Deposition is independently
 chosen by `depositMode` enum (0 Inside, 1 Outside), checked against common
 `regionStart`/`regionEnd` radians at final particle position. Both sample
 the externally supplied scalar `field`; no baked-in Perlin. The example
@@ -143,3 +145,12 @@ Two ordinary root splats provide ink and feed existing Mix(Add, factor 1).
 Keep swatches compact. Tests must verify the actual enum parameter
 interface and both paths, shared definition identity, independent motion,
 complementary visibility, persistence and Mix compositing.
+
+Noise toolkit: Fractal Noise is ONE generic Scalar Field node with gradient fBm,
+billow, ridged, sharp turbulence, and value fBm modes; it accepts optional
+Vector Numeric coordinates and Numeric frequency so Domain Warp and any other
+coordinate producer can modulate it. Curl Field consumes ANY Scalar Field and
+produces a Vector Field, independent of where the source came from. Treat
+these as reusable building blocks, not Sands-exclusive nodes. Every new
+noise family should have GPU tests across its modes, source/seed variation,
+and composition into typed field consumers.
