@@ -579,6 +579,13 @@ TEST_CASE("two Species Flow instances fade complementary ink smoothly with weigh
     const auto secondSplat=graph.addNode("particle_splat");
     graph.addLink(second,"positions",secondSplat,"positions");
     graph.addLink(second,"weights",secondSplat,"weights");
+    const auto mix=graph.addNode("mix");
+    graph.findNode(mix)->parameters={{"mode",1.0F},{"factor",1.0F}};
+    graph.addLink(weighted,"image",mix,"a");
+    graph.addLink(secondSplat,"image",mix,"b");
+    const auto output=graph.addNode("output");
+    graph.addLink(mix,"result",output,"image");
+    graph.activeOutput=output;
     REQUIRE(graph.compile(registry).valid);
 
     GpuRuntime gpu;
@@ -624,14 +631,19 @@ TEST_CASE("two Species Flow instances fade complementary ink smoothly with weigh
         const auto hard=readImage(
             std::get<ImageHandle>(runtime.values().at(unweighted)[0]));
         REQUIRE(soft.size()==hard.size());
-        float reduction=0.0F;
+        float reduction=0.0F,weightedSum=0.0F,unweightedSum=0.0F;
         for(std::size_t i=0;i<soft.size();i+=4){
             REQUIRE(std::isfinite(soft[i]));
             REQUIRE(std::isfinite(hard[i]));
             REQUIRE(soft[i]<=hard[i]+.004F);
             reduction+=hard[i]-soft[i];
+            weightedSum+=soft[i];
+            unweightedSum+=hard[i];
         }
-        INFO("weighted reduction="<<reduction);
+        INFO("weighted reduction="<<reduction<<" weighted sum="<<weightedSum
+             <<" unweighted sum="<<unweightedSum);
+        REQUIRE(unweightedSum>5.0F);
+        REQUIRE(weightedSum>1.0F);
         REQUIRE(reduction>1.0F);
     }
 
