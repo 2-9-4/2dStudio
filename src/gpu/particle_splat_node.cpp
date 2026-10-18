@@ -156,11 +156,11 @@ public:
         if(outputs.empty())return;
         const auto positions=imageAt(inputs,0);
         const auto weights=imageAt(inputs,1);
-        if(weights && (weights.width!=positions.width || weights.height!=positions.height))
-            throw std::invalid_argument("Particle Splat weights must match particle positions dimensions");
         if(!positions){
             outputs[0]=Value{};return;
         }
+        if(weights && (weights.width!=positions.width || weights.height!=positions.height))
+            throw std::invalid_argument("Particle Splat weights must match particle positions dimensions");
         auto& gpu=*static_cast<GpuRuntime*>(context.gpu);
         ensureResources(gpu,context.width,context.height);
         const int capacity=std::min(100000,positions.width*positions.height);
