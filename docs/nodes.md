@@ -27,7 +27,7 @@ submodes, and the special nodes available inside simulation subgraphs.
 
 ### Independent species particle flow and splatting
 
-- **Species 1 Flow (Tangent)** (`builtin.particles.species_1_flow`) and **Species 2 Flow (Sine/Cosine)** (`builtin.particles.species_2_flow`) are independent editable simulation subgraphs. Each accepts an external scalar `field` image, independent random seed, speed, jitter and lifetime controls, and exports one `positions` Vector Field. No built-in Perlin or color branch decisions exist inside either species.
+- **Species 1 Flow (Tangent)** (`builtin.particles.species_1_flow`) and **Species 2 Flow (Sine/Cosine)** (`builtin.particles.species_2_flow`) are independent editable simulation subgraphs. Each accepts an external scalar `field` image, independent random seed, speed, jitter and lifetime controls, and exports one `positions` Vector Field. Both read the **same regionStart/regionEnd interval** (shared Float controls in the example). Species 1 exposes positions inside that field-angle territory; Species 2 exposes positions outside it. The invisible sentinel is only applied to the exported position, never to physics feedback. No built-in Perlin or color-specific simulation semantics exist.
 - **Particle Splat / Trails** (`particle_splat`) renders one species' positions with RGB ink, opacity, retention, point size, brush and inset controls. The UI shows a compact swatch and short optional R/G/B pins on one row.
 - **Mix (Add)** (`mix` with mode Add, factor 1) combines both root-level splat images; standard postprocessing can follow.
 - **Pixel Delta to UV** (`pixel_delta_to_uv`) converts pixel velocity to normalized UV inside each simulation.
