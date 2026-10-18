@@ -911,15 +911,13 @@ SubgraphDefinition lenia() {
 }
 
 
-// Each species has its own independent position/lifetime feedback. Both can
-// sample the same external image; neither shares state or modifies that image.
-SubgraphDefinition speciesFlow(bool tangent) {
+// One editable flow graph; separate instances own separate particle states.
+// The enum parameters select the motion and visibility via ordinary nodes.
+SubgraphDefinition speciesFlow() {
     SubgraphDefinition result;
-    result.id = tangent ? "builtin.particles.species_1_flow"
-                        : "builtin.particles.species_2_flow";
-    result.version = 2;
-    result.name = tangent ? "Species 1 Flow (Tangent)"
-                          : "Species 2 Flow (Sine/Cosine)";
+    result.id = "builtin.particles.species_flow";
+    result.version = 1;
+    result.name = "Species Flow";
     result.category = "Simulation";
     result.execution = SubgraphExecution::Simulation;
     result.immutable = true;
@@ -934,17 +932,21 @@ SubgraphDefinition speciesFlow(bool tangent) {
     result.interface = {
         {"field", "Flow Field Image", K::Input, ValueType::ScalarField},
         {"seed", "Random Seed", K::Input, ValueType::Float, true,
-         tangent ? 14.0F : 314.0F, 0.0F, 100000.0F, Control::Integer},
+         14.0F, 0.0F, 100000.0F, Control::Integer},
         {"speed", "Particle Speed", K::Input, ValueType::Float,
          true, 1.0F, 0.0F, 10.0F},
         {"horizontalMin", "Horizontal Jitter Min", K::Input, ValueType::Float,
-         true, tangent ? 1.0F : 0.1F, 0.0F, 10.0F},
+         true, 1.0F, 0.0F, 10.0F},
         {"horizontalMax", "Horizontal Jitter Max", K::Input, ValueType::Float,
-         true, tangent ? 3.0F : 1.0F, 0.0F, 10.0F},
+         true, 3.0F, 0.0F, 10.0F},
         {"angleBins", "Direction Quantization", K::Input, ValueType::Float,
          true, 1200.0F, 8.0F, 4096.0F, Control::Integer},
         {"lifeRate", "Life Decay", K::Input, ValueType::Float,
          true, 0.1F, 0.001F, 1.0F},
+        {"motionMode", "Motion", K::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 1.0F, Control::Enum, {"Tangent", "Sine / Cosine"}},
+        {"depositMode", "Deposit In", K::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 1.0F, Control::Enum, {"Inside Range", "Outside Range"}},
         // Both species must use identical thresholds to get complementary
         // territories. The example wires two shared Float nodes into these.
         {"regionStart", "Region Angle Start", K::Input, ValueType::Float,
@@ -952,10 +954,9 @@ SubgraphDefinition speciesFlow(bool tangent) {
         {"regionEnd", "Region Angle End", K::Input, ValueType::Float,
          true, 6.0F, 0.0F, 6.2831853F},
     };
-    if (tangent)
-        result.interface.push_back({"maxJump", "Tangent Jump Limit", K::Input,
-                                    ValueType::Float, true, 64.0F, 1.0F, 512.0F});
     result.interface.insert(result.interface.end(), {
+        {"maxJump", "Tangent Jump Limit", K::Input, ValueType::Float,
+         true, 64.0F, 1.0F, 512.0F},
         {"reset", "Reset", K::Input, ValueType::Float,
          true, 0.0F, 0.0F, 1.0F, Control::Boolean},
         {"iterations", "Iterations per Frame", K::Input, ValueType::Float,
@@ -1083,28 +1084,31 @@ SubgraphDefinition speciesFlow(bool tangent) {
     const auto xMagnitude=calc("Horizontal Magnitude + Minimum",M::Add,1710,1840,
                                jitter,w(minimum,"value"));
 
-    Wire flowX,flowY;
-    if(tangent) {
-        const auto raw=calc("Tangent Flow",M::Tangent,1510,1470,theta);
-        const auto cap=input(body,"maxJump","Maximum Tangent Jump",{1510,1610});
-        const auto minusCap=calc("Negative Jump Cap",M::Multiply,1740,1600,
-                                 w(cap,"value"),{},{},{{"b",-1.0F}});
-        const auto safeTan=calc("Clamp Tangent Singularities",M::Clamp,1970,1470,
-                                raw,minusCap,w(cap,"value"));
-        flowX=calc("Tangent Horizontal Motion",M::Multiply,2210,1780,
-                    safeTan,xMagnitude);
-        flowY=safeTan;
-    } else {
-        const auto sine=calc("Flow Sine",M::Sine,1510,1470,theta);
-        const auto cosine=calc("Flow Cosine",M::Cosine,1510,1600,theta);
-        const auto negSine=calc("Negative Sine",M::Multiply,1770,1470,
-                                sine,{},{},{{"b",-1.0F}});
-        flowX=calc("Sine Horizontal Motion",M::Multiply,2210,1780,
-                    negSine,xMagnitude);
-        flowY=calc("Negative Cosine",M::Multiply,1970,1600,
-                    cosine,{},{},{{"b",-1.0F}});
-    }
-    const auto velocity=vectorFrom("Species Velocity",flowX,flowY,2440,1820);
+    // Both trigonometric modes are standard editable Math/Vector nodes;
+    // a per-instance enum drives the Select instead of separate graphs.
+    const auto rawTan=calc("Tangent Flow",M::Tangent,1510,1470,theta);
+    const auto cap=input(body,"maxJump","Maximum Tangent Jump",{1510,1610});
+    const auto minusCap=calc("Negative Jump Cap",M::Multiply,1740,1600,
+                             w(cap,"value"),{},{},{{"b",-1.0F}});
+    const auto safeTan=calc("Clamp Tangent Singularities",M::Clamp,1970,1470,
+                            rawTan,minusCap,w(cap,"value"));
+    const auto tangentX=calc("Tangent Horizontal Motion",M::Multiply,2210,1780,
+                             safeTan,xMagnitude);
+    const auto tangentStep=vectorFrom("Tangent Velocity",tangentX,safeTan,2440,1660);
+
+    const auto sine=calc("Flow Sine",M::Sine,1510,2030,theta);
+    const auto cosine=calc("Flow Cosine",M::Cosine,1510,2200,theta);
+    const auto negSine=calc("Negative Sine",M::Multiply,1770,2030,
+                            sine,{},{},{{"b",-1.0F}});
+    const auto sineX=calc("Sine Horizontal Motion",M::Multiply,2210,2180,
+                          negSine,xMagnitude);
+    const auto negCos=calc("Negative Cosine",M::Multiply,1970,2200,
+                           cosine,{},{},{{"b",-1.0F}});
+    const auto sineStep=vectorFrom("Sine Cosine Velocity",sineX,negCos,2440,2300);
+
+    const auto motion=input(body,"motionMode","Motion Dropdown",{2440,2590});
+    const auto velocity=choose("Choose Motion Rule",w(motion,"value"),
+                               sineStep,tangentStep,2700,1820);
     const auto speed=input(body,"speed","Particle Motion Speed",{2440,2100});
     const auto gain=vectorMath(body,"Apply Species Speed",V::Scale,{2700,1820});
     connect(velocity,gain,"a");
@@ -1169,9 +1173,12 @@ SubgraphDefinition speciesFlow(bool tangent) {
                                {},aboveUpper,{},{{"a",1.0F}});
     const auto inside=calc("Inside Territory",M::Multiply,5360,3030,
                            aboveLower,belowUpper);
-    const auto visibility=tangent ? inside :
-        calc("Outside Territory",M::Subtract,5580,3210,
-             {},inside,{},{{"a",1.0F}});
+    const auto outside=calc("Outside Territory",M::Subtract,5580,3210,
+                            {},inside,{},{{"a",1.0F}});
+    const auto depositMode=input(body,"depositMode","Deposit Region Dropdown",
+                                 {5350,3400});
+    const auto visibility=choose("Choose Inside or Outside Range",
+                                 w(depositMode,"value"),outside,inside,5580,2880);
     const auto visiblePosition=choose("Visible Only in Assigned Territory",
                                        visibility,nextPosition,w(offCanvas,"value"),
                                        5800,2820);
@@ -1193,7 +1200,7 @@ const std::vector<SubgraphDefinition>& builtInSubgraphs() {
     static const std::vector<SubgraphDefinition> values{
         discreteReaction(), genericCellularAutomata(), floodFill(),
         skeletonization(), distanceFromNearestWhitePixel(), sdfGenerator(), lenia(),
-        speciesFlow(true), speciesFlow(false)};
+        speciesFlow()};
     return values;
 }
 
