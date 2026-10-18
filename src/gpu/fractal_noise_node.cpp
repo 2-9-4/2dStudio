@@ -99,7 +99,6 @@ public:
              {"offsetX","Offset X",0.0F,-100.0F,100.0F},
              {"offsetY","Offset Y",0.0F,-100.0F,100.0F}}};
         result.sockets[0].fieldDefault=true;
-        result.producedField=true;
         return result;
     }
     const NodeDescriptor& descriptor() const override{
