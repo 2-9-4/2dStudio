@@ -926,6 +926,9 @@ SubgraphDefinition speciesFlow(bool tangent) {
     result.stateSlots = {
         {"position", "Particle Position", ValueType::VectorField, true},
         {"life", "Remaining Life", ValueType::ScalarField},
+        // Presentation-only slot. It is never read by the motion or life
+        // update; the simulation engine exports Next State endpoints only.
+        {"visible", "Territory-Masked Positions", ValueType::VectorField, true},
     };
     using K = SubgraphInterfaceKind;
     result.interface = {
@@ -1026,11 +1029,19 @@ SubgraphDefinition speciesFlow(bool tangent) {
                                 {830,350},{{"slot",1.0F}});
     connect(w(spawn,"vector"),initPos,"value");
     connect(w(startLife,"scalar"),initLife,"value");
+    const auto offCanvas=vector(body,"Invisible Position Sentinel",
+                                {840,550},-1.0F,-1.0F);
+    const auto initVisible=addNode(body,"simulation_initial_state",
+                                  "Initial Invisible Rendering",
+                                  {1120,550},{{"slot",2.0F}});
+    connect(w(offCanvas,"value"),initVisible,"value");
 
     const auto prevPos=addNode(body,"simulation_previous_state","Previous Position",
                                {0,760},{{"slot",0.0F}});
     const auto prevLife=addNode(body,"simulation_previous_state","Previous Life",
                                 {0,1020},{{"slot",1.0F}});
+    addNode(body,"simulation_previous_state","Prior Visible Positions (Unused)",
+            {0,1190},{{"slot",2.0F}});
     const auto position=w(prevPos,"value");
     const auto life=w(prevLife,"value");
 
@@ -1161,14 +1172,18 @@ SubgraphDefinition speciesFlow(bool tangent) {
     const auto visibility=tangent ? inside :
         calc("Outside Territory",M::Subtract,5580,3210,
              {},inside,{},{{"a",1.0F}});
-    const auto offCanvas=vector(body,"Invisible Position Sentinel",
-                                {5360,3480},-1.0F,-1.0F);
     const auto visiblePosition=choose("Visible Only in Assigned Territory",
                                        visibility,nextPosition,w(offCanvas,"value"),
                                        5800,2820);
+    // A third Next State is needed as the subgraph's export endpoint, but the
+    // corresponding Previous State is intentionally unused by all dynamics.
+    const auto storeVisible=addNode(body,"simulation_next_state",
+                                    "Publish Masked Positions",
+                                    {6040,2820},{{"slot",2.0F}});
+    connect(visiblePosition,storeVisible,"value");
     const auto output=addNode(body,"subgraph_output","Visible Particle Positions",
-                              {6070,2820},{{"key","positions"}});
-    connect(visiblePosition,output,"value");
+                              {6280,2820},{{"key","positions"}});
+    connect(w(storeVisible,"value"),output,"value");
     return result;
 }
 
