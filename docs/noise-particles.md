@@ -36,6 +36,12 @@ read-only input; substitute another scalar image generator for Perlin.
 - **Region Angle Start** and **Region Angle End** are float inputs, adjustable
   per instance. The example wires **the same two Float nodes** to both,
   keeping the two territories complementary.
+- **Boundary Fade (radians)** (`transitionWidth`): 0 restores the old hard
+  cutoff. Larger values smoothly crossfade deposit opacity around BOTH angular
+  thresholds, centered on each threshold. The example shares a third Float
+  control between both species (initial value **0.45 radians**). Each
+  instance computes a complementary per-particle weight, so a particle at
+  the center of a boundary receives approximately 50% ink opacity.
 - **Seed, Particle Speed, Horizontal Jitter Min/Max, Direction Quantization,
   Life Decay, Tangent Jump Limit, Reset, Iterations per Frame** remain
   adjustable. Tangent Jump Limit has no effect in Sine/Cosine mode.
@@ -60,15 +66,24 @@ or field values. None of these nodes knows about species or ink.
 
 ## Independent physics, complementary appearance
 
-Each instance has three GPU state slots: high precision **position**,
-**lifetime**, and high precision **visible positions**. Only position and life
-feed back into the motion system; the third is output-only because the current
-simulation engine requires outputs to come from a Next State endpoint.
+Each instance has four GPU state slots: high precision **position**,
+**lifetime**, high precision **visible positions**, and **per-particle ink
+weights**. Only position and life feed back into motion. The two presentation
+slots are output-only because simulation outputs must come from Next State
+endpoints.
 
-At deposition time, an ineligible agent's *exported* position is `(-1,-1)`,
-which Particle Splat ignores. Its underlying simulated position/life still
-advance. Separate flows therefore produce complementary visual territories
-without any collision, force, or cross-species simulation feedback.
+At deposition time, an agent's *exported* position is `(-1,-1)` where its
+opacity weight is zero, and Particle Splat skips it. Along a soft boundary,
+both species retain visible positions and export fractional weights between 0
+and 1. The two weights add to 1 at the same field location. The underlying
+simulated position/life always advance, including through invisible territory.
+No inter-species physics or collision coupling is introduced.
+
+Each `Particle Splat` now has a **generic optional `weights` Scalar Field
+input** (one scalar per particle slot). Its vertex shader multiplies the
+normal point opacity by that field. If unconnected, the splat behaves exactly
+as before. Thus the fading behavior is represented as a reusable dataflow
+contract, not color-specific special casing or a new custom compositor.
 
 Two ordinary root-level **Particle Splat / Trails** nodes retain independent
 trail histories and ink colors; the existing **Mix (Add, factor 1)** combines
@@ -89,6 +104,7 @@ existing per-instance controls preserved.
 CI validates that only one species-flow definition is registered, verifies
 both enum dropdown options, compiles the shared shader with tangent and
 sine/cosine math, runs two parameterized instances against an external image,
-checks visible particles' territorial assignment, independently evolving
-state, serialization, and pixelwise Mix(Add) composition, then generates
+checks complementary hard and soft visibility, actual fractional ink weights,
+weighted-versus-unweighted splat deposition, independently evolving state,
+serialization, and pixelwise Mix(Add) composition, then generates
 a 120-frame `sands-preview` artifact.
