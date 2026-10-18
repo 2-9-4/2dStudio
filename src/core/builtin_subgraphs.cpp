@@ -917,7 +917,7 @@ SubgraphDefinition speciesFlow(bool tangent) {
     SubgraphDefinition result;
     result.id = tangent ? "builtin.particles.species_1_flow"
                         : "builtin.particles.species_2_flow";
-    result.version = 1;
+    result.version = 2;
     result.name = tangent ? "Species 1 Flow (Tangent)"
                           : "Species 2 Flow (Sine/Cosine)";
     result.category = "Simulation";
@@ -942,6 +942,12 @@ SubgraphDefinition speciesFlow(bool tangent) {
          true, 1200.0F, 8.0F, 4096.0F, Control::Integer},
         {"lifeRate", "Life Decay", K::Input, ValueType::Float,
          true, 0.1F, 0.001F, 1.0F},
+        // Both species must use identical thresholds to get complementary
+        // territories. The example wires two shared Float nodes into these.
+        {"regionStart", "Region Angle Start", K::Input, ValueType::Float,
+         true, 3.0F, 0.0F, 6.2831853F},
+        {"regionEnd", "Region Angle End", K::Input, ValueType::Float,
+         true, 6.0F, 0.0F, 6.2831853F},
     };
     if (tangent)
         result.interface.push_back({"maxJump", "Tangent Jump Limit", K::Input,
@@ -1121,9 +1127,48 @@ SubgraphDefinition speciesFlow(bool tangent) {
                                  {3690,2330},{{"slot",1.0F}});
     connect(nextPosition,storePosition,"value");
     connect(nextLife,storeLife,"value");
-    const auto output=addNode(body,"subgraph_output","Particle Positions",
-                              {3930,1820},{{"key","positions"}});
-    connect(w(storePosition,"value"),output,"value");
+
+    // SHARED TERRITORIES, NOT SHARED PARTICLES: preserve the two independent
+    // position/lifetime simulations, but give their visible positions
+    // complementary masks according to the same external field. Sampling the
+    // FINAL position prevents a species from depositing ink just across a
+    // boundary after stepping (or respawning) out of its permitted region.
+    // The masked sentinel affects only the exported field, never feedback.
+    const auto renderSample=addNode(body,"texture_sample",
+                                    "Sample Field at Deposited Position",
+                                    {3690,2820},{{"addressMode",1.0F},
+                                                 {"sampling",1.0F}});
+    connect(w(field,"value"),renderSample,"source");
+    connect(nextPosition,renderSample,"coordinates");
+    const auto regionBins=calc("Deposition Angle Bins",M::Multiply,3940,2800,
+                               w(renderSample,"sampled"),w(bins,"value"));
+    const auto regionRounded=calc("Quantize Deposition Angle",M::Round,4180,2800,
+                                  regionBins);
+    const auto regionFraction=calc("Deposition Fraction",M::Divide,4420,2800,
+                                   regionRounded,w(bins,"value"));
+    const auto regionAngle=calc("Deposition Angle in Radians",M::Multiply,4660,2800,
+                                regionFraction,{},{},{{"b",6.28318530718F}});
+    const auto lower=input(body,"regionStart","Territory Start (Radians)",{4420,3080});
+    const auto upper=input(body,"regionEnd","Territory End (Radians)",{4420,3250});
+    const auto aboveLower=calc("Angle at or Above Start",M::Step,4890,2960,
+                               w(lower,"value"),regionAngle);
+    const auto aboveUpper=calc("Angle at or Above End",M::Step,4890,3200,
+                               w(upper,"value"),regionAngle);
+    const auto belowUpper=calc("Angle Below End",M::Subtract,5120,3200,
+                               {},aboveUpper,{},{{"a",1.0F}});
+    const auto inside=calc("Inside Territory",M::Multiply,5360,3030,
+                           aboveLower,belowUpper);
+    const auto visibility=tangent ? inside :
+        calc("Outside Territory",M::Subtract,5580,3210,
+             {},inside,{},{{"a",1.0F}});
+    const auto offCanvas=vector(body,"Invisible Position Sentinel",
+                                {5360,3480},-1.0F,-1.0F);
+    const auto visiblePosition=choose("Visible Only in Assigned Territory",
+                                       visibility,nextPosition,w(offCanvas,"value"),
+                                       5800,2820);
+    const auto output=addNode(body,"subgraph_output","Visible Particle Positions",
+                              {6070,2820},{{"key","positions"}});
+    connect(visiblePosition,output,"value");
     return result;
 }
 
