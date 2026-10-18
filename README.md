@@ -52,8 +52,11 @@ independent RNG, position/lifetime feedback, speed, and horizontal jitter.
 Each instance selects **Motion** (Tangent, Sine/Cosine, Double Angle,
 Harmonic Rosette, or Soft Tangent) and
 **Deposit In** (`Inside Range` or `Outside Range`) through dropdowns.
-Shared region threshold Float nodes preserve complementary visible
-territories without inter-species forces or shared state.
+Shared region threshold Float nodes define complementary visible
+territories without inter-species forces or shared state. An adjustable
+**Boundary Fade** Float is also shared across instances; each exports
+fractional per-particle `weights` to its standard Splat for a smooth,
+complementary transition instead of a binary cutoff.
 The simulation only emits normalized particle positions; ordinary
 root-level Particle Splat nodes assign colors and the existing Mix(Add)
 node composes the trails. Perlin is never hardcoded into the subgraph.
