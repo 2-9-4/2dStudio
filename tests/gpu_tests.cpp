@@ -146,8 +146,10 @@ TEST_CASE("independent species flow graphs sample an external field and mix thei
         INFO(nlohmann::json(errors).dump());
         REQUIRE(errors.empty());
         REQUIRE(species->execution==SubgraphExecution::Simulation);
-        REQUIRE(species->stateSlots.size()==2);
+        REQUIRE(species->stateSlots.size()==3);
         REQUIRE(species->stateSlots.front().highPrecision);
+        REQUIRE(species->stateSlots.back().highPrecision);
+        REQUIRE(species->stateSlots.back().key=="visible");
         REQUIRE(species->interface.front().key=="field");
         REQUIRE(species->interface.front().contract==SocketContract::ScalarFieldOnly);
         REQUIRE(species->interface.back().key=="positions");
@@ -162,7 +164,15 @@ TEST_CASE("independent species flow graphs sample an external field and mix thei
             return node.label=="Sample Field at Deposited Position";
         }));
         REQUIRE(std::ranges::count(species->body.nodes(),"simulation_next_state",
-                                   &NodeRecord::type)==2);
+                                   &NodeRecord::type)==3);
+        // Only two feedback slots drive behavior. Render state is an isolated
+        // output endpoint and must not be consumed by the motion graph.
+        const auto visibleSlotNode=std::ranges::find_if(species->body.nodes(),
+            [](const auto& node){return node.label=="Prior Visible Positions (Unused)";});
+        REQUIRE(visibleSlotNode!=species->body.nodes().end());
+        REQUIRE(std::ranges::none_of(species->body.links(),[&](const auto& edge){
+            return edge.fromNode==visibleSlotNode->id;
+        }));
         REQUIRE(std::ranges::none_of(species->body.nodes(),[](const auto& node){
             return node.type=="perlin" || node.type=="particle_step" ||
                    node.type=="particle_splat" || node.type=="simulation_channel";
