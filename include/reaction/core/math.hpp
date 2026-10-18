@@ -39,15 +39,21 @@ enum class MathOperation : int {
     Hypotenuse = 28,
     Smoothstep = 29,
     MultiplyAccumulate = 30,
+    HyperbolicTangent = 31,
+    HyperbolicSine = 32,
+    HyperbolicCosine = 33,
+    Sinc = 34,
+    Softsign = 35,
 };
 
-inline constexpr std::array<std::string_view, 31> kMathOperationNames = {
+inline constexpr std::array<std::string_view, 36> kMathOperationNames = {
     "Add", "Subtract", "Multiply", "Divide", "Power", "Minimum",
     "Maximum", "Absolute", "Sine", "Cosine", "Clamp", "Remap",
     "Floor", "Ceil", "Round", "Fraction", "Square Root", "Exp",
     "Natural Log", "Log2", "Sign", "Tangent", "Arc Sine", "Arc Cosine",
     "Arc Tangent", "Modulo", "Arc Tangent 2", "Step", "Hypotenuse",
-    "Smoothstep", "Multiply Accumulate"};
+    "Smoothstep", "Multiply Accumulate", "Tanh", "Sinh", "Cosh",
+    "Sinc", "Softsign"};
 
 [[nodiscard]] MathOperation mathOperation(float persistedValue);
 [[nodiscard]] std::string_view mathOperationName(MathOperation operation);
