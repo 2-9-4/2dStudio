@@ -283,6 +283,27 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     REQUIRE(restored.subgraphs()[0].interface.size()==species->interface.size());
     REQUIRE(restored.subgraphs()[0].interface.front().key=="field");
 
+    // Projects saved before this refactor must automatically migrate their
+    // two old built-in IDs and infer each former species' dropdown defaults.
+    auto legacy=serializeProject(graph);
+    for(auto& node:legacy["nodes"]) {
+        if(node.at("type")!="subgraph")continue;
+        const bool oldTangent=node.at("id").get<NodeId>()==simulation1;
+        node["subgraphId"]=oldTangent ? "builtin.particles.species_1_flow"
+                                      : "builtin.particles.species_2_flow";
+        node["typeVersion"]=2;
+        node["parameters"].erase("motionMode");
+        node["parameters"].erase("depositMode");
+    }
+    const auto migrated=deserializeProject(legacy,registry);
+    REQUIRE(migrated.compile(registry).valid);
+    REQUIRE(migrated.findNode(simulation1)->subgraphId==species->id);
+    REQUIRE(migrated.findNode(simulation2)->subgraphId==species->id);
+    REQUIRE(migrated.findNode(simulation1)->parameters.at("motionMode")==0.0F);
+    REQUIRE(migrated.findNode(simulation2)->parameters.at("motionMode")==1.0F);
+    REQUIRE(migrated.findNode(simulation1)->parameters.at("depositMode")==0.0F);
+    REQUIRE(migrated.findNode(simulation2)->parameters.at("depositMode")==1.0F);
+
     GraphRuntime runtime(graph,registry,gpu);
     REQUIRE(runtime.evaluate(0.0,1.0/60.0,true));
     const auto first1=readImage(std::get<ImageHandle>(runtime.values().at(simulation1)[0]));
