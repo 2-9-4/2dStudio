@@ -916,7 +916,7 @@ SubgraphDefinition lenia() {
 SubgraphDefinition speciesFlow() {
     SubgraphDefinition result;
     result.id = "builtin.particles.species_flow";
-    result.version = 1;
+    result.version = 2;
     result.name = "Species Flow";
     result.category = "Simulation";
     result.execution = SubgraphExecution::Simulation;
@@ -927,6 +927,7 @@ SubgraphDefinition speciesFlow() {
         // Presentation-only slot. It is never read by the motion or life
         // update; the simulation engine exports Next State endpoints only.
         {"visible", "Territory-Masked Positions", ValueType::VectorField, true},
+        {"inkWeight", "Per-Particle Ink Weight", ValueType::ScalarField},
     };
     using K = SubgraphInterfaceKind;
     result.interface = {
@@ -953,6 +954,8 @@ SubgraphDefinition speciesFlow() {
          true, 3.0F, 0.0F, 6.2831853F},
         {"regionEnd", "Region Angle End", K::Input, ValueType::Float,
          true, 6.0F, 0.0F, 6.2831853F},
+        {"transitionWidth", "Boundary Fade (radians)", K::Input, ValueType::Float,
+         true, 0.45F, 0.0F, 3.1415926F},
     };
     // The final SubgraphInterfaceItem constructor argument is a STRING role,
     // not enumOptions. Assign options explicitly: braced pairs in that slot
@@ -968,6 +971,7 @@ SubgraphDefinition speciesFlow() {
         {"iterations", "Iterations per Frame", K::Input, ValueType::Float,
          true, 1.0F, 1.0F, 64.0F, Control::Integer},
         {"positions", "Particle Positions", K::Output, ValueType::VectorField},
+        {"weights", "Ink Opacity Weights", K::Output, ValueType::ScalarField},
     });
     auto& body = result.body;
     using M = MathOperation;
@@ -1042,6 +1046,11 @@ SubgraphDefinition speciesFlow() {
                                   "Initial Invisible Rendering",
                                   {1120,550},{{"slot",2.0F}});
     connect(w(offCanvas,"value"),initVisible,"value");
+    const auto initWeight=addNode(body,"simulation_initial_state",
+                                  "Initial Ink Weight",{1120,700},{{"slot",3.0F}});
+    const auto zeroWeight=calc("Zero Initial Ink Weight",M::Multiply,830,720,
+                               {},{},{},{{"a",0.0F},{"b",0.0F}});
+    connect(zeroWeight,initWeight,"value");
 
     const auto prevPos=addNode(body,"simulation_previous_state","Previous Position",
                                {0,760},{{"slot",0.0F}});
@@ -1049,6 +1058,8 @@ SubgraphDefinition speciesFlow() {
                                 {0,1020},{{"slot",1.0F}});
     addNode(body,"simulation_previous_state","Prior Visible Positions (Unused)",
             {0,1190},{{"slot",2.0F}});
+    addNode(body,"simulation_previous_state","Prior Ink Weight (Unused)",
+            {0,1230},{{"slot",3.0F}});
     const auto position=w(prevPos,"value");
     const auto life=w(prevLife,"value");
 
@@ -1219,17 +1230,44 @@ SubgraphDefinition speciesFlow() {
                                w(upper,"value"),regionAngle);
     const auto belowUpper=calc("Angle Below End",M::Subtract,5120,3200,
                                {},aboveUpper,{},{{"a",1.0F}});
-    const auto inside=calc("Inside Territory",M::Multiply,5360,3030,
-                           aboveLower,belowUpper);
-    const auto outside=calc("Outside Territory",M::Subtract,5580,3210,
+    const auto hardInside=calc("Inside Territory",M::Multiply,5360,3030,
+                               aboveLower,belowUpper);
+
+    // Complementary soft opacity around BOTH boundaries. transitionWidth=0
+    // selects the exact pre-existing hard mask. Dynamics never read opacity.
+    const auto fade=input(body,"transitionWidth","Shared Boundary Fade Width",
+                          {4420,3470});
+    const auto halfFade=calc("Half Transition Width",M::Multiply,4680,3470,
+                             w(fade,"value"),{},{},{{"b",0.5F}});
+    const auto startLo=calc("Start Minus Half Fade",M::Subtract,4930,3460,
+                            w(lower,"value"),halfFade);
+    const auto startHi=calc("Start Plus Half Fade",M::Add,4930,3600,
+                            w(lower,"value"),halfFade);
+    const auto endLo=calc("End Minus Half Fade",M::Subtract,4930,3750,
+                          w(upper,"value"),halfFade);
+    const auto endHi=calc("End Plus Half Fade",M::Add,4930,3890,
+                          w(upper,"value"),halfFade);
+    const auto enter=calc("Smooth Entrance",M::Smoothstep,5190,3460,
+                          regionAngle,startLo,startHi);
+    const auto exit=calc("Smooth Exit",M::Smoothstep,5190,3750,
+                         regionAngle,endLo,endHi);
+    const auto retain=calc("One Minus Smooth Exit",M::Subtract,5410,3750,
+                           {},exit,{},{{"a",1.0F}});
+    const auto softInside=calc("Soft Territory",M::Multiply,5600,3650,
+                               enter,retain);
+    const auto hasFade=calc("Boundary Fade Enabled",M::Step,5600,3990,
+                            {},w(fade,"value"),{},{{"a",0.00001F}});
+    const auto inside=choose("Hard or Soft Territory",hasFade,
+                             softInside,hardInside,5810,3610);
+    const auto outside=calc("Outside Territory",M::Subtract,6020,3820,
                             {},inside,{},{{"a",1.0F}});
     const auto depositMode=input(body,"depositMode","Deposit Region Dropdown",
-                                 {5350,3400});
+                                 {5810,4060});
     const auto visibility=choose("Choose Inside or Outside Range",
-                                 w(depositMode,"value"),outside,inside,5580,2880);
+                                 w(depositMode,"value"),outside,inside,6240,3650);
     const auto visiblePosition=choose("Visible Only in Assigned Territory",
-                                       visibility,nextPosition,w(offCanvas,"value"),
-                                       5800,2820);
+                                      visibility,nextPosition,w(offCanvas,"value"),
+                                      6460,2820);
     // A third Next State is needed as the subgraph's export endpoint, but the
     // corresponding Previous State is intentionally unused by all dynamics.
     const auto storeVisible=addNode(body,"simulation_next_state",
@@ -1239,6 +1277,14 @@ SubgraphDefinition speciesFlow() {
     const auto output=addNode(body,"subgraph_output","Visible Particle Positions",
                               {6280,2820},{{"key","positions"}});
     connect(w(storeVisible,"value"),output,"value");
+    // Standalone scalar visibility output: optional for every consumer.
+    const auto storeWeights=addNode(body,"simulation_next_state",
+                                    "Publish Ink Opacity Weights",
+                                    {6470,3850},{{"slot",3.0F}});
+    connect(visibility,storeWeights,"value");
+    const auto weightsOutput=addNode(body,"subgraph_output","Per-Particle Ink Weights",
+                                     {6700,3850},{{"key","weights"}});
+    connect(w(storeWeights,"value"),weightsOutput,"value");
     return result;
 }
 
