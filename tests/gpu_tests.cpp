@@ -206,12 +206,16 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     REQUIRE(update.find("tan(")!=std::string::npos);
     REQUIRE(update.find("sin(")!=std::string::npos);
     REQUIRE(update.find("cos(")!=std::string::npos);
+    // Shader-only validation uses its own hidden OpenGL context. Destroy it
+    // before the runtime test creates another GLFW context.
+    {
     HiddenContext local;
     GpuRuntime compiler;
     const GLuint initProgram=compiler.compileCompute(initial,"Species initial");
     const GLuint stepProgram=compiler.compileCompute(update,"Species update");
     glDeleteProgram(initProgram);
     glDeleteProgram(stepProgram);
+    }
 
     HiddenContext context;
     GpuRuntime gpu;
