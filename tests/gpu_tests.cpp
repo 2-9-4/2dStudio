@@ -117,7 +117,7 @@ LoweredChain lowerMathThresholdSelect(const NodeRegistry& registry, ShaderValueT
 } // namespace
 
 
-TEST_CASE("independent species flow graphs sample an external field and mix their splats") {
+TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and complementary ink territories") {
     NodeRegistry registry;
     registerBuiltInNodes(registry);
     const auto findSpecies=[&](const char* id){
@@ -125,79 +125,93 @@ TEST_CASE("independent species flow graphs sample an external field and mix thei
             return def.id==id;
         });
     };
-    const auto species1=findSpecies("builtin.particles.species_1_flow");
-    const auto species2=findSpecies("builtin.particles.species_2_flow");
-    REQUIRE(species1!=builtInSubgraphs().end());
-    REQUIRE(species2!=builtInSubgraphs().end());
-    REQUIRE(std::ranges::none_of(builtInSubgraphs(),[](const auto& def){
-        return def.id=="builtin.particles.noise_flow" ||
-               def.id=="builtin.particles.sands_layers";
-    }));
-    for(const auto& species:{&*species1,&*species2}){
-        INFO(species->name);
-        REQUIRE(species->version==2);
-        REQUIRE(std::ranges::any_of(species->interface,[](const auto& item){
-            return item.key=="regionStart";
-        }));
-        REQUIRE(std::ranges::any_of(species->interface,[](const auto& item){
-            return item.key=="regionEnd";
-        }));
-        const auto errors=validateSubgraph(*species,registry);
-        INFO(nlohmann::json(errors).dump());
-        REQUIRE(errors.empty());
-        REQUIRE(species->execution==SubgraphExecution::Simulation);
-        REQUIRE(species->stateSlots.size()==3);
-        REQUIRE(species->stateSlots.front().highPrecision);
-        REQUIRE(species->stateSlots.back().highPrecision);
-        REQUIRE(species->stateSlots.back().key=="visible");
-        REQUIRE(species->interface.front().key=="field");
-        REQUIRE(species->interface.front().contract==SocketContract::ScalarFieldOnly);
-        REQUIRE(species->interface.back().key=="positions");
-        REQUIRE(std::ranges::count(species->body.nodes(),"texture_sample",
-                                   &NodeRecord::type)==2);
-        // Territory clipping is a final output transformation, not a new
-        // feedback state or another force between species.
-        REQUIRE(std::ranges::any_of(species->body.nodes(),[](const auto& node){
-            return node.label=="Visible Only in Assigned Territory";
-        }));
-        REQUIRE(std::ranges::any_of(species->body.nodes(),[](const auto& node){
-            return node.label=="Sample Field at Deposited Position";
-        }));
-        REQUIRE(std::ranges::count(species->body.nodes(),"simulation_next_state",
-                                   &NodeRecord::type)==3);
-        // Only two feedback slots drive behavior. Render state is an isolated
-        // output endpoint and must not be consumed by the motion graph.
-        const auto visibleSlotNode=std::ranges::find_if(species->body.nodes(),
-            [](const auto& node){return node.label=="Prior Visible Positions (Unused)";});
-        REQUIRE(visibleSlotNode!=species->body.nodes().end());
-        REQUIRE(std::ranges::none_of(species->body.links(),[&](const auto& edge){
-            return edge.fromNode==visibleSlotNode->id;
-        }));
-        REQUIRE(std::ranges::none_of(species->body.nodes(),[](const auto& node){
-            return node.type=="perlin" || node.type=="particle_step" ||
-                   node.type=="particle_splat" || node.type=="simulation_channel";
-        }));
-        const auto initial=generateSimulationShader(*species,true);
-        const auto update=generateSimulationShader(*species,false);
-        REQUIRE(initial.find("deterministicHash")!=std::string::npos);
-        REQUIRE(update.find("deterministicHash")!=std::string::npos);
-        REQUIRE(update.find("rg32f,binding=0")!=std::string::npos);
-        REQUIRE(update.find("perlinNoise")==std::string::npos);
-        REQUIRE(update.find("texture(")!=std::string::npos);
-        HiddenContext local;
-        GpuRuntime gpu;
-        const GLuint initProgram=gpu.compileCompute(initial,"Species initial");
-        const GLuint stepProgram=gpu.compileCompute(update,"Species update");
-        glDeleteProgram(initProgram);
-        glDeleteProgram(stepProgram);
+    const auto species=findSpecies("builtin.particles.species_flow");
+    REQUIRE(species!=builtInSubgraphs().end());
+    REQUIRE(species->id=="builtin.particles.species_flow");
+    REQUIRE(species->version==1);
+    REQUIRE(std::ranges::count_if(builtInSubgraphs(),[](const auto& def){
+        return def.id.starts_with("builtin.particles.");
+    })==1);
+    for(const auto& legacy:{"builtin.particles.noise_flow",
+                            "builtin.particles.sands_layers",
+                            "builtin.particles.species_1_flow",
+                            "builtin.particles.species_2_flow"})
+        REQUIRE(findSpecies(legacy)==builtInSubgraphs().end());
+    for(const auto& [key,options]:std::array<std::pair<std::string,std::vector<std::string>>,2>{
+            std::pair{"motionMode",std::vector<std::string>{"Tangent","Sine / Cosine"}},
+            std::pair{"depositMode",std::vector<std::string>{"Inside Range","Outside Range"}}}){
+        const auto param=std::ranges::find_if(species->interface,[&](const auto& item){
+            return item.key==key;
+        });
+        REQUIRE(param!=species->interface.end());
+        REQUIRE(param->control==ParameterDescriptor::Control::Enum);
+        REQUIRE(param->enumOptions==options);
+        REQUIRE(param->minimum==0.0F);
+        REQUIRE(param->maximum==1.0F);
     }
-    const auto tangentShader=generateSimulationShader(*species1,false);
-    const auto sineShader=generateSimulationShader(*species2,false);
-    REQUIRE(tangentShader.find("tan(")!=std::string::npos);
-    REQUIRE(tangentShader.find("cos(")==std::string::npos);
-    REQUIRE(sineShader.find("sin(")!=std::string::npos);
-    REQUIRE(sineShader.find("cos(")!=std::string::npos);
-    REQUIRE(sineShader.find("tan(")==std::string::npos);
+    const auto errors=validateSubgraph(*species,registry);
+    INFO(nlohmann::json(errors).dump());
+    REQUIRE(errors.empty());
+    REQUIRE(species->execution==SubgraphExecution::Simulation);
+    REQUIRE(species->stateSlots.size()==3);
+    REQUIRE(species->stateSlots.front().highPrecision);
+    REQUIRE(species->stateSlots.back().highPrecision);
+    REQUIRE(species->stateSlots.back().key=="visible");
+    REQUIRE(species->interface.front().key=="field");
+    REQUIRE(species->interface.front().contract==SocketContract::ScalarFieldOnly);
+    REQUIRE(species->interface.back().key=="positions");
+    REQUIRE(std::ranges::count(species->body.nodes(),"texture_sample",
+                               &NodeRecord::type)==2);
+    REQUIRE(std::ranges::count(species->body.nodes(),"simulation_next_state",
+                               &NodeRecord::type)==3);
+    for(const auto label:{"Choose Motion Rule","Choose Inside or Outside Range",
+                          "Visible Only in Assigned Territory",
+                          "Sample Field at Deposited Position"})
+        REQUIRE(std::ranges::any_of(species->body.nodes(),[&](const auto& n){
+            return n.label==label;
+        }));
+    for(const auto& [inputKey,selectLabel]:std::array<std::pair<std::string,std::string>,2>{
+            std::pair{"motionMode","Choose Motion Rule"},
+            std::pair{"depositMode","Choose Inside or Outside Range"}}){
+        const auto inputNode=std::ranges::find_if(species->body.nodes(),[&](const auto& n){
+            return n.type=="subgraph_input" && n.parameters.value("key",std::string{})==inputKey;
+        });
+        const auto selector=std::ranges::find_if(species->body.nodes(),[&](const auto& n){
+            return n.label==selectLabel;
+        });
+        REQUIRE(inputNode!=species->body.nodes().end());
+        REQUIRE(selector!=species->body.nodes().end());
+        REQUIRE(std::ranges::any_of(species->body.links(),[&](const auto& edge){
+            return edge.fromNode==inputNode->id && edge.toNode==selector->id &&
+                   edge.toSocket=="condition";
+        }));
+    }
+    const auto visiblePrevious=std::ranges::find_if(species->body.nodes(),
+        [](const auto& node){return node.label=="Prior Visible Positions (Unused)";});
+    REQUIRE(visiblePrevious!=species->body.nodes().end());
+    REQUIRE(std::ranges::none_of(species->body.links(),[&](const auto& edge){
+        return edge.fromNode==visiblePrevious->id;
+    }));
+    REQUIRE(std::ranges::none_of(species->body.nodes(),[](const auto& n){
+        return n.type=="perlin" || n.type=="particle_step" ||
+               n.type=="particle_splat" || n.type=="simulation_channel";
+    }));
+    const auto initial=generateSimulationShader(*species,true);
+    const auto update=generateSimulationShader(*species,false);
+    REQUIRE(initial.find("deterministicHash")!=std::string::npos);
+    REQUIRE(update.find("deterministicHash")!=std::string::npos);
+    REQUIRE(update.find("rg32f,binding=0")!=std::string::npos);
+    REQUIRE(update.find("perlinNoise")==std::string::npos);
+    REQUIRE(update.find("texture(")!=std::string::npos);
+    REQUIRE(update.find("tan(")!=std::string::npos);
+    REQUIRE(update.find("sin(")!=std::string::npos);
+    REQUIRE(update.find("cos(")!=std::string::npos);
+    HiddenContext local;
+    GpuRuntime compiler;
+    const GLuint initProgram=compiler.compileCompute(initial,"Species initial");
+    const GLuint stepProgram=compiler.compileCompute(update,"Species update");
+    glDeleteProgram(initProgram);
+    glDeleteProgram(stepProgram);
 
     HiddenContext context;
     GpuRuntime gpu;
@@ -208,17 +222,19 @@ TEST_CASE("independent species flow graphs sample an external field and mix thei
         {"seed",1.0F},{"scale",5.0F},{"speed",0.0F},
         {"octaves",4.0F},{"persistence",.5F},{"lacunarity",2.0F}};
     const auto simulation1=graph.addNode("subgraph");
-    graph.findNode(simulation1)->subgraphId=species1->id;
+    graph.findNode(simulation1)->subgraphId=species->id;
     graph.findNode(simulation1)->parameters={
         {"seed",14.0F},{"speed",1.0F},{"horizontalMin",1.0F},
         {"horizontalMax",3.0F},{"lifeRate",.1F},{"maxJump",64.0F},
-        {"angleBins",1200.0F},{"iterations",1.0F}};
+        {"angleBins",1200.0F},{"iterations",1.0F},
+        {"motionMode",0.0F},{"depositMode",0.0F}};
     const auto simulation2=graph.addNode("subgraph");
-    graph.findNode(simulation2)->subgraphId=species2->id;
+    graph.findNode(simulation2)->subgraphId=species->id;
     graph.findNode(simulation2)->parameters={
         {"seed",314.0F},{"speed",1.0F},{"horizontalMin",.1F},
         {"horizontalMax",1.0F},{"lifeRate",.1F},
-        {"angleBins",1200.0F},{"iterations",1.0F}};
+        {"angleBins",1200.0F},{"iterations",1.0F},
+        {"motionMode",1.0F},{"depositMode",1.0F},{"maxJump",64.0F}};
     const auto regionStart=graph.addNode("float");
     graph.findNode(regionStart)->parameters={{"value",3.0F}};
     const auto regionEnd=graph.addNode("float");
@@ -250,17 +266,21 @@ TEST_CASE("independent species flow graphs sample an external field and mix thei
     INFO(nlohmann::json(compile.errors).dump());
     REQUIRE(compile.valid);
     REQUIRE(std::ranges::count(graph.nodes(),"subgraph",&NodeRecord::type)==2);
+    REQUIRE(graph.findNode(simulation1)->subgraphId==graph.findNode(simulation2)->subgraphId);
+    REQUIRE(graph.findNode(simulation1)->parameters.value("motionMode",-1.0F)==0.0F);
+    REQUIRE(graph.findNode(simulation2)->parameters.value("motionMode",-1.0F)==1.0F);
+    REQUIRE(graph.findNode(simulation1)->parameters.value("depositMode",-1.0F)==0.0F);
+    REQUIRE(graph.findNode(simulation2)->parameters.value("depositMode",-1.0F)==1.0F);
     REQUIRE(std::ranges::count(graph.nodes(),"particle_splat",&NodeRecord::type)==2);
     REQUIRE(std::ranges::count(graph.nodes(),"perlin",&NodeRecord::type)==1);
     REQUIRE(std::ranges::count(graph.nodes(),"float",&NodeRecord::type)==2);
     REQUIRE(deserializeProject(serializeProject(graph),registry).compile(registry).valid);
     Graph custom;
-    custom.subgraphs().push_back(*species1);
-    custom.subgraphs().push_back(*species2);
+    custom.subgraphs().push_back(*species);
     const auto restored=deserializeProject(serializeProject(custom),registry);
-    REQUIRE(restored.subgraphs().size()==2);
+    REQUIRE(restored.subgraphs().size()==1);
     REQUIRE(restored.subgraphs()[0].stateSlots.front().highPrecision);
-    REQUIRE(restored.subgraphs()[1].stateSlots.front().highPrecision);
+    REQUIRE(restored.subgraphs()[0].interface==species->interface);
 
     GraphRuntime runtime(graph,registry,gpu);
     REQUIRE(runtime.evaluate(0.0,1.0/60.0,true));
