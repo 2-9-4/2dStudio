@@ -457,6 +457,26 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     REQUIRE(std::ranges::all_of(final,[](float v){return std::isfinite(v);}));
     REQUIRE(std::ranges::any_of(ink1,[](float v){return v>.1F;}));
     REQUIRE(std::ranges::any_of(ink2,[](float v){return v>.1F;}));
+    // Regression: adding the optional 'weights' socket once shifted every
+    // native splat input by one, turning the orange and teal inks blue/green.
+    // Check the actual accumulated GPU pixel CHANNELS, not just nonblack ink.
+    const auto channelMeans=[](const std::vector<float>& pixels){
+        std::array<double,3> means{};
+        for(std::size_t i=0;i+3<pixels.size();i+=4)
+            for(int channel=0;channel<3;++channel)
+                means[static_cast<std::size_t>(channel)]+=pixels[i+channel];
+        return means;
+    };
+    const auto orange=channelMeans(ink1);
+    const auto teal=channelMeans(ink2);
+    INFO("orange RGB totals "<<orange[0]<<"/"<<orange[1]<<"/"<<orange[2]
+         <<" | teal RGB totals "<<teal[0]<<"/"<<teal[1]<<"/"<<teal[2]);
+    REQUIRE(orange[0]>1.0);
+    REQUIRE(teal[1]>1.0);
+    REQUIRE(orange[1]/orange[0]==Catch::Approx(.2925/.9).epsilon(.08));
+    REQUIRE(orange[2]/orange[0]==Catch::Approx(.09/.9).epsilon(.08));
+    REQUIRE(teal[0]/teal[1]==Catch::Approx(.09/.9).epsilon(.08));
+    REQUIRE(teal[2]/teal[1]==Catch::Approx(.8325/.9).epsilon(.08));
     for(std::size_t i=0;i+3<final.size();i+=4)
         for(int c=0;c<3;++c)
             REQUIRE(std::abs(final[i+static_cast<std::size_t>(c)]-
@@ -645,6 +665,14 @@ TEST_CASE("two Species Flow instances fade complementary ink smoothly with weigh
         REQUIRE(unweightedSum>5.0F);
         REQUIRE(weightedSum>1.0F);
         REQUIRE(reduction>1.0F);
+        // Both splats are configured red-only. The optional weights input
+        // must change intensity, not steal the blue/green parameter pins.
+        for(std::size_t i=0;i+3<soft.size();i+=4){
+            REQUIRE(std::abs(soft[i+1])<.005F);
+            REQUIRE(std::abs(soft[i+2])<.005F);
+            REQUIRE(std::abs(hard[i+1])<.005F);
+            REQUIRE(std::abs(hard[i+2])<.005F);
+        }
     }
 
     // Zero transition width exactly reproduces the old disjoint position
