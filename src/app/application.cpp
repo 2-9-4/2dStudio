@@ -525,6 +525,54 @@ bool renderColorRampPickerPopup(GraphLike& graph) {
     return changed;
 }
 
+// A single compact swatch + three short connection pins replaces the three
+// full-width RGB drag rows and the oversized inline ColorEdit3. Users can still
+// wire R/G/B independently; the full color picker only opens on demand.
+bool renderSplatInkControl(
+    NodeRecord& node, const NodeDescriptor& descriptor,
+    node_widgets::PopupState& popup,
+    std::unordered_map<std::uintptr_t, PinTarget>& pins) {
+    constexpr std::array<const char*, 3> keys{"r","g","b"};
+    constexpr std::array<const char*, 3> labels{"R","G","B"};
+    constexpr std::array<float, 3> defaults{.90F,.2925F,.09F};
+    float color[3]{};
+    for(std::size_t i=0;i<keys.size();++i)
+        color[i]=node.parameters.value(keys[i],defaults[i]);
+
+    ImGui::BeginGroup();
+    ImGui::TextUnformatted("Ink");
+    ImGui::SameLine(0.0F,8.0F);
+    for(std::size_t i=0;i<keys.size();++i){
+        const auto index=inputSocketIndex(descriptor,keys[i]);
+        if(index<0)continue;
+        const auto id=pinUiId(node.id,static_cast<std::size_t>(index),
+                              SocketDirection::Input);
+        pins.emplace(id,PinTarget{node.id,keys[i],SocketDirection::Input});
+        ed::BeginPin(ed::PinId(id),ed::PinKind::Input);
+        ed::PinPivotAlignment(ImVec2(0.0F,.5F));
+        const auto& socket=descriptor.sockets[static_cast<std::size_t>(index)];
+        ImGui::BeginGroup();
+        const float width=renderTypeSquares(socket.contract,ImGui::GetCursorScreenPos());
+        ImGui::Dummy(ImVec2(width,8.0F));
+        ImGui::SameLine(0.0F,2.0F);
+        ImGui::TextUnformatted(labels[i]);
+        ImGui::EndGroup();
+        ed::EndPin();
+        ImGui::SameLine(0.0F,5.0F);
+    }
+    ImGui::PushID("splatInk");
+    if(ImGui::ColorButton("##swatch",ImVec4(color[0],color[1],color[2],1.0F),
+                          ImGuiColorEditFlags_NoAlpha|ImGuiColorEditFlags_NoDragDrop,
+                          ImVec2(42.0F,19.0F))) {
+        // Capture only the widget action here. The shared PopupState is
+        // opened/rendered after ed::Suspend(), in untransformed screen space.
+        popup.request(node_widgets::PopupKind::SplatInkColor,node.id);
+    }
+    ImGui::PopID();
+    ImGui::EndGroup();
+    return false;
+}
+
 // Renders the node box the same way in the root graph and in every editable
 // subgraph body: descriptor title, pin column, parameter rows, per-node editor
 // widgets in the middle column, then output pins in their own trailing column.
@@ -540,6 +588,10 @@ bool renderNodeBody(NodeRecord& node, const NodeDescriptor& descriptor,
                     const std::function<bool()>& columnExtras) {
     bool changeReported = false;
     ImGui::TextUnformatted(descriptor.displayName.c_str());
+    // NodeRecord labels previously appeared only in shader source. Display
+    // meaningful instance names equally in root and editable subgraph canvases.
+    if (!node.label.empty() && node.label != descriptor.displayName)
+        ImGui::TextDisabled("%s", node.label.c_str());
     ImGui::Separator();
     ImGui::BeginGroup();
     for (std::size_t socketIndex = 0; socketIndex < descriptor.sockets.size(); ++socketIndex) {
@@ -551,6 +603,13 @@ bool renderNodeBody(NodeRecord& node, const NodeDescriptor& descriptor,
             renderSocketPin(node.id, descriptor, socketIndex, pins, outputTypes);
     }
     for (const auto& property : descriptor.parameters) {
+        if (node.type == "particle_splat" &&
+            (property.key == "r" || property.key == "g" || property.key == "b")) {
+            if (property.key == "r" &&
+                renderSplatInkControl(node,descriptor,popup,pins))
+                changeReported=true;
+            continue;
+        }
         if (node.type == "color_ramp" &&
             (property.key == "r0" || property.key == "g0" || property.key == "b0" ||
              property.key == "r1" || property.key == "g1" || property.key == "b1")) {

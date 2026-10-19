@@ -32,7 +32,12 @@ int mathOperationOperandCount(MathOperation operation) {
     case MathOperation::Tangent:
     case MathOperation::ArcSine:
     case MathOperation::ArcCosine:
-    case MathOperation::ArcTangent: return 1;
+    case MathOperation::ArcTangent:
+    case MathOperation::HyperbolicTangent:
+    case MathOperation::HyperbolicSine:
+    case MathOperation::HyperbolicCosine:
+    case MathOperation::Sinc:
+    case MathOperation::Softsign: return 1;
     case MathOperation::Clamp:
     case MathOperation::Smoothstep:
     case MathOperation::MultiplyAccumulate: return 3;
@@ -88,6 +93,12 @@ float applyMathOperation(MathOperation operation, float a, float b, float c,
         return t * t * (3.0F - 2.0F * t);
     }
     case MathOperation::MultiplyAccumulate: return a * b + c;
+    case MathOperation::HyperbolicTangent: return std::tanh(a);
+    case MathOperation::HyperbolicSine: return std::sinh(std::clamp(a, -15.0F, 15.0F));
+    case MathOperation::HyperbolicCosine: return std::cosh(std::clamp(a, -15.0F, 15.0F));
+    case MathOperation::Sinc: return std::abs(a) < 1.0e-4F ?
+        1.0F - a*a/6.0F : std::sin(a)/a;
+    case MathOperation::Softsign: return a/(1.0F + std::abs(a));
     }
     return a;
 }

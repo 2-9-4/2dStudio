@@ -910,12 +910,391 @@ SubgraphDefinition lenia() {
     return result;
 }
 
+
+// One editable flow graph; separate instances own separate particle states.
+// The enum parameters select the motion and visibility via ordinary nodes.
+SubgraphDefinition speciesFlow() {
+    SubgraphDefinition result;
+    result.id = "builtin.particles.species_flow";
+    result.version = 2;
+    result.name = "Species Flow";
+    result.category = "Simulation";
+    result.execution = SubgraphExecution::Simulation;
+    result.immutable = true;
+    result.stateSlots = {
+        {"position", "Particle Position", ValueType::VectorField, true},
+        {"life", "Remaining Life", ValueType::ScalarField},
+        // Presentation-only slot. It is never read by the motion or life
+        // update; the simulation engine exports Next State endpoints only.
+        {"visible", "Territory-Masked Positions", ValueType::VectorField, true},
+        {"inkWeight", "Per-Particle Ink Weight", ValueType::ScalarField},
+    };
+    using K = SubgraphInterfaceKind;
+    result.interface = {
+        {"field", "Flow Field Image", K::Input, ValueType::ScalarField},
+        {"seed", "Random Seed", K::Input, ValueType::Float, true,
+         14.0F, 0.0F, 100000.0F, Control::Integer},
+        {"speed", "Particle Speed", K::Input, ValueType::Float,
+         true, 1.0F, 0.0F, 10.0F},
+        {"horizontalMin", "Horizontal Jitter Min", K::Input, ValueType::Float,
+         true, 1.0F, 0.0F, 10.0F},
+        {"horizontalMax", "Horizontal Jitter Max", K::Input, ValueType::Float,
+         true, 3.0F, 0.0F, 10.0F},
+        {"angleBins", "Direction Quantization", K::Input, ValueType::Float,
+         true, 1200.0F, 8.0F, 4096.0F, Control::Integer},
+        {"lifeRate", "Life Decay", K::Input, ValueType::Float,
+         true, 0.1F, 0.001F, 1.0F},
+        {"motionMode", "Motion", K::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 4.0F, Control::Enum},
+        {"depositMode", "Deposit In", K::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 1.0F, Control::Enum},
+        // Both species must use identical thresholds to get complementary
+        // territories. The example wires two shared Float nodes into these.
+        {"regionStart", "Region Angle Start", K::Input, ValueType::Float,
+         true, 3.0F, 0.0F, 6.2831853F},
+        {"regionEnd", "Region Angle End", K::Input, ValueType::Float,
+         true, 6.0F, 0.0F, 6.2831853F},
+        {"transitionWidth", "Boundary Fade (radians)", K::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 3.1415926F},
+    };
+    // The final SubgraphInterfaceItem constructor argument is a STRING role,
+    // not enumOptions. Assign options explicitly: braced pairs in that slot
+    // can invoke std::string(first,last) and throw basic_string::_M_create.
+    result.interface[7].enumOptions = {"Tangent", "Sine / Cosine",
+        "Double Angle", "Harmonic Rosette", "Soft Tangent"};
+    result.interface[8].enumOptions = {"Inside Range", "Outside Range"};
+    result.interface.insert(result.interface.end(), {
+        {"maxJump", "Tangent Jump Limit", K::Input, ValueType::Float,
+         true, 64.0F, 1.0F, 512.0F},
+        {"reset", "Reset", K::Input, ValueType::Float,
+         true, 0.0F, 0.0F, 1.0F, Control::Boolean},
+        {"iterations", "Iterations per Frame", K::Input, ValueType::Float,
+         true, 1.0F, 1.0F, 64.0F, Control::Integer},
+        {"positions", "Particle Positions", K::Output, ValueType::VectorField},
+        {"weights", "Ink Opacity Weights", K::Output, ValueType::ScalarField},
+    });
+    auto& body = result.body;
+    using M = MathOperation;
+    using V = VectorMathOperation;
+    using Wire = std::pair<NodeId,const char*>;
+    const auto w = [](NodeId id,const char* pin="result")->Wire{return {id,pin};};
+    const auto connect = [&](Wire from,NodeId to,const char* key){
+        link(body,from.first,from.second,to,key);
+    };
+    const auto calc = [&](std::string label,M operation,int x,int y,
+                          Wire a={},Wire b={},Wire c={},
+                          nlohmann::json parameters=nlohmann::json::object())->Wire{
+        const auto id=math(body,std::move(label),static_cast<int>(operation),
+                           {static_cast<float>(x),static_cast<float>(y)},
+                           std::move(parameters));
+        if(a.first)connect(a,id,"a");
+        if(b.first)connect(b,id,"b");
+        if(c.first)connect(c,id,"c");
+        return w(id);
+    };
+    const auto choose = [&](std::string label,Wire condition,Wire yes,Wire no,
+                            int x,int y)->Wire{
+        const auto id=addNode(body,"select",std::move(label),
+                              {static_cast<float>(x),static_cast<float>(y)});
+        connect(condition,id,"condition");
+        connect(yes,id,"ifTrue");
+        connect(no,id,"ifFalse");
+        return w(id);
+    };
+    const auto split = [&](std::string label,Wire value,int x,int y)->NodeId{
+        const auto id=addNode(body,"separate_vector",std::move(label),
+                              {static_cast<float>(x),static_cast<float>(y)});
+        connect(value,id,"value");
+        return id;
+    };
+    const auto vectorFrom = [&](std::string label,Wire x,Wire y,
+                                int cx,int cy)->Wire{
+        const auto id=addNode(body,"combine_vector",std::move(label),
+                              {static_cast<float>(cx),static_cast<float>(cy)});
+        connect(x,id,"x");
+        connect(y,id,"y");
+        return w(id,"value");
+    };
+
+    // Initial positions/lifetime vary with this species' own independently
+    // configurable seed. Hash randomness uses visible, reusable Hash nodes.
+    const auto coords=addNode(body,"coordinates","Agent Slot Identity",{0,40});
+    const auto slot=w(coords,"coordinates");
+    const auto seed=input(body,"seed","Species Random Seed",{0,260});
+    const auto seeded = [&](std::string label,float offset,int x,int y,
+                            Wire salt={}) ->NodeId {
+        const auto bias=calc(label+" Seed Offset",M::Add,x,y+110,
+                             w(seed,"value"),{},{},{{"b",offset}});
+        const auto id=addNode(body,"hash",std::move(label),
+                              {static_cast<float>(x+230),static_cast<float>(y)});
+        connect(slot,id,"position");
+        connect(bias,id,"seed");
+        if(salt.first)connect(salt,id,"salt");
+        return id;
+    };
+    const auto spawn=seeded("Initial Position",14.0F,270,40);
+    const auto startLife=seeded("Initial Lifetime",15.0F,270,350);
+    const auto initPos=addNode(body,"simulation_initial_state","Initial Position",
+                               {830,40},{{"slot",0.0F}});
+    const auto initLife=addNode(body,"simulation_initial_state","Initial Life",
+                                {830,350},{{"slot",1.0F}});
+    connect(w(spawn,"vector"),initPos,"value");
+    connect(w(startLife,"scalar"),initLife,"value");
+    const auto offCanvas=vector(body,"Invisible Position Sentinel",
+                                {840,550},-1.0F,-1.0F);
+    const auto initVisible=addNode(body,"simulation_initial_state",
+                                  "Initial Invisible Rendering",
+                                  {1120,550},{{"slot",2.0F}});
+    connect(w(offCanvas,"value"),initVisible,"value");
+    const auto initWeight=addNode(body,"simulation_initial_state",
+                                  "Initial Ink Weight",{1120,700},{{"slot",3.0F}});
+    const auto zeroWeight=calc("Zero Initial Ink Weight",M::Multiply,830,720,
+                               {},{},{},{{"a",0.0F},{"b",0.0F}});
+    connect(zeroWeight,initWeight,"value");
+
+    const auto prevPos=addNode(body,"simulation_previous_state","Previous Position",
+                               {0,760},{{"slot",0.0F}});
+    const auto prevLife=addNode(body,"simulation_previous_state","Previous Life",
+                                {0,1020},{{"slot",1.0F}});
+    addNode(body,"simulation_previous_state","Prior Visible Positions (Unused)",
+            {0,1190},{{"slot",2.0F}});
+    addNode(body,"simulation_previous_state","Prior Ink Weight (Unused)",
+            {0,1230},{{"slot",3.0F}});
+    const auto position=w(prevPos,"value");
+    const auto life=w(prevLife,"value");
+
+    // Field is a required INPUT; any scalar image source may supply it.
+    const auto field=input(body,"field","External Flow Field",{0,1320});
+    const auto sample=addNode(body,"texture_sample","Sample Field at Particle",
+                              {280,1320},{{"addressMode",1.0F},{"sampling",1.0F}});
+    connect(w(field,"value"),sample,"source");
+    connect(position,sample,"coordinates");
+    const auto bins=input(body,"angleBins","Angular Quantization",{280,1550});
+    const auto scaled=calc("Field to Angle Bins",M::Multiply,540,1340,
+                           w(sample,"sampled"),w(bins,"value"));
+    const auto rounded=calc("Quantize Angle",M::Round,780,1340,scaled);
+    const auto fraction=calc("Normalized Angle",M::Divide,1010,1340,
+                             rounded,w(bins,"value"));
+    const auto theta=calc("Angle in Radians",M::Multiply,1240,1340,
+                          fraction,{},{},{{"b",6.28318530718F}});
+
+    const auto frame=addNode(body,"simulation_step_info","Simulation Frame",{0,1830});
+    const auto frameIndex=w(frame,"frameIndex");
+    const auto velocityRandom=seeded("Velocity Jitter",1001.0F,260,1780,frameIndex);
+    const auto decayA=seeded("Lifetime Random Pair 1",1002.0F,260,2100,frameIndex);
+    const auto decayB=seeded("Lifetime Random Pair 2",1003.0F,260,2410,frameIndex);
+    const auto respawn=seeded("Respawn Position",1004.0F,260,2720,frameIndex);
+    const auto respawnLife=seeded("Respawn Life",1005.0F,260,3010,frameIndex);
+    const auto jitterComponents=split("Velocity Random Channels",
+                                       w(velocityRandom,"vector"),790,1780);
+    const auto lifeChannelsA=split("Life Random Channels 1",
+                                    w(decayA,"vector"),790,2100);
+    const auto lifeChannelsB=split("Life Random Channels 2",
+                                    w(decayB,"vector"),790,2410);
+
+    const auto minimum=input(body,"horizontalMin","Horizontal Jitter Minimum",{1020,1760});
+    const auto maximum=input(body,"horizontalMax","Horizontal Jitter Maximum",{1020,1890});
+    const auto spread=calc("Horizontal Jitter Range",M::Subtract,1250,1840,
+                           w(maximum,"value"),w(minimum,"value"));
+    const auto jitter=calc("Randomized Horizontal Magnitude",M::Multiply,1490,1840,
+                           w(jitterComponents,"x"),spread);
+    const auto xMagnitude=calc("Horizontal Magnitude + Minimum",M::Add,1710,1840,
+                               jitter,w(minimum,"value"));
+
+    // Both trigonometric modes are standard editable Math/Vector nodes;
+    // a per-instance enum drives the Select instead of separate graphs.
+    const auto rawTan=calc("Tangent Flow",M::Tangent,1510,1470,theta);
+    const auto cap=input(body,"maxJump","Maximum Tangent Jump",{1510,1610});
+    const auto minusCap=calc("Negative Jump Cap",M::Multiply,1740,1600,
+                             w(cap,"value"),{},{},{{"b",-1.0F}});
+    const auto safeTan=calc("Clamp Tangent Singularities",M::Clamp,1970,1470,
+                            rawTan,minusCap,w(cap,"value"));
+    const auto tangentX=calc("Tangent Horizontal Motion",M::Multiply,2210,1780,
+                             safeTan,xMagnitude);
+    const auto tangentStep=vectorFrom("Tangent Velocity",tangentX,safeTan,2440,1660);
+
+    const auto sine=calc("Flow Sine",M::Sine,1510,2030,theta);
+    const auto cosine=calc("Flow Cosine",M::Cosine,1510,2200,theta);
+    const auto negSine=calc("Negative Sine",M::Multiply,1770,2030,
+                            sine,{},{},{{"b",-1.0F}});
+    const auto sineX=calc("Sine Horizontal Motion",M::Multiply,2210,2180,
+                          negSine,xMagnitude);
+    const auto negCos=calc("Negative Cosine",M::Multiply,1970,2200,
+                           cosine,{},{},{{"b",-1.0F}});
+    const auto sineStep=vectorFrom("Sine Cosine Velocity",sineX,negCos,2440,2300);
+
+    // More geometric laws; combine the existing ordinary math nodes so each
+    // mode is editable rather than introducing an opaque motion kernel.
+    const auto twice=calc("Double Angle",M::Multiply,1830,2520,
+                          theta,{},{},{{"b",2.0F}});
+    const auto doubleX=calc("Double Angle Cosine",M::Cosine,2050,2520,twice);
+    const auto doubleY=calc("Double Angle Sine",M::Sine,2050,2660,twice);
+    const auto doubleScaledX=calc("Double Angle Jitter",M::Multiply,2270,2520,
+                                  doubleX,xMagnitude);
+    const auto doubleStep=vectorFrom("Double Angle Velocity",
+                                     doubleScaledX,doubleY,2490,2550);
+
+    const auto triple=calc("Triple Angle",M::Multiply,1830,2920,
+                           theta,{},{},{{"b",3.0F}});
+    const auto quintuple=calc("Quintuple Angle",M::Multiply,1830,3060,
+                              theta,{},{},{{"b",5.0F}});
+    const auto rosetteX=calc("Rosette Sine",M::Sine,2050,2920,triple);
+    const auto rosetteY=calc("Rosette Cosine",M::Cosine,2050,3060,quintuple);
+    const auto rosetteScaledX=calc("Rosette Jitter",M::Multiply,2270,2920,
+                                   rosetteX,xMagnitude);
+    const auto rosetteStep=vectorFrom("Harmonic Rosette Velocity",
+                                      rosetteScaledX,rosetteY,2490,2980);
+
+    const auto tanBoost=calc("Tangent Compression Gain",M::Multiply,2220,3410,
+                             safeTan,{},{},{{"b",2.0F}});
+    const auto softTan=calc("Smoothly Bounded Tangent",M::HyperbolicTangent,
+                            2450,3410,tanBoost);
+    const auto softX=calc("Soft Tangent Jitter",M::Multiply,2680,3410,
+                          softTan,xMagnitude);
+    const auto softStep=vectorFrom("Soft Tangent Velocity",softX,softTan,2910,3410);
+
+    const auto motion=input(body,"motionMode","Motion Dropdown",{2440,3760});
+    const auto selectAt=[&](std::string label,float threshold,Wire high,Wire low,
+                            int cx,int cy)->Wire {
+        const auto condition=calc(label+" Threshold",M::Step,cx-220,cy+125,
+                                  {},w(motion,"value"),{},{{"a",threshold}});
+        return choose(std::move(label),condition,high,low,cx,cy);
+    };
+    const auto mode01=selectAt("Sine or Tangent",.5F,
+                               sineStep,tangentStep,2900,1820);
+    const auto mode012=selectAt("Double Angle or Earlier Modes",1.5F,
+                                doubleStep,mode01,3180,2150);
+    const auto mode0123=selectAt("Rosette or Earlier Modes",2.5F,
+                                 rosetteStep,mode012,3440,2470);
+    const auto velocity=selectAt("Choose Motion Rule",3.5F,
+                                 softStep,mode0123,3710,2810);
+    const auto speed=input(body,"speed","Particle Motion Speed",{2440,2100});
+    const auto gain=vectorMath(body,"Apply Species Speed",V::Scale,{2700,1820});
+    connect(velocity,gain,"a");
+    connect(w(speed,"value"),gain,"scalar");
+    const auto uv=addNode(body,"pixel_delta_to_uv","Velocity Pixels to UV",
+                          {2930,1820});
+    connect(w(gain),uv,"delta");
+    const auto integrated=vectorMath(body,"Integrate Position",V::Add,{3170,1820});
+    connect(position,integrated,"a");
+    connect(w(uv,"uvDelta"),integrated,"b");
+
+    const auto product1=calc("Lifetime Product 1",M::Multiply,1030,2200,
+                             w(lifeChannelsA,"x"),w(lifeChannelsA,"y"));
+    const auto product2=calc("Lifetime Product 2",M::Multiply,1030,2450,
+                             w(lifeChannelsB,"x"),w(lifeChannelsB,"y"));
+    const auto product=calc("Four Independent Random Factors",M::Multiply,1260,2330,
+                            product1,product2);
+    const auto rate=input(body,"lifeRate","Life Decay Rate",{1260,2600});
+    const auto decay=calc("Lifetime Decrement",M::Multiply,1510,2330,
+                          product,w(rate,"value"));
+    const auto remaining=calc("Reduce Life",M::Subtract,1750,2330,life,decay);
+    const auto dead=calc("Expired Life",M::Step,1990,2330,
+                         remaining,{},{},{{"b",0.0F}});
+    const auto nextPosition=choose("Respawn or Retain Position",dead,
+                                   w(respawn,"vector"),w(integrated),3420,1820);
+    const auto nextLife=choose("Respawn or Retain Lifetime",dead,
+                               w(respawnLife,"scalar"),remaining,3420,2330);
+    const auto storePosition=addNode(body,"simulation_next_state","Next Position",
+                                     {3690,1820},{{"slot",0.0F}});
+    const auto storeLife=addNode(body,"simulation_next_state","Next Lifetime",
+                                 {3690,2330},{{"slot",1.0F}});
+    connect(nextPosition,storePosition,"value");
+    connect(nextLife,storeLife,"value");
+
+    // SHARED TERRITORIES, NOT SHARED PARTICLES: preserve the two independent
+    // position/lifetime simulations, but give their visible positions
+    // complementary masks according to the same external field. Sampling the
+    // FINAL position prevents a species from depositing ink just across a
+    // boundary after stepping (or respawning) out of its permitted region.
+    // The masked sentinel affects only the exported field, never feedback.
+    const auto renderSample=addNode(body,"texture_sample",
+                                    "Sample Field at Deposited Position",
+                                    {3690,2820},{{"addressMode",1.0F},
+                                                 {"sampling",1.0F}});
+    connect(w(field,"value"),renderSample,"source");
+    connect(nextPosition,renderSample,"coordinates");
+    const auto regionBins=calc("Deposition Angle Bins",M::Multiply,3940,2800,
+                               w(renderSample,"sampled"),w(bins,"value"));
+    const auto regionRounded=calc("Quantize Deposition Angle",M::Round,4180,2800,
+                                  regionBins);
+    const auto regionFraction=calc("Deposition Fraction",M::Divide,4420,2800,
+                                   regionRounded,w(bins,"value"));
+    const auto regionAngle=calc("Deposition Angle in Radians",M::Multiply,4660,2800,
+                                regionFraction,{},{},{{"b",6.28318530718F}});
+    const auto lower=input(body,"regionStart","Territory Start (Radians)",{4420,3080});
+    const auto upper=input(body,"regionEnd","Territory End (Radians)",{4420,3250});
+    const auto aboveLower=calc("Angle at or Above Start",M::Step,4890,2960,
+                               w(lower,"value"),regionAngle);
+    const auto aboveUpper=calc("Angle at or Above End",M::Step,4890,3200,
+                               w(upper,"value"),regionAngle);
+    const auto belowUpper=calc("Angle Below End",M::Subtract,5120,3200,
+                               {},aboveUpper,{},{{"a",1.0F}});
+    const auto hardInside=calc("Inside Territory",M::Multiply,5360,3030,
+                               aboveLower,belowUpper);
+
+    // Complementary soft opacity around BOTH boundaries. transitionWidth=0
+    // selects the exact pre-existing hard mask. Dynamics never read opacity.
+    const auto fade=input(body,"transitionWidth","Shared Boundary Fade Width",
+                          {4420,3470});
+    const auto halfFade=calc("Half Transition Width",M::Multiply,4680,3470,
+                             w(fade,"value"),{},{},{{"b",0.5F}});
+    const auto startLo=calc("Start Minus Half Fade",M::Subtract,4930,3460,
+                            w(lower,"value"),halfFade);
+    const auto startHi=calc("Start Plus Half Fade",M::Add,4930,3600,
+                            w(lower,"value"),halfFade);
+    const auto endLo=calc("End Minus Half Fade",M::Subtract,4930,3750,
+                          w(upper,"value"),halfFade);
+    const auto endHi=calc("End Plus Half Fade",M::Add,4930,3890,
+                          w(upper,"value"),halfFade);
+    const auto enter=calc("Smooth Entrance",M::Smoothstep,5190,3460,
+                          regionAngle,startLo,startHi);
+    const auto exit=calc("Smooth Exit",M::Smoothstep,5190,3750,
+                         regionAngle,endLo,endHi);
+    const auto retain=calc("One Minus Smooth Exit",M::Subtract,5410,3750,
+                           {},exit,{},{{"a",1.0F}});
+    const auto softInside=calc("Soft Territory",M::Multiply,5600,3650,
+                               enter,retain);
+    const auto hasFade=calc("Boundary Fade Enabled",M::Step,5600,3990,
+                            {},w(fade,"value"),{},{{"a",0.00001F}});
+    const auto inside=choose("Hard or Soft Territory",hasFade,
+                             softInside,hardInside,5810,3610);
+    const auto outside=calc("Outside Territory",M::Subtract,6020,3820,
+                            {},inside,{},{{"a",1.0F}});
+    const auto depositMode=input(body,"depositMode","Deposit Region Dropdown",
+                                 {5810,4060});
+    const auto visibility=choose("Choose Inside or Outside Range",
+                                 w(depositMode,"value"),outside,inside,6240,3650);
+    const auto visiblePosition=choose("Visible Only in Assigned Territory",
+                                      visibility,nextPosition,w(offCanvas,"value"),
+                                      6460,2820);
+    // A third Next State is needed as the subgraph's export endpoint, but the
+    // corresponding Previous State is intentionally unused by all dynamics.
+    const auto storeVisible=addNode(body,"simulation_next_state",
+                                    "Publish Masked Positions",
+                                    {6040,2820},{{"slot",2.0F}});
+    connect(visiblePosition,storeVisible,"value");
+    const auto output=addNode(body,"subgraph_output","Visible Particle Positions",
+                              {6280,2820},{{"key","positions"}});
+    connect(w(storeVisible,"value"),output,"value");
+    // Standalone scalar visibility output: optional for every consumer.
+    const auto storeWeights=addNode(body,"simulation_next_state",
+                                    "Publish Ink Opacity Weights",
+                                    {6470,3850},{{"slot",3.0F}});
+    connect(visibility,storeWeights,"value");
+    const auto weightsOutput=addNode(body,"subgraph_output","Per-Particle Ink Weights",
+                                     {6700,3850},{{"key","weights"}});
+    connect(w(storeWeights,"value"),weightsOutput,"value");
+    return result;
+}
+
 } // namespace
 
 const std::vector<SubgraphDefinition>& builtInSubgraphs() {
     static const std::vector<SubgraphDefinition> values{
         discreteReaction(), genericCellularAutomata(), floodFill(),
-        skeletonization(), distanceFromNearestWhitePixel(), sdfGenerator(), lenia()};
+        skeletonization(), distanceFromNearestWhitePixel(), sdfGenerator(), lenia(),
+        speciesFlow()};
     return values;
 }
 

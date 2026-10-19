@@ -65,6 +65,29 @@ NodeRecord deserializeNode(const nlohmann::json& value) {
     // safe for all parameter widgets and runtime nodes.
     const auto parameters = value.value("parameters", nlohmann::json::object());
     node.parameters = parameters.is_object() ? parameters : nlohmann::json::object();
+
+    // Keep saved projects made with the former two species templates usable
+    // after replacing them with a single parameterized built-in. Do not keep
+    // redundant built-in definitions just to preserve those old identifiers.
+    if (node.type == "subgraph" &&
+        (node.subgraphId == "builtin.particles.species_1_flow" ||
+         node.subgraphId == "builtin.particles.species_2_flow")) {
+        const bool sineCosine = node.subgraphId == "builtin.particles.species_2_flow";
+        node.subgraphId = "builtin.particles.species_flow";
+        node.typeVersion = 1;
+        node.parameters["motionMode"] = sineCosine ? 1.0F : 0.0F;
+        node.parameters["depositMode"] = sineCosine ? 1.0F : 0.0F;
+        if (!node.parameters.contains("maxJump"))
+            node.parameters["maxJump"] = 64.0F;
+        if (sineCosine) {
+            if (!node.parameters.contains("seed"))
+                node.parameters["seed"] = 314.0F;
+            if (!node.parameters.contains("horizontalMin"))
+                node.parameters["horizontalMin"] = 0.1F;
+            if (!node.parameters.contains("horizontalMax"))
+                node.parameters["horizontalMax"] = 1.0F;
+        }
+    }
     return node;
 }
 
@@ -113,7 +136,8 @@ nlohmann::json serializeSubgraph(const SubgraphDefinition& definition) {
     }
     nlohmann::json stateSlots = nlohmann::json::array();
     for (const auto& slot : definition.stateSlots)
-        stateSlots.push_back({{"key", slot.key}, {"label", slot.label}, {"type", toString(slot.type)}});
+        stateSlots.push_back({{"key", slot.key}, {"label", slot.label},
+                              {"type", toString(slot.type)}, {"highPrecision", slot.highPrecision}});
     nlohmann::json nodes = nlohmann::json::array();
     for (const auto& node : definition.body.nodes()) nodes.push_back(serializeNode(node));
     nlohmann::json links = nlohmann::json::array();
@@ -163,6 +187,7 @@ SubgraphDefinition deserializeSubgraph(const nlohmann::json& value,
         slot.label = entry.value("label", slot.key);
         const auto type = entry.value("type", std::string("scalar_field"));
         slot.type = persistedValueType(type).value_or(ValueType::ScalarField);
+        slot.highPrecision = entry.value("highPrecision", false);
         result.stateSlots.push_back(std::move(slot));
     }
     const auto& nodes = value.at("nodes");

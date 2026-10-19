@@ -1,0 +1,33 @@
+name: Particle feature build and GPU tests
+on:
+  pull_request:
+    branches: [main]
+concurrency:
+  group: sands-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenGL and build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++ cmake libglfw3-dev libgl1-mesa-dev libpng-dev nlohmann-json3-dev xvfb
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test with headless Mesa
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          SANDS_PREVIEW_PATH: "sands-preview.png"
+        run: xvfb-run -a ctest --test-dir build --output-on-failure
+      - name: Upload Sands preview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sands-preview
+          path: build/sands-preview.png
+          if-no-files-found: warn

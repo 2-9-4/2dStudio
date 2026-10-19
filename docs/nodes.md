@@ -25,6 +25,37 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **Canvas Coordinates** (`coordinates`) — Outputs one Vector Field containing normalized XY
   canvas coordinates. Enable **Pixels** to output pixel-center coordinates instead.
 
+### Reusable species particle flow and splatting
+
+- **Species Flow** (`builtin.particles.species_flow`) is one reusable,
+  editable simulation subgraph. Instantiate it multiple times for independent
+  particle systems. It accepts an external scalar `field` image and exports
+  `positions` (Vector Field), with no baked-in Perlin and no color-specific
+  behavior. **Motion** is a dropdown (`Tangent` / `Sine / Cosine`);
+  **Deposit In** is an independent dropdown (`Inside Range` /
+  `Outside Range`). `regionStart` and `regionEnd` are radians defining the
+  visible `[start,end)` interval. The **Boundary Fade** (`transitionWidth`)
+  input smoothly crossfades both sides of each boundary; 0 uses the original
+  hard cutoff. Besides `positions`, the subgraph exports per-agent scalar
+  `weights` for independent splat opacity. Positions are `(-1,-1)` only
+  where their weight is zero; physical state remains unaffected.
+  Also exposes Seed, Speed, Horizontal Jitter Min/Max, Angle Bins, Life Decay,
+  Tangent Jump Limit, Reset, and Iterations. Four GPU slots (position,
+  lifetime, export-only visible positions and ink weights) support this interface.
+- **Particle Splat / Trails** (`particle_splat`) is a standard root-level
+  native splat with a **generic optional `weights` Scalar Field input**
+  (per-particle opacity multiplier). Unconnected weights default to 1,
+  preserving old graph behavior. Also exposes independent RGB ink, opacity,
+  retention, size, brush roundness, and canvas inset.
+- **Mix (Add)** (`mix`, mode Add and factor 1) composites independent
+  splat histories with no special image-add node.
+- **Pixel Delta to UV** (`pixel_delta_to_uv`) converts pixel motion to UV
+  coordinates within the Species Flow graph.
+
+The example wires one Perlin field into two *instances of the same subgraph*,
+with opposite deposit modes and different motion modes. See
+[Species Flow artwork](noise-particles.md).
+
 ### Generators
 
 - **Perlin Noise** (`perlin`) — Generates animated fractal noise. Its controls are `Seed`,
@@ -72,6 +103,10 @@ submodes, and the special nodes available inside simulation subgraphs.
     sign and trigonometric operations.
   - **Modulo**, **Step**, **Hypotenuse**, **Smoothstep**, and **Multiply Accumulate** —
     remaining utility operations.
+  - **Tanh**, **Sinh**, **Cosh** — hyperbolic nonlinear transforms; Sinh/Cosh
+    inputs are clamped to ±15 to prevent overflow.
+  - **Sinc** — unnormalized sin(x)/x with a stable series limit at zero;
+    **Softsign** — x/(1+abs(x)), a bounded response useful for stable velocity fields.
 
 - **Vector Math** (`vector_math`) — Performs explicit 2D vector operations on a Vector or
   Vector Field. The active operation determines which sockets are visible: for example,
@@ -116,6 +151,21 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **Color to Luminance** (`color_luminance`) — Explicitly narrows a Color Image to a weighted
   RGB luminance Scalar Field.
 - **Color to RG** (`color_rg`) — Explicitly narrows a Color Image to an RG Vector Field.
+
+### Procedural noise fields
+
+- **Fractal Noise** (`fractal_noise`) — a reusable Scalar Field generator
+  with selectable **Gradient fBm, Billow, Ridged, Sharp Turbulence, Value fBm**.
+  Optional Vector Numeric Coordinates (defaults to canvas UV) allow Domain Warp;
+  optional Numeric Frequency accepts per-pixel modulation. Seed, Octaves,
+  Gain, Lacunarity, and XY Offset are exposed as parameters. It outputs a
+  clamped 0–1 scalar image suitable for any field consumer, not only particles.
+- **Curl Field** (`curl_field`) — turns any Scalar Field (Perlin, Fractal,
+  Worley, image-derived, etc.) into a perpendicular-gradient Vector Field,
+  using central differences and configurable Strength and optional normalized
+  direction. A general vector-field operator, not a particle-only feature.
+- Existing **Worley / Voronoi Noise**, **Domain Warp**, **Gradient**, and
+  **Wave** remain independent composable primitives.
 
 ### Filters and utilities
 

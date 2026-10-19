@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <numeric>
 #include <unordered_map>
@@ -114,6 +115,741 @@ LoweredChain lowerMathThresholdSelect(const NodeRegistry& registry, ShaderValueT
 }
 
 } // namespace
+
+
+TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and complementary ink territories") {
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    const auto findSpecies=[&](const char* id){
+        return std::ranges::find_if(builtInSubgraphs(),[&](const auto& def){
+            return def.id==id;
+        });
+    };
+    const auto species=findSpecies("builtin.particles.species_flow");
+    REQUIRE(species!=builtInSubgraphs().end());
+    REQUIRE(species->id=="builtin.particles.species_flow");
+    REQUIRE(species->version==2);
+    REQUIRE(std::ranges::count_if(builtInSubgraphs(),[](const auto& def){
+        return def.id.starts_with("builtin.particles.");
+    })==1);
+    for(const auto& legacy:{"builtin.particles.noise_flow",
+                            "builtin.particles.sands_layers",
+                            "builtin.particles.species_1_flow",
+                            "builtin.particles.species_2_flow"})
+        REQUIRE(findSpecies(legacy)==builtInSubgraphs().end());
+    for(const auto& [key,options]:std::array<std::pair<std::string,std::vector<std::string>>,2>{
+            std::pair{"motionMode",std::vector<std::string>{"Tangent","Sine / Cosine",
+                "Double Angle","Harmonic Rosette","Soft Tangent"}},
+            std::pair{"depositMode",std::vector<std::string>{"Inside Range","Outside Range"}}}){
+        const auto param=std::ranges::find_if(species->interface,[&](const auto& item){
+            return item.key==key;
+        });
+        REQUIRE(param!=species->interface.end());
+        REQUIRE(param->control==ParameterDescriptor::Control::Enum);
+        REQUIRE(param->enumOptions==options);
+        REQUIRE(param->minimum==0.0F);
+        REQUIRE(param->maximum==(key=="motionMode"?4.0F:1.0F));
+    }
+    const auto errors=validateSubgraph(*species,registry);
+    INFO(nlohmann::json(errors).dump());
+    REQUIRE(errors.empty());
+    REQUIRE(species->execution==SubgraphExecution::Simulation);
+    REQUIRE(species->stateSlots.size()==4);
+    REQUIRE(species->stateSlots.front().highPrecision);
+    REQUIRE(species->stateSlots[2].highPrecision);
+    REQUIRE(species->stateSlots[2].key=="visible");
+    REQUIRE(species->stateSlots[3].key=="inkWeight");
+    REQUIRE(species->stateSlots[3].type==ValueType::ScalarField);
+    REQUIRE(species->interface.front().key=="field");
+    REQUIRE(species->interface.front().contract==SocketContract::ScalarFieldOnly);
+    REQUIRE(species->interface[species->interface.size()-2].key=="positions");
+    REQUIRE(species->interface.back().key=="weights");
+    REQUIRE(species->interface.back().contract==SocketContract::ScalarFieldOnly);
+    const auto fadeInput=std::ranges::find_if(species->interface,[](const auto& item){
+        return item.key=="transitionWidth";
+    });
+    REQUIRE(fadeInput!=species->interface.end());
+    REQUIRE(fadeInput->defaultValue==0.0F);
+    REQUIRE(std::ranges::count(species->body.nodes(),"texture_sample",
+                               &NodeRecord::type)==2);
+    REQUIRE(std::ranges::count(species->body.nodes(),"simulation_next_state",
+                               &NodeRecord::type)==4);
+    REQUIRE(std::ranges::any_of(species->body.nodes(),[](const auto& n){
+        return n.label=="Smooth Entrance";
+    }));
+    REQUIRE(std::ranges::any_of(species->body.nodes(),[](const auto& n){
+        return n.label=="Smooth Exit";
+    }));
+    REQUIRE(std::ranges::any_of(species->body.nodes(),[](const auto& n){
+        return n.label=="Hard or Soft Territory";
+    }));
+    for(const auto label:{"Choose Motion Rule","Choose Inside or Outside Range",
+                          "Visible Only in Assigned Territory",
+                          "Sample Field at Deposited Position"})
+        REQUIRE(std::ranges::any_of(species->body.nodes(),[&](const auto& n){
+            return n.label==label;
+        }));
+    for(const auto& [inputKey,selectLabel]:std::array<std::pair<std::string,std::string>,2>{
+            std::pair{"motionMode","Choose Motion Rule"},
+            std::pair{"depositMode","Choose Inside or Outside Range"}}){
+        const auto inputNode=std::ranges::find_if(species->body.nodes(),[&](const auto& n){
+            return n.type=="subgraph_input" && n.parameters.value("key",std::string{})==inputKey;
+        });
+        const auto selector=std::ranges::find_if(species->body.nodes(),[&](const auto& n){
+            return n.label==selectLabel;
+        });
+        REQUIRE(inputNode!=species->body.nodes().end());
+        REQUIRE(selector!=species->body.nodes().end());
+        if(inputKey=="motionMode"){
+            // Five-mode selection uses Step threshold nodes, not a direct
+            // enum→Select link as the original two-mode implementation did.
+            const auto threshold=std::ranges::find_if(species->body.nodes(),
+                [](const auto& node){return node.label=="Choose Motion Rule Threshold";});
+            REQUIRE(threshold!=species->body.nodes().end());
+            REQUIRE(std::ranges::any_of(species->body.links(),[&](const auto& edge){
+                return edge.fromNode==inputNode->id && edge.toNode==threshold->id &&
+                       edge.toSocket=="b";
+            }));
+            REQUIRE(std::ranges::any_of(species->body.links(),[&](const auto& edge){
+                return edge.fromNode==threshold->id && edge.toNode==selector->id &&
+                       edge.toSocket=="condition";
+            }));
+        } else {
+            REQUIRE(std::ranges::any_of(species->body.links(),[&](const auto& edge){
+                return edge.fromNode==inputNode->id && edge.toNode==selector->id &&
+                       edge.toSocket=="condition";
+            }));
+        }
+    }
+    for(const auto label:{"Prior Visible Positions (Unused)","Prior Ink Weight (Unused)"}){
+        const auto previous=std::ranges::find_if(species->body.nodes(),[&](const auto& n){
+            return n.label==label;
+        });
+        REQUIRE(previous!=species->body.nodes().end());
+        REQUIRE(std::ranges::none_of(species->body.links(),[&](const auto& edge){
+            return edge.fromNode==previous->id;
+        }));
+    }
+    REQUIRE(std::ranges::none_of(species->body.nodes(),[](const auto& n){
+        return n.type=="perlin" || n.type=="particle_step" ||
+               n.type=="particle_splat" || n.type=="simulation_channel";
+    }));
+    const auto initial=generateSimulationShader(*species,true);
+    const auto update=generateSimulationShader(*species,false);
+    REQUIRE(initial.find("deterministicHash")!=std::string::npos);
+    REQUIRE(update.find("deterministicHash")!=std::string::npos);
+    REQUIRE(update.find("rg32f,binding=0")!=std::string::npos);
+    REQUIRE(update.find("perlinNoise")==std::string::npos);
+    REQUIRE(update.find("texture(")!=std::string::npos);
+    REQUIRE(update.find("tan(")!=std::string::npos);
+    REQUIRE(update.find("sin(")!=std::string::npos);
+    REQUIRE(update.find("cos(")!=std::string::npos);
+    REQUIRE(update.find("tanh(")!=std::string::npos);
+    // Shader-only validation uses its own hidden OpenGL context. Destroy it
+    // before the runtime test creates another GLFW context.
+    {
+    HiddenContext local;
+    GpuRuntime compiler;
+    const GLuint initProgram=compiler.compileCompute(initial,"Species initial");
+    const GLuint stepProgram=compiler.compileCompute(update,"Species update");
+    glDeleteProgram(initProgram);
+    glDeleteProgram(stepProgram);
+    }
+
+    HiddenContext context;
+    GpuRuntime gpu;
+    Graph graph;
+    graph.settings={64,64,60};
+    const auto field=graph.addNode("perlin");
+    graph.findNode(field)->parameters={
+        {"seed",1.0F},{"scale",5.0F},{"speed",0.0F},
+        {"octaves",4.0F},{"persistence",.5F},{"lacunarity",2.0F}};
+    const auto simulation1=graph.addNode("subgraph");
+    graph.findNode(simulation1)->subgraphId=species->id;
+    graph.findNode(simulation1)->parameters={
+        {"seed",14.0F},{"speed",1.0F},{"horizontalMin",1.0F},
+        {"horizontalMax",3.0F},{"lifeRate",.1F},{"maxJump",64.0F},
+        {"angleBins",1200.0F},{"iterations",1.0F},
+        {"motionMode",0.0F},{"depositMode",0.0F},{"transitionWidth",0.0F}};
+    const auto simulation2=graph.addNode("subgraph");
+    graph.findNode(simulation2)->subgraphId=species->id;
+    graph.findNode(simulation2)->parameters={
+        {"seed",314.0F},{"speed",1.0F},{"horizontalMin",.1F},
+        {"horizontalMax",1.0F},{"lifeRate",.1F},
+        {"angleBins",1200.0F},{"iterations",1.0F},
+        {"motionMode",1.0F},{"depositMode",1.0F},{"maxJump",64.0F},
+        {"transitionWidth",0.0F}};
+    const auto regionStart=graph.addNode("float");
+    graph.findNode(regionStart)->parameters={{"value",3.0F}};
+    const auto regionEnd=graph.addNode("float");
+    graph.findNode(regionEnd)->parameters={{"value",6.0F}};
+    const auto splat1=graph.addNode("particle_splat");
+    graph.findNode(splat1)->parameters={
+        {"count",1000.0F},{"retention",.985F},{"opacity",.375F},
+        {"r",.9F},{"g",.2925F},{"b",.09F}};
+    const auto splat2=graph.addNode("particle_splat");
+    graph.findNode(splat2)->parameters={
+        {"count",1000.0F},{"retention",.985F},{"opacity",.375F},
+        {"r",.09F},{"g",.9F},{"b",.8325F}};
+    const auto mix=graph.addNode("mix");
+    graph.findNode(mix)->parameters={{"mode",1.0F},{"factor",1.0F}};
+    const auto output=graph.addNode("output");
+    graph.addLink(field,"image",simulation1,"field");
+    graph.addLink(field,"image",simulation2,"field");
+    for(const auto species:{simulation1,simulation2}){
+        graph.addLink(regionStart,"value",species,"regionStart");
+        graph.addLink(regionEnd,"value",species,"regionEnd");
+    }
+    graph.addLink(simulation1,"positions",splat1,"positions");
+    graph.addLink(simulation2,"positions",splat2,"positions");
+    graph.addLink(simulation1,"weights",splat1,"weights");
+    graph.addLink(simulation2,"weights",splat2,"weights");
+    graph.addLink(splat1,"image",mix,"a");
+    graph.addLink(splat2,"image",mix,"b");
+    graph.addLink(mix,"result",output,"image");
+    graph.activeOutput=output;
+    const auto compile=graph.compile(registry);
+    INFO(nlohmann::json(compile.errors).dump());
+    REQUIRE(compile.valid);
+    REQUIRE(std::ranges::count(graph.nodes(),"subgraph",&NodeRecord::type)==2);
+    REQUIRE(graph.findNode(simulation1)->subgraphId==graph.findNode(simulation2)->subgraphId);
+    REQUIRE(graph.findNode(simulation1)->parameters.value("motionMode",-1.0F)==0.0F);
+    REQUIRE(graph.findNode(simulation2)->parameters.value("motionMode",-1.0F)==1.0F);
+    REQUIRE(graph.findNode(simulation1)->parameters.value("depositMode",-1.0F)==0.0F);
+    REQUIRE(graph.findNode(simulation2)->parameters.value("depositMode",-1.0F)==1.0F);
+    REQUIRE(std::ranges::count(graph.nodes(),"particle_splat",&NodeRecord::type)==2);
+    REQUIRE(registry.descriptor("particle_splat")->version==2);
+    const auto splatDesc=registry.descriptor("particle_splat");
+    REQUIRE(std::ranges::any_of(splatDesc->sockets,[](const auto& item){
+        return item.key=="weights" && item.optional &&
+               item.contract==SocketContract::ScalarFieldOnly;
+    }));
+    REQUIRE(std::ranges::count(graph.nodes(),"perlin",&NodeRecord::type)==1);
+    REQUIRE(std::ranges::count(graph.nodes(),"float",&NodeRecord::type)==2);
+    REQUIRE(deserializeProject(serializeProject(graph),registry).compile(registry).valid);
+    Graph custom;
+    custom.subgraphs().push_back(*species);
+    const auto restored=deserializeProject(serializeProject(custom),registry);
+    REQUIRE(restored.subgraphs().size()==1);
+    REQUIRE(restored.subgraphs()[0].stateSlots.front().highPrecision);
+    REQUIRE(restored.subgraphs()[0].interface.size()==species->interface.size());
+    REQUIRE(restored.subgraphs()[0].interface.front().key=="field");
+
+    // Projects saved before this refactor must automatically migrate their
+    // two old built-in IDs and infer each former species' dropdown defaults.
+    auto legacy=serializeProject(graph);
+    for(auto& node:legacy["nodes"]) {
+        if(node.at("type")!="subgraph")continue;
+        const bool oldTangent=node.at("id").get<NodeId>()==simulation1;
+        node["subgraphId"]=oldTangent ? "builtin.particles.species_1_flow"
+                                      : "builtin.particles.species_2_flow";
+        node["typeVersion"]=2;
+        node["parameters"].erase("motionMode");
+        node["parameters"].erase("depositMode");
+    }
+    const auto migrated=deserializeProject(legacy,registry);
+    REQUIRE(migrated.compile(registry).valid);
+    REQUIRE(migrated.findNode(simulation1)->subgraphId==species->id);
+    REQUIRE(migrated.findNode(simulation2)->subgraphId==species->id);
+    REQUIRE(migrated.findNode(simulation1)->parameters.at("motionMode")==0.0F);
+    REQUIRE(migrated.findNode(simulation2)->parameters.at("motionMode")==1.0F);
+    REQUIRE(migrated.findNode(simulation1)->parameters.at("depositMode")==0.0F);
+    REQUIRE(migrated.findNode(simulation2)->parameters.at("depositMode")==1.0F);
+
+    // Keep runtime ownership sequential: simulation textures and GL contexts
+    // must be released before the next comparison runtime is constructed.
+    {
+    GraphRuntime runtime(graph,registry,gpu);
+    REQUIRE(runtime.evaluate(0.0,1.0/60.0,true));
+    const auto first1=readImage(std::get<ImageHandle>(runtime.values().at(simulation1)[0]));
+    const auto first2=readImage(std::get<ImageHandle>(runtime.values().at(simulation2)[0]));
+    for(int i=1;i<30;++i)
+        REQUIRE(runtime.evaluate(static_cast<double>(i)/60.0,1.0/60.0,true));
+    const auto next1=readImage(std::get<ImageHandle>(runtime.values().at(simulation1)[0]));
+    const auto next2=readImage(std::get<ImageHandle>(runtime.values().at(simulation2)[0]));
+    // Read back the shared input field and independently classify the
+    // exported positions by sampling the same field at each final position.
+    // This verifies actual spatial separation, not just a masked-count test.
+    const auto fieldImage=std::get<ImageHandle>(runtime.values().at(field)[0]);
+    const auto fieldPixels=readImage(fieldImage);
+    const int width=fieldImage.width,height=fieldImage.height;
+    REQUIRE(width>2);
+    REQUIRE(height>2);
+    const auto sampleAngle=[&](float u,float v){
+        const auto axis=[](float coord,int size){
+            const float wrap=coord-std::floor(coord);
+            const float inside=std::clamp(wrap,.5F/size,1.0F-.5F/size);
+            const float pixel=inside*size-.5F;
+            const int lo=std::clamp(static_cast<int>(std::floor(pixel)),0,size-1);
+            const int hi=std::min(lo+1,size-1);
+            return std::array<float,3>{static_cast<float>(lo),
+                                       static_cast<float>(hi),pixel-lo};
+        };
+        const auto cx=axis(u,width),cy=axis(v,height);
+        const int x0=static_cast<int>(cx[0]),x1=static_cast<int>(cx[1]);
+        const int y0=static_cast<int>(cy[0]),y1=static_cast<int>(cy[1]);
+        const auto at=[&](int x,int y){
+            return fieldPixels[(static_cast<std::size_t>(y)*width+x)*4];
+        };
+        const auto a=std::lerp(at(x0,y0),at(x1,y0),cx[2]);
+        const auto b=std::lerp(at(x0,y1),at(x1,y1),cx[2]);
+        const float level=std::lerp(a,b,cy[2]);
+        return std::round(level*1200.0F)*(6.28318530718F/1200.0F);
+    };
+    std::size_t moved1=0,moved2=0,different=0;
+    std::size_t visible1=0,visible2=0,hidden1=0,hidden2=0;
+    std::size_t checked1=0,checked2=0,wrongTerritory=0;
+    const auto masked=[](const auto& image,std::size_t index){
+        return image[index]==-1.0F && image[index+1]==-1.0F;
+    };
+    for(std::size_t i=0;i+3<next1.size();i+=4){
+        const bool firstA=!masked(first1,i),firstB=!masked(first2,i);
+        const bool shownA=!masked(next1,i),shownB=!masked(next2,i);
+        if(shownA){
+            ++visible1;
+            if(firstA && std::hypot(next1[i]-first1[i],next1[i+1]-first1[i+1])>
+               1.0F/64.0F) ++moved1;
+            if(std::isfinite(next1[i]) && std::isfinite(next1[i+1])){
+                const auto theta=sampleAngle(next1[i],next1[i+1]);
+                if(theta>2.98F && theta<6.02F){
+                    ++checked1;
+                    if(theta<3.0F || theta>=6.0F)++wrongTerritory;
+                }
+            }
+        }else ++hidden1;
+        if(shownB){
+            ++visible2;
+            if(firstB && std::hypot(next2[i]-first2[i],next2[i+1]-first2[i+1])>
+               1.0F/64.0F) ++moved2;
+            if(std::isfinite(next2[i]) && std::isfinite(next2[i+1])){
+                const auto theta=sampleAngle(next2[i],next2[i+1]);
+                if(theta<2.98F || (theta>3.02F && theta<5.98F) ||
+                   theta>6.02F){
+                    ++checked2;
+                    if(theta>=3.0F && theta<6.0F)++wrongTerritory;
+                }
+            }
+        }else ++hidden2;
+        if(shownA && shownB &&
+           std::hypot(next1[i]-next2[i],next1[i+1]-next2[i+1])>1.0F/64.0F)
+            ++different;
+    }
+    INFO("Species 1 visible "<<visible1<<" hidden "<<hidden1<<" moved "<<moved1
+         <<" | Species 2 visible "<<visible2<<" hidden "<<hidden2
+         <<" moved "<<moved2<<" | checked territories "<<checked1<<"/"
+         <<checked2<<" wrong "<<wrongTerritory);
+    REQUIRE(visible1>100);
+    REQUIRE(visible2>100);
+    REQUIRE(hidden1>100);
+    REQUIRE(hidden2>100);
+    REQUIRE(moved1>40);
+    REQUIRE(moved2>40);
+    REQUIRE(different>50);
+    REQUIRE(checked1>100);
+    REQUIRE(checked2>100);
+    REQUIRE(wrongTerritory==0);
+    REQUIRE(runtime.outputImage());
+    const auto final=readImage(runtime.outputImage());
+    const auto ink1=readImage(std::get<ImageHandle>(runtime.values().at(splat1)[0]));
+    const auto ink2=readImage(std::get<ImageHandle>(runtime.values().at(splat2)[0]));
+    REQUIRE(final.size()==ink1.size());
+    REQUIRE(final.size()==ink2.size());
+    REQUIRE(std::ranges::all_of(final,[](float v){return std::isfinite(v);}));
+    REQUIRE(std::ranges::any_of(ink1,[](float v){return v>.1F;}));
+    REQUIRE(std::ranges::any_of(ink2,[](float v){return v>.1F;}));
+    // Regression: adding the optional 'weights' socket once shifted every
+    // native splat input by one, turning the orange and teal inks blue/green.
+    // Check the actual accumulated GPU pixel CHANNELS, not just nonblack ink.
+    const auto channelMeans=[](const std::vector<float>& pixels){
+        std::array<double,3> means{};
+        for(std::size_t i=0;i+3<pixels.size();i+=4)
+            for(int channel=0;channel<3;++channel)
+                means[static_cast<std::size_t>(channel)]+=pixels[i+channel];
+        return means;
+    };
+    const auto orange=channelMeans(ink1);
+    const auto teal=channelMeans(ink2);
+    INFO("orange RGB totals "<<orange[0]<<"/"<<orange[1]<<"/"<<orange[2]
+         <<" | teal RGB totals "<<teal[0]<<"/"<<teal[1]<<"/"<<teal[2]);
+    REQUIRE(orange[0]>1.0);
+    REQUIRE(teal[1]>1.0);
+    REQUIRE(orange[1]/orange[0]==Catch::Approx(.2925/.9).epsilon(.08));
+    REQUIRE(orange[2]/orange[0]==Catch::Approx(.09/.9).epsilon(.08));
+    REQUIRE(teal[0]/teal[1]==Catch::Approx(.09/.9).epsilon(.08));
+    REQUIRE(teal[2]/teal[1]==Catch::Approx(.8325/.9).epsilon(.08));
+    for(std::size_t i=0;i+3<final.size();i+=4)
+        for(int c=0;c<3;++c)
+            REQUIRE(std::abs(final[i+static_cast<std::size_t>(c)]-
+                             ink1[i+static_cast<std::size_t>(c)]-
+                             ink2[i+static_cast<std::size_t>(c)])<.05F);
+
+    }
+
+    // Same definition, same RNG/physics, opposite deposit-mode enums:
+    // EVERY agent must be visible in exactly one instance. This checks the
+    // actual parameter-driven range inversion, not merely graph structure.
+    Graph complementary=deserializeProject(serializeProject(graph),registry);
+    complementary.findNode(simulation2)->parameters=
+        complementary.findNode(simulation1)->parameters;
+    complementary.findNode(simulation2)->parameters["depositMode"]=1.0F;
+    {
+        GraphRuntime paired(complementary,registry,gpu);
+        for(int frameIndex=0;frameIndex<10;++frameIndex)
+            REQUIRE(paired.evaluate(static_cast<double>(frameIndex)/60.0,1.0/60.0,true));
+        const auto insideImage=readImage(
+            std::get<ImageHandle>(paired.values().at(simulation1)[0]));
+        const auto outsideImage=readImage(
+            std::get<ImageHandle>(paired.values().at(simulation2)[0]));
+        REQUIRE(insideImage.size()==outsideImage.size());
+        std::size_t insideCount=0,outsideCount=0;
+        for(std::size_t i=0;i+3<insideImage.size();i+=4){
+            const bool insideVisible=!(insideImage[i]==-1.0F &&
+                                       insideImage[i+1]==-1.0F);
+            const bool outsideVisible=!(outsideImage[i]==-1.0F &&
+                                        outsideImage[i+1]==-1.0F);
+            REQUIRE(insideVisible!=outsideVisible);
+            insideCount+=insideVisible;
+            outsideCount+=outsideVisible;
+        }
+        REQUIRE(insideCount>100);
+        REQUIRE(outsideCount>100);
+    }
+
+    // Holding everything else equal (including depositMode) and changing
+    // ONLY the motion-mode enum must produce different physical trajectories.
+    complementary.findNode(simulation2)->parameters["depositMode"]=0.0F;
+    complementary.findNode(simulation2)->parameters["motionMode"]=1.0F;
+    {
+        GraphRuntime modes(complementary,registry,gpu);
+        for(int frameIndex=0;frameIndex<20;++frameIndex)
+            REQUIRE(modes.evaluate(static_cast<double>(frameIndex)/60.0,1.0/60.0,true));
+        const auto tangent=readImage(
+            std::get<ImageHandle>(modes.values().at(simulation1)[0]));
+        const auto sine=readImage(
+            std::get<ImageHandle>(modes.values().at(simulation2)[0]));
+        REQUIRE(tangent.size()==sine.size());
+        std::size_t differentMotion=0;
+        for(std::size_t i=0;i+3<tangent.size();i+=4){
+            if(tangent[i]==-1.0F && tangent[i+1]==-1.0F)continue;
+            if(sine[i]==-1.0F && sine[i+1]==-1.0F)continue;
+            if(std::hypot(tangent[i]-sine[i],tangent[i+1]-sine[i+1])>1.0F/64.0F)
+                ++differentMotion;
+        }
+        REQUIRE(differentMotion>50);
+    }
+
+    if(const char* snapshot=std::getenv("SANDS_PREVIEW_PATH");snapshot&&*snapshot){
+        graph.settings={160,160,60};
+        GraphRuntime preview(graph,registry,gpu);
+        for(int i=0;i<120;++i)
+            REQUIRE(preview.evaluate(static_cast<double>(i)/60.0,1.0/60.0,true));
+        const auto frame=readImage(preview.outputImage());
+        std::vector<png_byte> rgba(frame.size());
+        for(std::size_t pixel=0;pixel<frame.size()/4;++pixel){
+            for(int c=0;c<3;++c)
+                rgba[pixel*4+static_cast<std::size_t>(c)]=
+                    static_cast<png_byte>(std::lround(255.0F*std::clamp(
+                        frame[pixel*4+static_cast<std::size_t>(c)],0.0F,1.0F)));
+            rgba[pixel*4+3]=255;
+        }
+        png_image png{};
+        png.version=PNG_IMAGE_VERSION;
+        png.width=160;png.height=160;png.format=PNG_FORMAT_RGBA;
+        REQUIRE(png_image_write_to_file(&png,snapshot,0,rgba.data(),0,nullptr));
+    }
+}
+
+TEST_CASE("two Species Flow instances fade complementary ink smoothly with weighted splats") {
+    HiddenContext context;
+    NodeRegistry registry;registerBuiltInNodes(registry);
+    Graph graph;graph.settings={160,160,60};
+    const auto noise=graph.addNode("perlin");
+    graph.findNode(noise)->parameters={
+        {"seed",5.0F},{"scale",5.0F},{"octaves",4.0F},
+        {"persistence",.5F},{"lacunarity",2.0F},{"speed",0.0F}};
+    const auto first=graph.addNode("subgraph");
+    const auto second=graph.addNode("subgraph");
+    for(const auto id:{first,second}){
+        graph.findNode(id)->subgraphId="builtin.particles.species_flow";
+        graph.findNode(id)->parameters={
+            {"seed",77.0F},{"speed",1.0F},{"horizontalMin",1.0F},
+            {"horizontalMax",3.0F},{"angleBins",1200.0F},
+            {"lifeRate",.1F},{"maxJump",64.0F},
+            {"motionMode",0.0F},{"iterations",1.0F},
+            {"regionStart",3.0F},{"regionEnd",6.0F},{"transitionWidth",.8F}};
+        graph.addLink(noise,"image",id,"field");
+    }
+    graph.findNode(first)->parameters["depositMode"]=0.0F;
+    graph.findNode(second)->parameters["depositMode"]=1.0F;
+    const auto width=graph.addNode("float");
+    graph.findNode(width)->parameters={{"value",.8F}};
+    graph.addLink(width,"value",first,"transitionWidth");
+    graph.addLink(width,"value",second,"transitionWidth");
+    const auto weighted=graph.addNode("particle_splat");
+    const auto unweighted=graph.addNode("particle_splat");
+    for(const auto id:{weighted,unweighted})
+        graph.findNode(id)->parameters={
+            {"count",1800.0F},{"retention",.985F},{"opacity",.8F},
+            {"size",2.0F},{"margin",20.0F},
+            {"r",1.0F},{"g",0.0F},{"b",0.0F}};
+    graph.addLink(first,"positions",weighted,"positions");
+    graph.addLink(first,"weights",weighted,"weights");
+    graph.addLink(first,"positions",unweighted,"positions");
+    // Force both species' opacity fields to be materialized.
+    const auto secondSplat=graph.addNode("particle_splat");
+    graph.addLink(second,"positions",secondSplat,"positions");
+    graph.addLink(second,"weights",secondSplat,"weights");
+    const auto mix=graph.addNode("mix");
+    graph.findNode(mix)->parameters={{"mode",1.0F},{"factor",1.0F}};
+    graph.addLink(weighted,"image",mix,"a");
+    graph.addLink(secondSplat,"image",mix,"b");
+    const auto output=graph.addNode("output");
+    graph.addLink(mix,"result",output,"image");
+    graph.activeOutput=output;
+    REQUIRE(graph.compile(registry).valid);
+
+    GpuRuntime gpu;
+    {
+        GraphRuntime runtime(graph,registry,gpu);
+        for(int frame=0;frame<45;++frame)
+            REQUIRE(runtime.evaluate(static_cast<double>(frame)/60.0,1.0/60.0,true));
+        const auto a=readImage(std::get<ImageHandle>(runtime.values().at(first)[1]));
+        const auto b=readImage(std::get<ImageHandle>(runtime.values().at(second)[1]));
+        const auto positionsA=readImage(
+            std::get<ImageHandle>(runtime.values().at(first)[0]));
+        const auto positionsB=readImage(
+            std::get<ImageHandle>(runtime.values().at(second)[0]));
+        REQUIRE(a.size()==b.size());
+        REQUIRE(a.size()==positionsA.size());
+        std::size_t fractional=0,fullA=0,fullB=0;
+        for(std::size_t i=0;i+3<a.size();i+=4){
+            INFO("slot="<<(i/4));
+            REQUIRE(std::isfinite(a[i]));
+            REQUIRE(std::isfinite(b[i]));
+            REQUIRE(a[i]>=0.0F);
+            REQUIRE(a[i]<=1.0F);
+            REQUIRE(b[i]>=0.0F);
+            REQUIRE(b[i]<=1.0F);
+            REQUIRE(a[i]+b[i]==Catch::Approx(1.0F).margin(.004F));
+            if(a[i]>.05F&&a[i]<.95F){
+                ++fractional;
+                REQUIRE(positionsA[i]!=-1.0F);
+                REQUIRE(positionsB[i]!=-1.0F);
+                REQUIRE(positionsA[i]==Catch::Approx(positionsB[i]).margin(1e-6F));
+                REQUIRE(positionsA[i+1]==Catch::Approx(positionsB[i+1]).margin(1e-6F));
+            }
+            if(a[i]>.995F)++fullA;
+            if(b[i]>.995F)++fullB;
+        }
+        INFO("fractional="<<fractional<<" fullA="<<fullA<<" fullB="<<fullB);
+        REQUIRE(fractional>100);
+        REQUIRE(fullA>100);
+        REQUIRE(fullB>100);
+
+        const auto soft=readImage(
+            std::get<ImageHandle>(runtime.values().at(weighted)[0]));
+        const auto hard=readImage(
+            std::get<ImageHandle>(runtime.values().at(unweighted)[0]));
+        REQUIRE(soft.size()==hard.size());
+        float reduction=0.0F,weightedSum=0.0F,unweightedSum=0.0F;
+        for(std::size_t i=0;i<soft.size();i+=4){
+            REQUIRE(std::isfinite(soft[i]));
+            REQUIRE(std::isfinite(hard[i]));
+            REQUIRE(soft[i]<=hard[i]+.004F);
+            reduction+=hard[i]-soft[i];
+            weightedSum+=soft[i];
+            unweightedSum+=hard[i];
+        }
+        INFO("weighted reduction="<<reduction<<" weighted sum="<<weightedSum
+             <<" unweighted sum="<<unweightedSum);
+        REQUIRE(unweightedSum>5.0F);
+        REQUIRE(weightedSum>1.0F);
+        REQUIRE(reduction>1.0F);
+        // Both splats are configured red-only. The optional weights input
+        // must change intensity, not steal the blue/green parameter pins.
+        for(std::size_t i=0;i+3<soft.size();i+=4){
+            REQUIRE(std::abs(soft[i+1])<.005F);
+            REQUIRE(std::abs(soft[i+2])<.005F);
+            REQUIRE(std::abs(hard[i+1])<.005F);
+            REQUIRE(std::abs(hard[i+2])<.005F);
+        }
+    }
+
+    // Zero transition width exactly reproduces the old disjoint position
+    // masks, while the opacity channels still complement one another.
+    graph.findNode(width)->parameters={{"value",0.0F}};
+    GraphRuntime hardRuntime(graph,registry,gpu);
+    for(int frame=0;frame<6;++frame)
+        REQUIRE(hardRuntime.evaluate(static_cast<double>(frame)/60.0,1.0/60.0,true));
+    const auto a=readImage(std::get<ImageHandle>(hardRuntime.values().at(first)[1]));
+    const auto b=readImage(std::get<ImageHandle>(hardRuntime.values().at(second)[1]));
+    const auto pA=readImage(std::get<ImageHandle>(hardRuntime.values().at(first)[0]));
+    const auto pB=readImage(std::get<ImageHandle>(hardRuntime.values().at(second)[0]));
+    for(std::size_t i=0;i+3<a.size();i+=4){
+        REQUIRE(a[i]+b[i]==Catch::Approx(1.0F).margin(.004F));
+        REQUIRE((a[i]<.01F || a[i]>.99F));
+        const bool visA=!(pA[i]==-1.0F && pA[i+1]==-1.0F);
+        const bool visB=!(pB[i]==-1.0F && pB[i+1]==-1.0F);
+        REQUIRE(visA!=visB);
+    }
+}
+
+TEST_CASE("Species Flow extended nonlinear modes run as different instances of one definition") {
+    HiddenContext context;
+    NodeRegistry registry;registerBuiltInNodes(registry);
+    std::vector<std::vector<float>> frames;
+    for(int mode=0;mode<5;++mode){
+        Graph graph;graph.settings={48,48,60};
+        const auto perlin=graph.addNode("perlin");
+        graph.findNode(perlin)->parameters={{"seed",1.0F},{"scale",5.0F},
+                                            {"octaves",4.0F},{"speed",0.0F}};
+        const auto flow=graph.addNode("subgraph");
+        graph.findNode(flow)->subgraphId="builtin.particles.species_flow";
+        graph.findNode(flow)->parameters={
+            {"motionMode",static_cast<float>(mode)},{"depositMode",0.0F},
+            {"regionStart",0.0F},{"regionEnd",6.2831853F},
+            {"speed",1.0F},{"seed",14.0F},{"horizontalMin",1.0F},
+            {"horizontalMax",3.0F},{"maxJump",64.0F},{"angleBins",1200.0F},
+            {"lifeRate",.1F},{"iterations",1.0F}};
+        graph.addLink(perlin,"image",flow,"field");
+        REQUIRE(graph.compile(registry).valid);
+        GpuRuntime gpu;
+        GraphRuntime runtime(graph,registry,gpu);
+        for(int frame=0;frame<20;++frame)
+            REQUIRE(runtime.evaluate(static_cast<double>(frame)/60.0,1.0/60.0,true));
+        const auto values=readImage(std::get<ImageHandle>(runtime.values().at(flow)[0]));
+        std::size_t valid=0;
+        for(std::size_t pixel=0;pixel<values.size();pixel+=4) {
+            REQUIRE(std::isfinite(values[pixel]));
+            REQUIRE(std::isfinite(values[pixel+1]));
+            if(values[pixel]>=0.0F && values[pixel]<1.0F &&
+               values[pixel+1]>=0.0F && values[pixel+1]<1.0F)++valid;
+        }
+        INFO("nonlinear motion mode "<<mode<<" visible particles "<<valid);
+        REQUIRE(valid>200);
+        frames.push_back(values);
+    }
+    for(std::size_t mode=1;mode<frames.size();++mode){
+        std::size_t different=0;
+        for(std::size_t pixel=0;pixel<frames.front().size();pixel+=4)
+            if(std::hypot(frames.front()[pixel]-frames[mode][pixel],
+                          frames.front()[pixel+1]-frames[mode][pixel+1])>.02F)
+                ++different;
+        REQUIRE(different>50);
+    }
+}
+
+TEST_CASE("Fractal Noise modes are seeded editable scalar fields and compose into Curl Field") {
+    HiddenContext context;
+    NodeRegistry registry;registerBuiltInNodes(registry);
+    const auto* fractalDesc=registry.descriptor("fractal_noise");
+    const auto* curlDesc=registry.descriptor("curl_field");
+    REQUIRE(fractalDesc!=nullptr);
+    REQUIRE(curlDesc!=nullptr);
+    REQUIRE(fractalDesc->sockets.back().contract==SocketContract::ScalarFieldOnly);
+    REQUIRE(curlDesc->sockets.back().contract==SocketContract::VectorFieldOnly);
+    const auto modeParam=std::ranges::find(fractalDesc->parameters,"mode",
+                                            &ParameterDescriptor::key);
+    REQUIRE(modeParam!=fractalDesc->parameters.end());
+    REQUIRE(modeParam->enumOptions.size()==5);
+    std::vector<std::vector<float>> images;
+    for(int mode=0;mode<5;++mode) {
+        Graph graph;graph.settings={48,48,60};
+        const auto noise=graph.addNode("fractal_noise");
+        graph.findNode(noise)->parameters={
+            {"mode",static_cast<float>(mode)},{"frequency",7.0F},{"seed",31.0F},
+            {"octaves",5.0F},{"gain",.52F},{"lacunarity",2.0F},
+            {"offsetX",0.0F},{"offsetY",0.0F}};
+        const auto curl=graph.addNode("curl_field");
+        graph.findNode(curl)->parameters={{"strength",16.0F},{"normalize",0.0F}};
+        graph.addLink(noise,"image",curl,"source");
+        REQUIRE(graph.compile(registry).valid);
+        GpuRuntime gpu;
+        GraphRuntime runtime(graph,registry,gpu);
+        REQUIRE(runtime.evaluate(0.0,0.0,false));
+        const auto field=std::get<ImageHandle>(runtime.values().at(noise)[0]);
+        const auto vectors=std::get<ImageHandle>(runtime.values().at(curl)[0]);
+        REQUIRE(field.semanticType==ValueType::ScalarField);
+        REQUIRE(vectors.semanticType==ValueType::VectorField);
+        const auto pixels=readImage(field);
+        const auto curls=readImage(vectors);
+        REQUIRE(pixels.size()==48U*48U*4U);
+        REQUIRE(curls.size()==pixels.size());
+        float minimum=1.0F,maximum=0.0F;
+        std::size_t dynamicVectors=0;
+        for(std::size_t pixel=0;pixel<pixels.size();pixel+=4){
+            const float value=pixels[pixel];
+            REQUIRE(std::isfinite(value));
+            REQUIRE(value>=0.0F);
+            REQUIRE(value<=1.0F);
+            minimum=std::min(minimum,value);
+            maximum=std::max(maximum,value);
+            REQUIRE(std::isfinite(curls[pixel]));
+            REQUIRE(std::isfinite(curls[pixel+1]));
+            if(std::hypot(curls[pixel],curls[pixel+1])>.01F)
+                ++dynamicVectors;
+        }
+        INFO("style="<<mode<<" min="<<minimum<<" max="<<maximum
+             <<" nonzero curls="<<dynamicVectors);
+        REQUIRE(maximum-minimum>.02F);
+        REQUIRE(dynamicVectors>200);
+        images.push_back(pixels);
+    }
+    for(std::size_t style=1;style<images.size();++style){
+        std::size_t differences=0;
+        for(std::size_t k=0;k<images.front().size();k+=4)
+            if(std::abs(images.front()[k]-images[style][k])>.01F)
+                ++differences;
+        REQUIRE(differences>200);
+    }
+
+    // Changing only the seed or coordinate domain must affect the noise;
+    // this remains a generic coordinate-field generator, not a Perlin clone.
+    Graph warped;warped.settings={48,48,60};
+    const auto coords=warped.addNode("domain_warp");
+    warped.findNode(coords)->parameters={{"xOffset",.13F},{"yOffset",-.08F},
+                                        {"strength",1.0F}};
+    const auto base=warped.addNode("fractal_noise");
+    const auto shifted=warped.addNode("fractal_noise");
+    warped.findNode(base)->parameters={{"mode",2.0F},{"seed",11.0F},
+                                       {"frequency",6.0F},{"octaves",4.0F}};
+    warped.findNode(shifted)->parameters={{"mode",2.0F},{"seed",27.0F},
+                                          {"frequency",6.0F},{"octaves",4.0F}};
+    warped.addLink(coords,"coordinates",shifted,"coordinates");
+    REQUIRE(warped.compile(registry).valid);
+    GpuRuntime gpu;
+    GraphRuntime runtime(warped,registry,gpu);
+    REQUIRE(runtime.evaluate(0,0,false));
+    const auto a=readImage(std::get<ImageHandle>(runtime.values().at(base)[0]));
+    const auto c=readImage(std::get<ImageHandle>(runtime.values().at(shifted)[0]));
+    REQUIRE(a.size()==c.size());
+    std::size_t changed=0;
+    for(std::size_t i=0;i<a.size();i+=4)
+        if(std::abs(a[i]-c[i])>.01F)++changed;
+    REQUIRE(changed>300);
+}
+
+TEST_CASE("new nonlinear Math operations preserve finite values and stable limits") {
+    REQUIRE(kMathOperationNames[31]=="Tanh");
+    REQUIRE(kMathOperationNames[32]=="Sinh");
+    REQUIRE(kMathOperationNames[33]=="Cosh");
+    REQUIRE(kMathOperationNames[34]=="Sinc");
+    REQUIRE(kMathOperationNames[35]=="Softsign");
+    REQUIRE(applyMathOperation(MathOperation::Sinc,0,0,0,0,1,0,1)==Catch::Approx(1.0F));
+    REQUIRE(applyMathOperation(MathOperation::Sinc,.001F,0,0,0,1,0,1)==
+            Catch::Approx(std::sin(.001F)/.001F).margin(.0001F));
+    REQUIRE(applyMathOperation(MathOperation::HyperbolicTangent,2,0,0,0,1,0,1)==
+            Catch::Approx(std::tanh(2.0F)));
+    REQUIRE(applyMathOperation(MathOperation::Softsign,-2,0,0,0,1,0,1)==
+            Catch::Approx(-2.0F/3.0F));
+    for(const auto value:{-30.0F,0.0F,30.0F})
+        for(const auto operation:{MathOperation::HyperbolicSine,
+                                  MathOperation::HyperbolicCosine,
+                                  MathOperation::Sinc,
+                                  MathOperation::Softsign,
+                                  MathOperation::HyperbolicTangent})
+            REQUIRE(std::isfinite(applyMathOperation(operation,value,0,0,0,1,0,1)));
+}
 
 TEST_CASE("unused legacy subgraphs do not invalidate the text test root graph") {
     NodeRegistry registry;
@@ -286,6 +1022,7 @@ TEST_CASE("every built-in simulation template lowers and compiles its default sh
     for (const auto& definition : builtInSubgraphs()) {
         INFO(definition.name);
         REQUIRE(validateSubgraph(definition, registry).empty());
+        if (definition.execution != SubgraphExecution::Simulation) continue;
         const auto initialization = generateSimulationShader(definition, true);
         const auto update = generateSimulationShader(definition, false);
         REQUIRE(initialization.starts_with("#version 430"));

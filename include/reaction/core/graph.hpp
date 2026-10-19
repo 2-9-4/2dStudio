@@ -53,6 +53,9 @@ struct SimulationStateSlot {
     std::string key;
     std::string label;
     ValueType type = ValueType::ScalarField;
+    // 32-bit simulation state is needed for sub-pixel particle integration.
+    // Existing states remain 16-bit unless explicitly opted in.
+    bool highPrecision = false;
 };
 
 struct NodeRecord {

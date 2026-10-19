@@ -125,6 +125,63 @@ NodeRegistry catalogRegistry() {
     offsetSample.neighborhoodSocket = "source";
     offsetSample.lowerable = true;
     add(result, std::move(offsetSample));
+
+    // The catalog-only registry is intentionally lightweight. Mirror the socket
+    // contracts for new built-in particle dependencies so the complete built-in
+    // graph validation test covers them without linking OpenGL into core tests.
+    NodeDescriptor hash{"hash", 1, "Deterministic Hash", "Math",
+        {{"position", "Position", SocketContract::VectorNumeric, SocketDirection::Input, true},
+         {"seed", "Seed", ValueType::Float, SocketDirection::Input, true},
+         {"salt", "Salt", ValueType::Float, SocketDirection::Input, true},
+         {"scalar", "Scalar", SocketContract::Numeric, SocketDirection::Output},
+         {"vector", "Vector", SocketContract::VectorNumeric, SocketDirection::Output}}, {}};
+    hash.sockets[3].typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+    hash.sockets[3].typeInputs = {"position"};
+    hash.sockets[4].typePolicy = SocketDescriptor::TypePolicy::VectorPromotion;
+    hash.sockets[4].typeInputs = {"position"};
+    hash.lowerable = true;
+    add(result, std::move(hash));
+
+    NodeDescriptor perlin{"perlin", 1, "Perlin Noise", "Generator",
+        {{"scale", "Scale", ValueType::Float, SocketDirection::Input, true},
+         {"offsetX", "Offset X", ValueType::Float, SocketDirection::Input, true},
+         {"offsetY", "Offset Y", ValueType::Float, SocketDirection::Input, true},
+         {"image", "Image", ValueType::ScalarField, SocketDirection::Output}}, {}};
+    perlin.lowerable = true;
+    perlin.producedField = true;
+    add(result, std::move(perlin));
+
+    NodeDescriptor textureSample{"texture_sample", 1, "Texture Sample", "Coordinates",
+        {{"source", "Source", SocketContract::AnyField, SocketDirection::Input},
+         {"coordinates", "Coordinates", SocketContract::VectorNumeric,
+          SocketDirection::Input, true},
+         {"sampled", "Sampled", SocketContract::AnyField, SocketDirection::Output}}, {}};
+    textureSample.sockets[0].requiresImage = true;
+    textureSample.sockets[2].typePolicy = SocketDescriptor::TypePolicy::PreserveInput;
+    textureSample.sockets[2].typeInputs = {"source"};
+    textureSample.neighborhoodSocket = "source";
+    textureSample.lowerable = true;
+    add(result, std::move(textureSample));
+
+    NodeDescriptor separate{"separate_vector", 1, "Separate Vector", "Utility",
+        {{"value", "Vector", SocketContract::VectorNumeric, SocketDirection::Input},
+         {"x", "X", SocketContract::Numeric, SocketDirection::Output},
+         {"y", "Y", SocketContract::Numeric, SocketDirection::Output}}, {}};
+    separate.sockets[1].typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+    separate.sockets[1].typeInputs = {"value"};
+    separate.sockets[2].typePolicy = SocketDescriptor::TypePolicy::NumericPromotion;
+    separate.sockets[2].typeInputs = {"value"};
+    separate.lowerable = true;
+    add(result, std::move(separate));
+
+    NodeDescriptor pixels{"pixel_delta_to_uv", 1, "Pixel Delta to UV", "Coordinates",
+        {{"delta", "Pixel Delta", SocketContract::VectorNumeric, SocketDirection::Input},
+         {"uvDelta", "UV Delta", SocketContract::VectorNumeric, SocketDirection::Output}}, {}};
+    pixels.sockets[1].typePolicy = SocketDescriptor::TypePolicy::VectorPromotion;
+    pixels.sockets[1].typeInputs = {"delta"};
+    pixels.lowerable = true;
+    add(result, std::move(pixels));
+
     return result;
 }
 

@@ -22,6 +22,7 @@ enum class PopupKind {
     ConvolutionPreset,
     ConvolutionKernel,
     ParameterEnum,
+    SplatInkColor,
 };
 
 struct PopupState {

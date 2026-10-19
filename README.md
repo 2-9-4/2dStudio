@@ -44,12 +44,24 @@ Inspector and execution-debug settings are session-only. Lowering/type errors an
 errors are attached to the affected region; native evaluation remains available only for nodes
 or parameter modes that explicitly opt out of lowering.
 
-## Current boundaries
+## Species Flow particle artwork
 
-- Linux and OpenGL 4.3 compute are the supported first target.
-- Graphs are acyclic; simulation subgraphs contain a controlled private feedback boundary.
-- Custom subgraphs are currently created by duplicating a built-in definition. Blank creation, wrapping selections, nesting, and recursion are not supported yet.
-- There is no timeline, undo/redo, runtime plugin ABI, or saved simulation state yet.
-- Images are linear RGBA16F GPU textures. Reaction state uses RG16F textures.
-
-See [docs/adding-a-node.md](docs/adding-a-node.md) for the node extension interface and [docs/smoke-test.md](docs/smoke-test.md) for the interactive acceptance pass.
+Open `examples/noise-particles.reaction.json`: an external Perlin image
+feeds **two instances of the same editable Species Flow subgraph**, with
+independent RNG, position/lifetime feedback, speed, and horizontal jitter.
+Each instance selects **Motion** (Tangent, Sine/Cosine, Double Angle,
+Harmonic Rosette, or Soft Tangent) and
+**Deposit In** (`Inside Range` or `Outside Range`) through dropdowns.
+Shared region threshold Float nodes define complementary visible
+territories without inter-species forces or shared state. An adjustable
+**Boundary Fade** Float is also shared across instances; each exports
+fractional per-particle `weights` to its standard Splat for a smooth,
+complementary transition instead of a binary cutoff.
+The simulation only emits normalized particle positions; ordinary
+root-level Particle Splat nodes assign colors and the existing Mix(Add)
+node composes the trails. Perlin is never hardcoded into the subgraph.
+General-purpose **Fractal Noise** (fBm, billow, ridged, sharp turbulence,
+value fBm) and **Curl Field** generators can be used anywhere in the graph,
+alongside existing Perlin/Worley, Wave and Domain Warp nodes. The Math
+node also offers Tanh, Sinh, Cosh, Sinc and Softsign.
+See [Species Flow docs](docs/noise-particles.md).
