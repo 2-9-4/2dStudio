@@ -80,6 +80,21 @@ When a root node is also available in a simulation subgraph, keep its custom edi
 the subgraph canvas. Exclude any native-only controls from the contextual subgraph descriptor and
 validate persisted values that would prevent simulation shader lowering.
 
+**Critical node-editor UI coordinate contract:** `ed::BeginNode` and its
+`ImGui::ColorButton` / other controls run inside a transformed canvas (pan +
+zoom). NEVER call `ImGui::OpenPopup`, `BeginPopup`, `ColorPicker3`, or render
+dropdown contents inside a node or pin. In the node body, register the click
+via `node_widgets::PopupState::request`; after finishing all nodes, use the
+existing `ed::Suspend() -> node_widgets::renderPopup() -> ed::Resume()` path
+for both root and editable-subgraph editors. The popup then uses physical
+screen coordinates and correct hit testing regardless of editor pan/zoom.
+Never use canvas-space `GetItemRectMin/Max` or node positions as screen
+popup anchors without an explicit conversion. **Do not add a second popup
+manager for splats, ramps, or new widgets.** A headless UI regression in
+`tests/popup_ui_tests.cpp` exercises the real suspended editor overlay and
+checks popup position against physical mouse coordinates for an offscreen node;
+preserve/extend it when adding UI pickers.
+
 Node boxes must render identically in the root graph and inside a subgraph body. All canvases
 share one `renderNodeBody` path in `src/app/application.cpp`; do not add per-canvas title,
 pin, parameter, or widget divergence there. Root-only runtime inspection (fusion state, live
