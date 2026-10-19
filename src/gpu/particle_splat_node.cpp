@@ -165,16 +165,33 @@ public:
         ensureResources(gpu,context.width,context.height);
         const int capacity=std::min(100000,positions.width*positions.height);
         if(capacity<=0){outputs[0]=Value{};return;}
-        const int count=std::clamp(static_cast<int>(floatAt(inputs,1,node_support::parameter(parameters_,"count",1000.0F))),1,capacity);
-        const float retention=std::clamp(floatAt(inputs,2,node_support::parameter(parameters_,"retention",0.985F)),0.0F,1.0F);
-        const float opacity=std::clamp(floatAt(inputs,3,node_support::parameter(parameters_,"opacity",0.375F)),0.0F,1.0F);
+        // Native inputs follow descriptor SOCKET order, not parameter order.
+        // positions=0, optional weights=1, then all numeric parameter pins.
+        // Keeping named indices avoids silently shifting RGB and brush settings
+        // when more sockets are added to this renderer.
+        enum InputIndex : std::size_t {
+            Positions=0, Weights=1, Count=2, Retention=3, Opacity=4,
+            Red=5, Green=6, Blue=7, PointSize=8, Margin=9, Roundness=10
+        };
+        const int count=std::clamp(static_cast<int>(floatAt(inputs,Count,
+            node_support::parameter(parameters_,"count",1000.0F))),1,capacity);
+        const float retention=std::clamp(floatAt(inputs,Retention,
+            node_support::parameter(parameters_,"retention",0.985F)),0.0F,1.0F);
+        const float opacity=std::clamp(floatAt(inputs,Opacity,
+            node_support::parameter(parameters_,"opacity",0.375F)),0.0F,1.0F);
 
-        const float red=std::clamp(floatAt(inputs,4,node_support::parameter(parameters_,"r",.9F)),0.0F,1.0F);
-        const float green=std::clamp(floatAt(inputs,5,node_support::parameter(parameters_,"g",.2925F)),0.0F,1.0F);
-        const float blue=std::clamp(floatAt(inputs,6,node_support::parameter(parameters_,"b",.09F)),0.0F,1.0F);
-        const float pointSize=std::clamp(floatAt(inputs,7,node_support::parameter(parameters_,"size",1.0F)),.5F,16.0F);
-        const float margin=std::clamp(floatAt(inputs,8,node_support::parameter(parameters_,"margin",20.0F)),0.0F,200.0F);
-        const float roundness=std::clamp(floatAt(inputs,9,node_support::parameter(parameters_,"roundness",0.0F)),0.0F,1.0F);
+        const float red=std::clamp(floatAt(inputs,Red,
+            node_support::parameter(parameters_,"r",.9F)),0.0F,1.0F);
+        const float green=std::clamp(floatAt(inputs,Green,
+            node_support::parameter(parameters_,"g",.2925F)),0.0F,1.0F);
+        const float blue=std::clamp(floatAt(inputs,Blue,
+            node_support::parameter(parameters_,"b",.09F)),0.0F,1.0F);
+        const float pointSize=std::clamp(floatAt(inputs,PointSize,
+            node_support::parameter(parameters_,"size",1.0F)),.5F,16.0F);
+        const float margin=std::clamp(floatAt(inputs,Margin,
+            node_support::parameter(parameters_,"margin",20.0F)),0.0F,200.0F);
+        const float roundness=std::clamp(floatAt(inputs,Roundness,
+            node_support::parameter(parameters_,"roundness",0.0F)),0.0F,1.0F);
 
         // GL is shared with ImGui and the preview. Do not leak framebuffer,
         // VAO, viewport, or blend/depth/scissor state into the UI.
