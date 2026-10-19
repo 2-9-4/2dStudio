@@ -133,5 +133,19 @@ if(REACTION_BUILD_APP)
         target_link_libraries(reaction_gpu_tests PRIVATE
             reaction_gpu glfw glad OpenGL::GL Catch2::Catch2WithMain)
         catch_discover_tests(reaction_gpu_tests)
+
+        # The real node-editor + ImGui popup path can be checked without a
+        # visible window or GPU draw: guards against canvas/screen coordinate
+        # regressions from opening picker popups inside BeginNode().
+        add_executable(reaction_popup_ui_tests
+            tests/popup_ui_tests.cpp
+            src/app/node_widgets.cpp
+            src/app/convolution_presets.cpp)
+        target_include_directories(reaction_popup_ui_tests PRIVATE
+            src/app
+            ${portable_file_dialogs_SOURCE_DIR})
+        target_link_libraries(reaction_popup_ui_tests PRIVATE
+            reaction_core reaction_imgui Catch2::Catch2WithMain)
+        catch_discover_tests(reaction_popup_ui_tests)
     endif()
 endif()
