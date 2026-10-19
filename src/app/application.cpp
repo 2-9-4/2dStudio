@@ -449,6 +449,62 @@ struct ColorRampPickerState {
 
 ColorRampPickerState colorRampPicker;
 
+// Node editor widgets are rendered under a transformed canvas. The popup
+// belongs to the untransformed ImGui overlay instead. Scope requests to the
+// editor context as root and subgraph canvases can reuse the same NodeId.
+struct SplatInkPickerState {
+    NodeId nodeId = 0;
+    ed::EditorContext* editor = nullptr;
+    bool openRequested = false;
+};
+SplatInkPickerState splatInkPicker;
+
+template <typename GraphLike>
+bool renderSplatInkPickerPopup(GraphLike& graph) {
+    // Called exclusively while the current editor is suspended; switching
+    // between canvases must never redirect a pending edit to another node.
+    if (splatInkPicker.editor != ed::GetCurrentEditor()) return false;
+    if (splatInkPicker.openRequested) {
+        // ImGui's MousePos is actual screen-space AFTER ed::Suspend(). Do not
+        // retain GetItemRect* or GetCursorScreenPos from within ed::BeginNode().
+        ImGui::OpenPopup("Ink color");
+        splatInkPicker.openRequested = false;
+    }
+    if (!ImGui::BeginPopup("Ink color")) {
+        if (!splatInkPicker.openRequested) splatInkPicker = {};
+        return false;
+    }
+
+    bool changed = false;
+    constexpr std::array<const char*, 3> keys{"r", "g", "b"};
+    constexpr std::array<float, 3> defaults{.90F, .2925F, .09F};
+    if (auto* node=graph.findNode(splatInkPicker.nodeId);
+        node && node->type=="particle_splat") {
+        float color[3]{};
+        for (std::size_t i=0;i<keys.size();++i)
+            color[i]=node->parameters.value(keys[i],defaults[i]);
+        if (ImGui::ColorPicker3("##picker",color,ImGuiColorEditFlags_NoAlpha)) {
+            // Connections take precedence over local color defaults. Edit
+            // only channels that aren't currently overridden by a wire.
+            for (std::size_t i=0;i<keys.size();++i) {
+                const auto key=std::string(keys[i]);
+                const bool connected=std::ranges::any_of(graph.links(),
+                    [&](const auto& link) {
+                        return link.toNode==node->id && link.toSocket==key;
+                    });
+                if (!connected) {
+                    node->parameters[key]=color[i];
+                    changed=true;
+                }
+            }
+        }
+    } else {
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
+    return changed;
+}
+
 bool renderColorRampColors(NodeId nodeId, NodeRecord& node,
                            const std::unordered_set<std::string>& connectedInputs) {
     const auto isConnected = [&](std::string_view key) {
@@ -563,26 +619,15 @@ bool renderSplatInkControl(
     ImGui::PushID("splatInk");
     if(ImGui::ColorButton("##swatch",ImVec4(color[0],color[1],color[2],1.0F),
                           ImGuiColorEditFlags_NoAlpha|ImGuiColorEditFlags_NoDragDrop,
-                          ImVec2(42.0F,19.0F)))
-        ImGui::OpenPopup("Ink color");
-    bool changed=false;
-    if(ImGui::BeginPopup("Ink color")){
-        if(ImGui::ColorPicker3("##picker",color,
-                              ImGuiColorEditFlags_NoAlpha)){
-            for(std::size_t i=0;i<keys.size();++i){
-                const bool connected=connectedInputs.contains(
-                    std::to_string(node.id)+"\x1f"+keys[i]);
-                if(!connected){
-                    node.parameters[keys[i]]=color[i];
-                    changed=true;
-                }
-            }
-        }
-        ImGui::EndPopup();
+                          ImVec2(42.0F,19.0F))) {
+        // Only register a request while inside ed::BeginNode(). ImGui popups
+        // must be opened and DRAWN after ed::Suspend(), in screen coordinates;
+        // opening one here gives it the node canvas' pan/zoom transform.
+        splatInkPicker = {node.id, ed::GetCurrentEditor(), true};
     }
     ImGui::PopID();
     ImGui::EndGroup();
-    return changed;
+    return false;
 }
 
 // Renders the node box the same way in the root graph and in every editable
@@ -1470,6 +1515,7 @@ void Application::renderGraph() {
     static ImVec2 addNodeCanvasPosition{};
     ed::Suspend();
     if (renderColorRampPickerPopup(graph_)) dirty_ = true;
+    if (renderSplatInkPickerPopup(graph_)) dirty_ = true;
     if (node_widgets::renderPopup(nodePopup_, graph_)) {
         if (pruneInactiveLinks(graph_, registry_))
             setStatus("Removed links incompatible with the selected operation");
@@ -2060,6 +2106,10 @@ void Application::renderSubgraphEditor() {
     static ImVec2 addNodeCanvasPosition{};
     ed::Suspend();
     if (renderColorRampPickerPopup(body)) {
+        changed = true;
+        executionChanged = true;
+    }
+    if (renderSplatInkPickerPopup(body)) {
         changed = true;
         executionChanged = true;
     }
