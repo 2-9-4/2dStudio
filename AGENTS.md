@@ -67,6 +67,14 @@ Potential footguns and ergonomics to improve:
 - Headless OpenGL regression tests must have sequential hidden contexts and
   scoped GPU runtime lifetimes to avoid teardown crashes. Keep new tests
   bounded in resolution and frame count.
+- Native GPU node evaluation receives inputs in **all descriptor socket order**,
+  INCLUDING optional sockets that precede auto-generated numeric parameter
+  sockets. When inserting a new optional input (e.g. Particle Splat's
+  `weights`), update every positional `floatAt(inputs, index, fallback)`
+  read—not just the new socket. Prefer named index enums/helpers. Add a
+  pixelwise GPU regression for actual RGB tint and non-color numeric pins;
+  nonblack-output tests and shader compile tests did not catch the color
+  scrambling caused by one offset.
 
 When a root node is also available in a simulation subgraph, keep its custom editor available in
 the subgraph canvas. Exclude any native-only controls from the contextual subgraph descriptor and
