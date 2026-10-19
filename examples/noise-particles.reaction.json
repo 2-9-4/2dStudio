@@ -1,357 +1,358 @@
 {
+  "activeOutput": 7,
   "formatVersion": 4,
-  "project": {
-    "width": 512,
-    "height": 512,
-    "targetFps": 60
-  },
-  "nodes": [
-    {
-      "id": 1,
-      "type": "perlin",
-      "typeVersion": 1,
-      "label": "Shared External Flow Field",
-      "position": [
-        35,
-        80
-      ],
-      "parameters": {
-        "seed": 1,
-        "scale": 5,
-        "octaves": 4,
-        "persistence": 0.5,
-        "lacunarity": 2,
-        "speed": 0,
-        "offsetX": 0,
-        "offsetY": 0
-      }
-    },
-    {
-      "id": 2,
-      "type": "subgraph",
-      "typeVersion": 2,
-      "subgraphId": "builtin.particles.species_flow",
-      "label": "Species A • Tangent / Inside",
-      "position": [
-        370,
-        90
-      ],
-      "parameters": {
-        "seed": 14,
-        "speed": 1,
-        "horizontalMin": 1,
-        "horizontalMax": 3,
-        "angleBins": 1200,
-        "maxJump": 64,
-        "lifeRate": 0.1,
-        "iterations": 1,
-        "reset": 0,
-        "regionStart": 3,
-        "regionEnd": 6,
-        "motionMode": 0,
-        "depositMode": 0,
-        "transitionWidth": 0.45
-      }
-    },
-    {
-      "id": 3,
-      "type": "subgraph",
-      "typeVersion": 2,
-      "subgraphId": "builtin.particles.species_flow",
-      "label": "Species B • Sine-Cosine / Outside",
-      "position": [
-        370,
-        580
-      ],
-      "parameters": {
-        "seed": 314,
-        "speed": 1,
-        "horizontalMin": 0.1,
-        "horizontalMax": 1,
-        "angleBins": 1200,
-        "lifeRate": 0.1,
-        "iterations": 1,
-        "reset": 0,
-        "regionStart": 3,
-        "regionEnd": 6,
-        "motionMode": 1,
-        "depositMode": 1,
-        "maxJump": 64,
-        "transitionWidth": 0.45
-      }
-    },
-    {
-      "id": 4,
-      "type": "particle_splat",
-      "typeVersion": 2,
-      "label": "Species 1 Trails",
-      "position": [
-        800,
-        70
-      ],
-      "parameters": {
-        "count": 1000,
-        "retention": 0.985,
-        "opacity": 0.375,
-        "r": 0.9,
-        "g": 0.2925,
-        "b": 0.09,
-        "size": 1,
-        "margin": 20,
-        "roundness": 0
-      }
-    },
-    {
-      "id": 5,
-      "type": "particle_splat",
-      "typeVersion": 2,
-      "label": "Species 2 Trails",
-      "position": [
-        800,
-        570
-      ],
-      "parameters": {
-        "count": 1000,
-        "retention": 0.985,
-        "opacity": 0.375,
-        "r": 0.09,
-        "g": 0.9,
-        "b": 0.8325,
-        "size": 1,
-        "margin": 20,
-        "roundness": 0
-      }
-    },
-    {
-      "id": 6,
-      "type": "mix",
-      "typeVersion": 1,
-      "label": "Combine Species (Add)",
-      "position": [
-        1210,
-        350
-      ],
-      "parameters": {
-        "mode": 1,
-        "factor": 1
-      }
-    },
-    {
-      "id": 7,
-      "type": "output",
-      "typeVersion": 1,
-      "position": [
-        1490,
-        350
-      ],
-      "parameters": {}
-    },
-    {
-      "id": 8,
-      "type": "float",
-      "typeVersion": 1,
-      "label": "Shared Region Start (radians)",
-      "position": [
-        45,
-        550
-      ],
-      "parameters": {
-        "value": 3
-      }
-    },
-    {
-      "id": 9,
-      "type": "float",
-      "typeVersion": 1,
-      "label": "Shared Region End (radians)",
-      "position": [
-        45,
-        780
-      ],
-      "parameters": {
-        "value": 6
-      }
-    },
-    {
-      "id": 10,
-      "type": "float",
-      "typeVersion": 1,
-      "label": "Shared Boundary Fade (radians)",
-      "position": [
-        45,
-        1010
-      ],
-      "parameters": {
-        "value": 0.45
-      }
-    }
-  ],
   "links": [
     {
-      "id": 1,
       "from": {
         "node": 1,
         "socket": "image"
       },
+      "id": 1,
       "to": {
         "node": 2,
         "socket": "field"
       }
     },
     {
-      "id": 2,
       "from": {
         "node": 1,
         "socket": "image"
       },
+      "id": 2,
       "to": {
         "node": 3,
         "socket": "field"
       }
     },
     {
-      "id": 3,
       "from": {
         "node": 2,
         "socket": "positions"
       },
+      "id": 3,
       "to": {
         "node": 4,
         "socket": "positions"
       }
     },
     {
-      "id": 4,
       "from": {
         "node": 3,
         "socket": "positions"
       },
+      "id": 4,
       "to": {
         "node": 5,
         "socket": "positions"
       }
     },
     {
-      "id": 5,
       "from": {
         "node": 4,
         "socket": "image"
       },
+      "id": 5,
       "to": {
         "node": 6,
         "socket": "a"
       }
     },
     {
-      "id": 6,
       "from": {
         "node": 5,
         "socket": "image"
       },
+      "id": 6,
       "to": {
         "node": 6,
         "socket": "b"
       }
     },
     {
-      "id": 7,
       "from": {
         "node": 6,
         "socket": "result"
       },
+      "id": 7,
       "to": {
         "node": 7,
         "socket": "image"
       }
     },
     {
+      "from": {
+        "node": 8,
+        "socket": "value"
+      },
       "id": 8,
-      "from": {
-        "node": 8,
-        "socket": "value"
-      },
       "to": {
         "node": 2,
         "socket": "regionStart"
       }
     },
     {
+      "from": {
+        "node": 8,
+        "socket": "value"
+      },
       "id": 9,
-      "from": {
-        "node": 8,
-        "socket": "value"
-      },
       "to": {
         "node": 3,
         "socket": "regionStart"
       }
     },
     {
+      "from": {
+        "node": 9,
+        "socket": "value"
+      },
       "id": 10,
-      "from": {
-        "node": 9,
-        "socket": "value"
-      },
       "to": {
         "node": 2,
         "socket": "regionEnd"
       }
     },
     {
+      "from": {
+        "node": 9,
+        "socket": "value"
+      },
       "id": 11,
-      "from": {
-        "node": 9,
-        "socket": "value"
-      },
       "to": {
         "node": 3,
         "socket": "regionEnd"
       }
     },
     {
-      "id": 12,
       "from": {
         "node": 10,
         "socket": "value"
       },
+      "id": 12,
       "to": {
         "node": 2,
         "socket": "transitionWidth"
       }
     },
     {
-      "id": 13,
       "from": {
         "node": 10,
         "socket": "value"
       },
+      "id": 13,
       "to": {
         "node": 3,
         "socket": "transitionWidth"
       }
     },
     {
-      "id": 14,
       "from": {
         "node": 2,
         "socket": "weights"
       },
+      "id": 14,
       "to": {
         "node": 4,
         "socket": "weights"
       }
     },
     {
-      "id": 15,
       "from": {
         "node": 3,
         "socket": "weights"
       },
+      "id": 15,
       "to": {
         "node": 5,
         "socket": "weights"
       }
     }
   ],
-  "activeOutput": 7
+  "nodes": [
+    {
+      "id": 1,
+      "label": "Shared External Flow Field",
+      "parameters": {
+        "lacunarity": 2,
+        "octaves": 4,
+        "offsetX": 0,
+        "offsetY": 0,
+        "persistence": 0.5,
+        "scale": 5,
+        "seed": 1,
+        "speed": 0
+      },
+      "position": [
+        0.0,
+        128.0
+      ],
+      "type": "perlin",
+      "typeVersion": 1
+    },
+    {
+      "id": 2,
+      "label": "Species A • Tangent / Inside",
+      "parameters": {
+        "angleBins": 1200,
+        "depositMode": 0,
+        "horizontalMax": 3,
+        "horizontalMin": 1,
+        "iterations": 1,
+        "lifeRate": 0.1,
+        "maxJump": 64,
+        "motionMode": 0.0,
+        "regionEnd": 6,
+        "regionStart": 3,
+        "reset": 0,
+        "seed": 14,
+        "speed": 1,
+        "transitionWidth": 0.45
+      },
+      "position": [
+        590.0,
+        707.0
+      ],
+      "subgraphId": "builtin.particles.species_flow",
+      "type": "subgraph",
+      "typeVersion": 2
+    },
+    {
+      "id": 3,
+      "label": "Species B • Sine-Cosine / Outside",
+      "parameters": {
+        "angleBins": 1200,
+        "depositMode": 1,
+        "horizontalMax": 1,
+        "horizontalMin": 0.1,
+        "iterations": 1,
+        "lifeRate": 0.1,
+        "maxJump": 64,
+        "motionMode": 1.0,
+        "regionEnd": 6,
+        "regionStart": 3,
+        "reset": 0,
+        "seed": 314,
+        "speed": 1,
+        "transitionWidth": 0.45
+      },
+      "position": [
+        590.0,
+        0.0
+      ],
+      "subgraphId": "builtin.particles.species_flow",
+      "type": "subgraph",
+      "typeVersion": 2
+    },
+    {
+      "id": 4,
+      "label": "Species 1 Trails",
+      "parameters": {
+        "b": 0.09,
+        "count": 13853.0,
+        "g": 0.2925,
+        "margin": 20,
+        "opacity": 0.375,
+        "r": 0.9,
+        "retention": 0.985,
+        "roundness": 0,
+        "size": 1
+      },
+      "position": [
+        1355.0,
+        843.0
+      ],
+      "type": "particle_splat",
+      "typeVersion": 2
+    },
+    {
+      "id": 5,
+      "label": "Species 2 Trails",
+      "parameters": {
+        "b": 0.8325,
+        "count": 18331.0,
+        "g": 0.9,
+        "margin": 20,
+        "opacity": 0.375,
+        "r": 0.09,
+        "retention": 0.985,
+        "roundness": 0,
+        "size": 1
+      },
+      "position": [
+        1356.0,
+        420.0
+      ],
+      "type": "particle_splat",
+      "typeVersion": 2
+    },
+    {
+      "id": 6,
+      "label": "Combine Species (Add)",
+      "parameters": {
+        "factor": 1,
+        "mode": 1
+      },
+      "position": [
+        2068.0,
+        891.0
+      ],
+      "type": "mix",
+      "typeVersion": 1
+    },
+    {
+      "id": 7,
+      "parameters": {},
+      "position": [
+        2701.0,
+        901.0
+      ],
+      "type": "output",
+      "typeVersion": 1
+    },
+    {
+      "id": 8,
+      "label": "Shared Region Start (radians)",
+      "parameters": {
+        "value": 3
+      },
+      "position": [
+        0.0,
+        578.0
+      ],
+      "type": "float",
+      "typeVersion": 1
+    },
+    {
+      "id": 9,
+      "label": "Shared Region End (radians)",
+      "parameters": {
+        "value": 6
+      },
+      "position": [
+        0.0,
+        748.0
+      ],
+      "type": "float",
+      "typeVersion": 1
+    },
+    {
+      "id": 10,
+      "label": "Shared Boundary Fade (radians)",
+      "parameters": {
+        "value": 0.45
+      },
+      "position": [
+        0.0,
+        918.0
+      ],
+      "type": "float",
+      "typeVersion": 1
+    }
+  ],
+  "project": {
+    "height": 1024,
+    "targetFps": 60,
+    "width": 1024
+  },
+  "subgraphs": []
 }
