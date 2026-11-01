@@ -1,6 +1,7 @@
 #include "reaction/gpu/gpu_runtime.hpp"
 #include "reaction/gpu/shader_ir.hpp"
 #include "reaction/core/persistence.hpp"
+#include "reaction/core/vector_math.hpp"
 #include "node_test_support.hpp"
 
 #include <GLFW/glfw3.h>
