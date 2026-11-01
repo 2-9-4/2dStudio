@@ -183,3 +183,20 @@ produces a Vector Field, independent of where the source came from. Treat
 these as reusable building blocks, not Sands-exclusive nodes. Every new
 noise family should have GPU tests across its modes, source/seed variation,
 and composition into typed field consumers.
+
+
+Vortex and billiards integration notes:
+- `NodeRegistry::add` rejects `producedField=true` on native (not shader-
+  lowerable) nodes. Native generators may expose fixed ScalarField/VectorField
+  outputs without that flag. Only lowerable generators should use producedField.
+- Float/Integer descriptor parameters auto-insert input sockets *before* output
+  sockets. A native node must read the inserted sockets in full descriptor
+  order, not read only `parameters_`, which silently ignores connected pins.
+  Enum controls do not add input sockets.
+- Independent agents should keep high-precision simulation state separate
+  from display GL textures. Circular billiards keeps CPU double state and
+  produces a 1xN RGBA32F Vector Field for the existing Splat renderer.
+  Keep palette choice, ink and trails in the renderer, not physics.
+- A deterministic chaotic simulation should assert both energy conservation
+  and its y=0 energy ceiling. The reported "x7 per bounce" is not universal:
+  actual amplification is scene- and trajectory-specific.
