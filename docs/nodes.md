@@ -25,6 +25,52 @@ submodes, and the special nodes available inside simulation subgraphs.
 - **Canvas Coordinates** (`coordinates`) — Outputs one Vector Field containing normalized XY
   canvas coordinates. Enable **Pixels** to output pixel-center coordinates instead.
 
+
+### Coordinate lattices and vortex deformation
+
+- **Vortex / Dipole Warp** (`vortex_warp`) — Outputs a 32-bit Vector Field
+  of *sampling coordinates*, not a picture. Unconnected Coordinates default to
+  canvas UV. Single or counter-rotating Dipole modes; signed Twist, Gaussian /
+  Exponential / Smooth-cutoff Falloff, radius, focal separation, radial squeeze,
+  and localized transition-ring ripple are independent controls. Connect to
+  Lattice Lines, Texture Sample, or any coordinate-aware generator. Extreme
+  settings can fold coordinates; normal settings preserve the sheet topology.
+- **Lattice Lines** (`lattice_lines`) — Antialiased Scalar Field of rectangular
+  grid lines, or aspect-correct polar rings and spokes. Optional Coordinates
+  input defaults to canvas UV, so it works with Vortex Warp. Columns, Rows,
+  Rings, Spokes (0 to disable), First Ring Radius, Ring Separation and
+  Thickness in pixels are independent. Follow with Color Ramp for line colors.
+
+Open `examples/vortex-lattice.reaction.json` for the 36×36 dipole-vortex
+grid with a transition ripple. These nodes also work independently.
+
+### Circular gravitational billiards
+
+- **Circular Gravity Billiards** (`circular_billiards`) — Simulates 1–2,000
+  independent identical point balls within a perfectly reflecting circle under
+  uniform downwards gravity. All begin at rest at y=0, fanned evenly over a
+  horizontal starting span. Defaults of 200 balls and a 0.1mm span give a
+  center-to-center gap of ~0.503µm. The algorithm uses double-precision CPU
+  positions/velocities, fixed 1/600s steps, analytic free flight, bisection of
+  wall impact time and specular reflections, with only roundoff correction to
+  preserve launch energy. Physics setup controls: Ball Count, Launch Fan Width,
+  Arena Radius, Ball Radius, Gravity, Display Radius and Simulation Speed.
+  Position output is a 1×N RGBA32F Vector Field (UV coordinates), separate
+  from its physics state. It also outputs numeric Max Separation (m), Total
+  Wall Impacts and Max Energy Error (J/kg). With zero launch velocity at
+  y=0, the physical energy ceiling is y=0: the top half remains inaccessible.
+  The observed amplification per bounce depends on the exact parameters
+  and trajectory; it is not always ×7.
+- **Particle Splat / Trails** (`particle_splat`) now also offers Color Mode:
+  the old default Uniform Ink or Rainbow by Index. The index palette is stable
+  across frames and works with any positions Vector Field.
+
+Open `examples/circular-chaos.reaction.json` for the 200-ball simulation,
+rainbow trails and a separate polar-ring arena. The core physics and visual
+trails work in the graph editor. Audio synthesis, sequenced title cards,
+and visible on-frame diagnostic text are not yet supported by this graph;
+collision count and separation are available as numeric outputs instead.
+
 ### Reusable species particle flow and splatting
 
 - **Species Flow** (`builtin.particles.species_flow`) is one reusable,

@@ -2660,3 +2660,56 @@ TEST_CASE("compare lowers all modes to scalar truth comparisons") {
 }
 
 } // namespace reaction
+
+
+TEST_CASE("Vortex warp composes with lattice lines as a typed coordinate field", "[gpu]") {
+    reaction::test_support::RuntimeHarness h{96,96};
+    const auto vortex=h.add("vortex_warp",{{"twist",5.5F},{"mode",1.0F},
+        {"radius",0.23F},{"separation",0.20F},{"squeeze",0.36F},
+        {"ripple",0.025F},{"period",0.08F},{"ringWidth",0.10F}});
+    const auto grid=h.add("lattice_lines",{{"columns",24.0F},{"rows",24.0F},{"thickness",1.5F}});
+    h.connect(vortex,"coordinates",grid,"coordinates");
+    REQUIRE(h.semanticType(vortex,"coordinates")==reaction::ValueType::VectorField);
+    REQUIRE(h.semanticType(grid,"lines")==reaction::ValueType::ScalarField);
+    h.evaluated();
+    const auto coords=h.pixels(vortex);
+    const auto mask=h.pixels(grid);
+    REQUIRE(coords.size()==96u*96u*4u);
+    REQUIRE(mask.size()==96u*96u*4u);
+    REQUIRE(std::all_of(coords.begin(),coords.end(),[](float v){return std::isfinite(v);}));
+    REQUIRE(std::all_of(mask.begin(),mask.end(),[](float v){return std::isfinite(v);}));
+    const auto nearCorner=0u;
+    REQUIRE(std::abs(coords[nearCorner]-0.5F/96.0F)<0.025F);
+    REQUIRE(std::abs(coords[nearCorner+1]-0.5F/96.0F)<0.025F);
+    float maxLine=0.0F;
+    for(std::size_t i=0;i<mask.size();i+=4)maxLine=std::max(maxLine,mask[i]);
+    REQUIRE(maxLine>0.5F);
+}
+
+TEST_CASE("Circular billiards exposes a 200-slot vector field and energy diagnostics", "[gpu]") {
+    reaction::test_support::RuntimeHarness h{64,64};
+    const auto billiards=h.add("circular_billiards",
+        {{"count",200},{"fanMm",0.1F},{"radius",1.0F},{"gravity",9.81F}});
+    const auto splat=h.add("particle_splat",
+        {{"count",200},{"palette",1.0F},{"margin",0.0F},{"size",2.0F}});
+    h.connect(billiards,"positions",splat,"positions");
+    REQUIRE(h.semanticType(billiards,"positions")==reaction::ValueType::VectorField);
+    h.evaluated(0.0,0.0,false);
+    const auto start=h.image(billiards);
+    REQUIRE(start.width==200);
+    REQUIRE(start.height==1);
+    const auto samples=h.pixels(billiards);
+    REQUIRE(std::abs(samples[1]-0.5F)<1e-5F);
+    REQUIRE(std::abs(samples[0]-0.5F)<0.001F);
+    for(int i=1;i<=120;i++)h.evaluated(i/60.0,1.0/60.0,true);
+    const auto e=std::get<float>(h.value(billiards,3));
+    const auto impacts=std::get<float>(h.value(billiards,2));
+    const auto spread=std::get<float>(h.value(billiards,1));
+    REQUIRE(std::isfinite(e));
+    REQUIRE(e<1e-9F);
+    REQUIRE(impacts>0.0F);
+    REQUIRE(spread>0.0001F);
+    const auto image=h.image(splat);
+    REQUIRE(image.width==64);
+    REQUIRE(image.height==64);
+}

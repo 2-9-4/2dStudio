@@ -1,0 +1,114 @@
+{
+  "activeOutput": 4,
+  "formatVersion": 4,
+  "links": [
+    {
+      "id": 1,
+      "from": {
+        "node": 1,
+        "socket": "coordinates"
+      },
+      "to": {
+        "node": 2,
+        "socket": "coordinates"
+      }
+    },
+    {
+      "id": 2,
+      "from": {
+        "node": 2,
+        "socket": "lines"
+      },
+      "to": {
+        "node": 3,
+        "socket": "value"
+      }
+    },
+    {
+      "id": 3,
+      "from": {
+        "node": 3,
+        "socket": "image"
+      },
+      "to": {
+        "node": 4,
+        "socket": "image"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": 1,
+      "type": "vortex_warp",
+      "typeVersion": 1,
+      "position": [
+        0,
+        160
+      ],
+      "parameters": {
+        "mode": 1,
+        "falloff": 0,
+        "twist": 5.5,
+        "radius": 0.23,
+        "separation": 0.2,
+        "squeeze": 0.36,
+        "ripple": 0.025,
+        "period": 0.08,
+        "ringWidth": 0.1
+      },
+      "label": "Two counter-rotating foci + transition ripple"
+    },
+    {
+      "id": 2,
+      "type": "lattice_lines",
+      "typeVersion": 1,
+      "position": [
+        400,
+        160
+      ],
+      "parameters": {
+        "mode": 0,
+        "columns": 36,
+        "rows": 36,
+        "thickness": 1.35
+      },
+      "label": "Undistorted lattice sampled in twisted coordinates"
+    },
+    {
+      "id": 3,
+      "type": "color_ramp",
+      "typeVersion": 1,
+      "position": [
+        800,
+        160
+      ],
+      "parameters": {
+        "low": 0.02,
+        "high": 0.95,
+        "r0": 0,
+        "g0": 0,
+        "b0": 0,
+        "r1": 1,
+        "g1": 1,
+        "b1": 1
+      },
+      "label": "Ink / paper coloring"
+    },
+    {
+      "id": 4,
+      "type": "output",
+      "typeVersion": 1,
+      "position": [
+        1190,
+        160
+      ],
+      "parameters": {}
+    }
+  ],
+  "project": {
+    "height": 1024,
+    "targetFps": 60,
+    "width": 1024
+  },
+  "subgraphs": []
+}
