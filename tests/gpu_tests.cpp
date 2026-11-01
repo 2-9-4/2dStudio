@@ -130,7 +130,7 @@ TEST_CASE("one Species Flow subgraph supports both motion/dropdown modes and com
     REQUIRE(species->id=="builtin.particles.species_flow");
     REQUIRE(species->version==2);
     REQUIRE(std::ranges::count_if(builtInSubgraphs(),[](const auto& def){
-        return def.id.starts_with("builtin.particles.");
+        return def.id=="builtin.particles.species_flow";
     })==1);
     for(const auto& legacy:{"builtin.particles.noise_flow",
                             "builtin.particles.sands_layers",
@@ -2713,3 +2713,108 @@ TEST_CASE("Circular billiards exposes a 200-slot vector field and energy diagnos
     REQUIRE(image.width==64);
     REQUIRE(image.height==64);
 }
+
+
+namespace reaction {
+
+TEST_CASE("SDF Billiards is a genuine editable particle simulation subgraph", "[gpu][billiards]") {
+    NodeRegistry registry;
+    registerBuiltInNodes(registry);
+    const auto& catalog=builtInSubgraphs();
+    const auto it=std::ranges::find(catalog,std::string("builtin.particles.sdf_billiards"),
+                                    &SubgraphDefinition::id);
+    REQUIRE(it!=catalog.end());
+    REQUIRE(it->execution==SubgraphExecution::Simulation);
+    REQUIRE(it->stateSlots.size()==3);
+    REQUIRE(it->stateSlots[0].highPrecision);
+    REQUIRE(it->stateSlots[1].highPrecision);
+    REQUIRE(std::ranges::count(it->body.nodes(),"sdf_billiard_step",
+                               &NodeRecord::type)==1);
+    REQUIRE(std::ranges::count(it->body.nodes(),"simulation_previous_state",
+                               &NodeRecord::type)==3);
+    REQUIRE(std::ranges::count(it->body.nodes(),"simulation_next_state",
+                               &NodeRecord::type)==3);
+    REQUIRE(std::ranges::none_of(it->body.nodes(),[](const NodeRecord& n){
+        return n.type=="circular_billiards" || n.type=="particle_splat";
+    }));
+    const auto count=std::ranges::find(it->interface,std::string("count"),
+                                       &SubgraphInterfaceItem::key);
+    REQUIRE(count!=it->interface.end());
+    REQUIRE(count->role=="agentCount");
+    const auto boundary=std::ranges::find(it->interface,std::string("boundary"),
+                                          &SubgraphInterfaceItem::key);
+    REQUIRE(boundary!=it->interface.end());
+    REQUIRE(boundary->contract==SocketContract::ScalarFieldOnly);
+    const auto errors=validateSubgraph(*it,registry);
+    INFO(nlohmann::json(errors).dump());
+    REQUIRE(errors.empty());
+    const auto init=generateSimulationShader(*it,true);
+    const auto step=generateSimulationShader(*it,false);
+    REQUIRE(init.find("rg32f")!=std::string::npos);
+    REQUIRE(step.find("sdfBilliard")!=std::string::npos);
+    REQUIRE(step.find("in_boundary")!=std::string::npos);
+    REQUIRE(step.find("sdfBilliard_")!=std::string::npos);
+    REQUIRE(step.find("Advance(")!=std::string::npos);
+}
+
+TEST_CASE("agent-count domain and SDF input support circle and box collisions", "[gpu][billiards]") {
+    for(const int shape:{0,1}) {
+        test_support::RuntimeHarness h{96,96};
+        const auto sdf=h.add("sdf_primitive",{
+            {"shape",shape},{"radius",0.44F},{"halfWidth",0.35F},
+            {"halfHeight",0.28F}});
+        const auto sim=h.add("subgraph",{{"count",48.0F},{"iterations",10.0F},
+             {"gravity",4.3164F},{"fanWidth",0.000044F},{"dt",1.0F/600.0F},
+             {"normalStep",0.003F},{"restitution",1.0F}});
+        h.graph.findNode(sim)->subgraphId="builtin.particles.sdf_billiards";
+        h.connect(sdf,"distance",sim,"boundary");
+        const auto impactOutput=h.add("output");
+        h.connect(sim,"impacts",impactOutput,"image");
+        REQUIRE(h.semanticType(sim,"positions")==ValueType::VectorField);
+        h.evaluated(0.0,0.0,false);
+        REQUIRE(h.image(sim).width==48);
+        REQUIRE(h.image(sim).height==1);
+        auto initial=h.pixels(sim);
+        REQUIRE(std::abs(initial[1]-0.5F)<1e-5F);
+        REQUIRE(initial[0]<0.5F);
+        REQUIRE(initial[47*4]>0.5F);
+        for(int frame=1;frame<=85;frame++)
+            h.evaluated(frame/60.0,1.0/60.0,true);
+        const auto positions=h.pixels(sim);
+        const auto impacts=h.pixels(sim,2);
+        float totalImpacts=0.0F;
+        for(int agent=0;agent<48;agent++){
+            const auto x=positions[agent*4],y=positions[agent*4+1];
+            REQUIRE(std::isfinite(x));
+            REQUIRE(std::isfinite(y));
+            REQUIRE(y<=0.501F); // released at zero velocity on the energy ceiling
+            if(shape==0)REQUIRE(std::hypot(x-0.5F,y-0.5F)<0.445F);
+            else{
+                REQUIRE(std::abs(x-0.5F)<0.355F);
+                REQUIRE(std::abs(y-0.5F)<0.285F);
+            }
+            totalImpacts+=impacts[agent*4];
+        }
+        REQUIRE(totalImpacts>0.0F);
+    }
+}
+
+TEST_CASE("SDF primitives and outlines support typed field composition", "[gpu][billiards]") {
+    test_support::RuntimeHarness h{48,48};
+    const auto sdf=h.add("sdf_primitive",{{"shape",1.0F},
+                          {"halfWidth",0.3F},{"halfHeight",0.2F}});
+    const auto outline=h.add("sdf_outline",{{"width",0.01F}});
+    h.connect(sdf,"distance",outline,"distance");
+    REQUIRE(h.semanticType(sdf,"distance")==ValueType::ScalarField);
+    REQUIRE(h.semanticType(outline,"lines")==ValueType::ScalarField);
+    const auto [fused,solo]=h.fusedAndSoloPixels(outline);
+    REQUIRE(fused.size()==solo.size());
+    for(std::size_t i=0;i<fused.size();i+=4)
+        REQUIRE(std::abs(fused[i]-solo[i])<0.015F);
+    auto sdfData=h.pixels(sdf);
+    const auto center=(24*48+24)*4;
+    REQUIRE(sdfData[center]<0.0F);
+    REQUIRE(sdfData[0]>0.0F);
+}
+
+} // namespace reaction

@@ -1,59 +1,81 @@
 {
-  "activeOutput": 6,
+  "activeOutput": 7,
   "formatVersion": 4,
   "links": [
     {
       "id": 1,
       "from": {
         "node": 1,
-        "socket": "positions"
+        "socket": "distance"
       },
       "to": {
         "node": 2,
-        "socket": "positions"
+        "socket": "boundary"
       }
     },
     {
       "id": 2,
       "from": {
-        "node": 3,
-        "socket": "lines"
+        "node": 2,
+        "socket": "positions"
       },
       "to": {
-        "node": 4,
-        "socket": "value"
+        "node": 3,
+        "socket": "positions"
       }
     },
     {
       "id": 3,
       "from": {
-        "node": 2,
-        "socket": "image"
+        "node": 1,
+        "socket": "distance"
       },
       "to": {
-        "node": 5,
-        "socket": "a"
+        "node": 4,
+        "socket": "distance"
       }
     },
     {
       "id": 4,
       "from": {
         "node": 4,
-        "socket": "image"
+        "socket": "lines"
       },
       "to": {
         "node": 5,
-        "socket": "b"
+        "socket": "value"
       }
     },
     {
       "id": 5,
       "from": {
-        "node": 5,
-        "socket": "result"
+        "node": 3,
+        "socket": "image"
       },
       "to": {
         "node": 6,
+        "socket": "a"
+      }
+    },
+    {
+      "id": 6,
+      "from": {
+        "node": 5,
+        "socket": "image"
+      },
+      "to": {
+        "node": 6,
+        "socket": "b"
+      }
+    },
+    {
+      "id": 7,
+      "from": {
+        "node": 6,
+        "socket": "result"
+      },
+      "to": {
+        "node": 7,
         "socket": "image"
       }
     }
@@ -61,35 +83,55 @@
   "nodes": [
     {
       "id": 1,
-      "type": "circular_billiards",
+      "type": "sdf_primitive",
       "typeVersion": 1,
       "position": [
         0,
-        0
+        70
       ],
       "parameters": {
-        "count": 200,
-        "fanMm": 0.1,
-        "radius": 1,
-        "ballRadius": 0,
-        "gravity": 9.81,
-        "renderRadius": 0.44,
-        "speed": 1
+        "shape": 0,
+        "radius": 0.44,
+        "halfWidth": 0.4,
+        "halfHeight": 0.32,
+        "rounding": 0.06
       },
-      "label": "200 deterministic balls, 0.1 mm starting fan"
+      "label": "Choose any arena shape, or replace with your own SDF"
     },
     {
       "id": 2,
-      "type": "particle_splat",
-      "typeVersion": 2,
+      "type": "subgraph",
+      "typeVersion": 1,
       "position": [
-        420,
-        0
+        550,
+        70
       ],
       "parameters": {
         "count": 200,
-        "retention": 0.995,
-        "opacity": 0.7,
+        "fanWidth": 0.000044,
+        "gravity": 4.3164,
+        "dt": 0.0016666666666666668,
+        "radius": 0,
+        "restitution": 1,
+        "normalStep": 0.001,
+        "reset": 0,
+        "iterations": 10
+      },
+      "label": "Editable physics: two vectors + collision-count state",
+      "subgraphId": "builtin.particles.sdf_billiards"
+    },
+    {
+      "id": 3,
+      "type": "particle_splat",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        70
+      ],
+      "parameters": {
+        "count": 200,
+        "retention": 0.994,
+        "opacity": 0.8,
         "r": 1,
         "g": 1,
         "b": 1,
@@ -98,67 +140,62 @@
         "margin": 0,
         "palette": 1
       },
-      "label": "Rainbow trails (particle index)"
-    },
-    {
-      "id": 3,
-      "type": "lattice_lines",
-      "typeVersion": 1,
-      "position": [
-        0,
-        510
-      ],
-      "parameters": {
-        "mode": 1,
-        "rings": 1,
-        "spokes": 0,
-        "ringRadius": 0.44,
-        "ringSpacing": 0.08,
-        "thickness": 1.3
-      },
-      "label": "Arena boundary"
+      "label": "Rainbow trails (presentation only)"
     },
     {
       "id": 4,
-      "type": "color_ramp",
+      "type": "sdf_outline",
       "typeVersion": 1,
       "position": [
-        420,
-        510
+        540,
+        620
       ],
       "parameters": {
-        "low": 0.02,
-        "high": 0.95,
-        "r0": 0,
-        "g0": 0,
-        "b0": 0,
-        "r1": 0.38,
-        "g1": 0.42,
-        "b1": 0.5
+        "width": 0.0018
       },
-      "label": "Muted wall"
+      "label": "Outline whichever arena SDF is connected"
     },
     {
       "id": 5,
+      "type": "color_ramp",
+      "typeVersion": 1,
+      "position": [
+        1010,
+        620
+      ],
+      "parameters": {
+        "low": 0.05,
+        "high": 0.85,
+        "r0": 0,
+        "g0": 0,
+        "b0": 0,
+        "r1": 0.34,
+        "g1": 0.39,
+        "b1": 0.46
+      },
+      "label": "Muted arena wall"
+    },
+    {
+      "id": 6,
       "type": "mix",
       "typeVersion": 1,
       "position": [
-        850,
-        150
+        1470,
+        230
       ],
       "parameters": {
         "mode": 1,
         "factor": 1
       },
-      "label": "Overlay wall and trajectories"
+      "label": "Overlay arena and ball trajectories"
     },
     {
-      "id": 6,
+      "id": 7,
       "type": "output",
       "typeVersion": 1,
       "position": [
-        1230,
-        150
+        1940,
+        230
       ],
       "parameters": {}
     }

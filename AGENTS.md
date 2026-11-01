@@ -211,3 +211,28 @@ Vortex and billiards integration notes:
   at the start of evaluate instead (and let reset(EvaluationContext&) handle
   explicit reset). A GPU test should run multiple frames and assert that
   collision/step counts actually advance, not just that the first image exists.
+
+
+Editable SDF particle simulation architecture:
+- Use the role `agentCount` on a scalar/Integer simulation interface input
+  to allocate a Count x 1 state texture. It is metadata on the interface,
+  not a special case for a built-in template ID. Existing subgraphs without
+  that role continue using canvas-resolution state. Output ImageHandle sizes
+  must reflect the domain dimensions, never the preview canvas dimensions.
+- An arbitrary SDF is a Scalar Field of signed distances in normalized
+  canvas UV (negative on the allowed side, zero on the surface). External
+  boundary shape/image should be a subgraph interface input, not a hardcoded
+  condition inside the motion law. Render the SDF outline separately from
+  the physics and from splatting.
+- Any multi-output shader node used inside a simulation must emit EVERY
+  output requested by its descriptor; direct Next State endpoints are what
+  the simulation's output binding path knows how to export. Keep
+  positions, velocities and collision counters in separate named slots.
+- The simulation shader's `pixelSize` is based on its **agent texture**
+  when using `agentCount`. It is not the underlying SDF texture's texel
+  size! Sample shape normals using a separate SDF-space step and sample
+  boundary values at particle position, not agent-slot UV.
+- Native CPU billiards are double precision; an editable GPU simulation
+  with RG32F feedback state is not equivalent for long-term energy drift.
+  Do not claim 1e-12 drift without numeric measurements and additional
+  precision infrastructure.

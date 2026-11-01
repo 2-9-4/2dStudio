@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_map>
@@ -526,7 +527,28 @@ public:
     void evaluate(EvaluationContext& context, std::span<const Value> inputs,
                   std::span<Value> outputs) override {
         auto& gpu = *static_cast<GpuRuntime*>(context.gpu);
-        ensureResources(gpu, context.width, context.height);
+        // A simulation input tagged agentCount requests one state texel per
+        // agent, independent of the canvas raster. Regular simulations retain
+        // their original canvas-sized domain; existing projects are unchanged.
+        int domainWidth = context.width;
+        int domainHeight = context.height;
+        std::size_t domainInputIndex = 0;
+        for (const auto& item : definition_.interface) {
+            if (item.kind != SubgraphInterfaceKind::Input) continue;
+            if (item.role == "agentCount") {
+                float count = parameter(parameters_, item.key.c_str(), item.defaultValue);
+                if (domainInputIndex < inputs.size()) {
+                    if (const auto* supplied = std::get_if<float>(&inputs[domainInputIndex]))
+                        count = *supplied;
+                }
+                domainWidth = std::clamp(std::isfinite(count)
+                    ? static_cast<int>(std::round(count)) : 1, 1, 16384);
+                domainHeight = 1;
+                break;
+            }
+            ++domainInputIndex;
+        }
+        ensureResources(gpu, domainWidth, domainHeight);
         if (!initProgram_ || !stepProgram_) {
             SimulationGraphCompiler compiler(definition_, registry_);
             const auto initializationSource = compiler.shader(true);
@@ -548,7 +570,7 @@ public:
                                    GL_WRITE_ONLY, stateFormat(slot));
             bindInterface(initProgram_, inputs, static_cast<int>(state_.size()), initializationInterfaces_);
             bindSimulationInfo(initProgram_, 0, 1, context, true);
-            gpu.dispatch(initProgram_, context.width, context.height);
+            gpu.dispatch(initProgram_, domainWidth, domainHeight);
             index_ = 0; resetPending_ = false; resetSinceLastStep_ = true;
         };
         // A public Float input named "reset" is a standard simulation trigger.
@@ -580,7 +602,7 @@ public:
                 }
                 bindInterface(stepProgram_, inputs, static_cast<int>(state_.size()), updateInterfaces_);
                 bindSimulationInfo(stepProgram_, iteration, iterations, context, wasReset);
-                gpu.dispatch(stepProgram_, context.width, context.height);
+                gpu.dispatch(stepProgram_, domainWidth, domainHeight);
                 index_ = next;
             }
             resetSinceLastStep_ = false;
@@ -594,7 +616,7 @@ public:
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, collapseBuffer_);
             glUseProgram(collapseProgram_); bindTexture(0, state_[0][index_]);
             uniform(collapseProgram_, "threshold", .001F);
-            gpu.dispatch(collapseProgram_, context.width, context.height);
+            gpu.dispatch(collapseProgram_, domainWidth, domainHeight);
             GLuint active = 0; glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(active), &active);
             if (active == 0) initialize();
         }
@@ -606,7 +628,7 @@ public:
                 glBindImageTexture(static_cast<GLuint>(output), output_[output], 0, GL_FALSE, 0,
                                    GL_WRITE_ONLY, outputFormat(output));
             }
-        gpu.dispatch(outputProgram_, context.width, context.height);
+        gpu.dispatch(outputProgram_, domainWidth, domainHeight);
         for (std::size_t output = 0; output < outputs.size() && output < output_.size(); ++output) {
             if (requiredOutputs_[output]) {
                 const auto& interface = definition_.interface;
@@ -621,7 +643,7 @@ public:
                     semantic = fixedType(current->contract).value_or(ValueType::ColorImage);
                     break;
                 }
-                outputs[output] = ImageHandle{output_[output], context.width, context.height,
+                outputs[output] = ImageHandle{output_[output], domainWidth, domainHeight,
                                               semantic};
             } else outputs[output] = Value{};
         }

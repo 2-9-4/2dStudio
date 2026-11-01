@@ -44,32 +44,60 @@ submodes, and the special nodes available inside simulation subgraphs.
 Open `examples/vortex-lattice.reaction.json` for the 36×36 dipole-vortex
 grid with a transition ripple. These nodes also work independently.
 
-### Circular gravitational billiards
+### Signed-distance geometry
 
-- **Circular Gravity Billiards** (`circular_billiards`) — Simulates 1–2,000
-  independent identical point balls within a perfectly reflecting circle under
-  uniform downwards gravity. All begin at rest at y=0, fanned evenly over a
-  horizontal starting span. Defaults of 200 balls and a 0.1mm span give a
-  center-to-center gap of ~0.503µm. The algorithm uses double-precision CPU
-  positions/velocities, fixed 1/600s steps, analytic free flight, bisection of
-  wall impact time and specular reflections, with only roundoff correction to
-  preserve launch energy. Physics setup controls: Ball Count, Launch Fan Width,
-  Arena Radius, Ball Radius, Gravity, Display Radius and Simulation Speed.
-  Position output is a 1×N RGBA32F Vector Field (UV coordinates), separate
-  from its physics state. It also outputs numeric Max Separation (m), Total
-  Wall Impacts and Max Energy Error (J/kg). With zero launch velocity at
-  y=0, the physical energy ceiling is y=0: the top half remains inaccessible.
-  The observed amplification per bounce depends on the exact parameters
-  and trajectory; it is not always ×7.
-- **Particle Splat / Trails** (`particle_splat`) now also offers Color Mode:
-  the old default Uniform Ink or Rainbow by Index. The index palette is stable
-  across frames and works with any positions Vector Field.
+- **SDF Primitive** (`sdf_primitive`) — Analytic signed distances in normalized
+  canvas UV: **negative inside**, positive outside, zero on the outline.
+  Supports Circle, Box, Rounded Box and Diamond. Optional Coordinates and
+  Center vector sockets plus numeric radius, half-width/height and rounding
+  inputs make the node reusable with coordinate transformations and math.
+- **SDF Outline** (`sdf_outline`) — Antialiased line mask at an SDF's zero
+  contour, with adjustable UV line width. Suitable for arena outlines.
 
-Open `examples/circular-chaos.reaction.json` for the 200-ball simulation,
-rainbow trails and a separate polar-ring arena. The core physics and visual
-trails work in the graph editor. Audio synthesis, sequenced title cards,
-and visible on-frame diagnostic text are not yet supported by this graph;
-collision count and separation are available as numeric outputs instead.
+### Editable, shape-independent billiards
+
+- **SDF Billiard Step** (`sdf_billiard_step`) — A reusable lowerable physics
+  primitive. Inputs: previous Position/Velocity, a required scalar signed-
+  distance Boundary field, Acceleration vector, dt, particle radius,
+  restitution and normal-sampling step. Outputs: next Position, Velocity
+  and impacts in this step. Uses analytical ballistic flight, bisection
+  of a boundary crossing, finite-difference surface normal, elastic
+  specular reflection, and integration of the time remaining after impact.
+  Handles up to four collisions per timestep. Units are UV and seconds.
+- **SDF Billiards** (`builtin.particles.sdf_billiards`) — An **editable
+  simulation subgraph**, composed of ordinary Math/Vector, SDF Billiard Step
+  and Previous/Initial/Next State nodes. It contains three named slots:
+  Positions (RG32F), Velocities (RG32F) and Cumulative Impacts (R32F).
+  Its external Boundary input accepts an arbitrary Scalar Field signed
+  distance. This means a circle, box, rounded box or custom field all
+  drive the *same* editable physics graph. Separate controls expose Ball
+  Count (default 200), Launch Fan Width (0.000044 UV), Gravity (4.3164
+  UV/s²), Fixed Step (1/600s), Particle Radius, Restitution, Normal Sample
+  Step, Reset and Physics Steps per Frame (default 10). The launch width
+  is equivalent to 0.1mm if 0.44 UV represents one physical metre.
+  Every ball starts at rest on y=0.5. Each position, velocity and per-
+  agent impact count is available as an independent output.
+
+The count interface uses the reusable **agentCount** execution role, so
+the GPU state domain is Count × 1 instead of a full canvas raster.
+Existing reaction-diffusion and species-flow simulations remain
+canvas-sized; no simulation-type-specific allocation rules are added.
+
+The example `examples/circular-chaos.reaction.json` now connects
+`SDF Primitive → SDF Billiards → Particle Splat`, with a separate SDF
+Outline composited onto the image. Change the SDF Primitive Shape from
+Circle to Box without changing physics. Connect an external signed-distance
+source for arbitrary smooth arena contours. Particle Splat's Rainbow by
+Index still handles colored presentation separately from motion.
+
+**Precision limits:** The editable GPU solver uses float32 arithmetic and
+RG32F state rather than the legacy native double-precision CPU engine;
+it does not promise 1e-12 energy drift. Raster SDF resolution, floating-
+point precision and step size affect boundary accuracy. Restitution=1
+has no intentional damping. The old `circular_billiards` node remains
+available to load existing saved projects, but new examples prefer the
+editable SDF simulation. As before, sound, title cards and on-frame
+diagnostic text are not yet implemented.
 
 ### Reusable species particle flow and splatting
 
