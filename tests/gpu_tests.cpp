@@ -2729,7 +2729,20 @@ TEST_CASE("SDF Billiards is a genuine editable particle simulation subgraph", "[
     REQUIRE(it->stateSlots[0].highPrecision);
     REQUIRE(it->stateSlots[1].highPrecision);
     REQUIRE(std::ranges::count(it->body.nodes(),"sdf_billiard_step",
-                               &NodeRecord::type)==1);
+                               &NodeRecord::type)==0);
+    REQUIRE(std::ranges::count(it->body.nodes(),"ballistic_advance",
+                               &NodeRecord::type)>=5);
+    REQUIRE(std::ranges::count(it->body.nodes(),"sdf_segment_crossing",
+                               &NodeRecord::type)==2);
+    REQUIRE(std::ranges::count(it->body.nodes(),"sdf_surface_normal",
+                               &NodeRecord::type)==2);
+    REQUIRE(std::ranges::count_if(it->body.nodes(),[](const NodeRecord& n){
+        return n.type=="vector_math" &&
+               n.parameters.value("operation",0.0F)==
+                   static_cast<float>(VectorMathOperation::Reflect);
+    })==2);
+    REQUIRE(std::ranges::count(it->body.nodes(),"select",
+                               &NodeRecord::type)>=6);
     REQUIRE(std::ranges::count(it->body.nodes(),"simulation_previous_state",
                                &NodeRecord::type)==3);
     REQUIRE(std::ranges::count(it->body.nodes(),"simulation_next_state",
@@ -2751,10 +2764,10 @@ TEST_CASE("SDF Billiards is a genuine editable particle simulation subgraph", "[
     const auto init=generateSimulationShader(*it,true);
     const auto step=generateSimulationShader(*it,false);
     REQUIRE(init.find("rg32f")!=std::string::npos);
-    REQUIRE(step.find("sdfBilliard")!=std::string::npos);
+    REQUIRE(step.find("sdfBilliard")==std::string::npos);
+    REQUIRE(step.find("sdfSegment")!=std::string::npos);
+    REQUIRE(step.find("sdfNormal")!=std::string::npos);
     REQUIRE(step.find("in_boundary")!=std::string::npos);
-    REQUIRE(step.find("sdfBilliard_")!=std::string::npos);
-    REQUIRE(step.find("Advance(")!=std::string::npos);
 }
 
 TEST_CASE("agent-count domain and SDF input support circle and box collisions", "[gpu][billiards]") {
