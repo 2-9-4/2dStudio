@@ -1416,8 +1416,9 @@ SubgraphDefinition sdfBilliards() {
                                       {{"b",0.5F}});
     connect(bounceFraction,"result",reflectMix,"a");
 
-    struct Stage {Wire position,velocity,impacts;};
-    const auto stage=[&](const char* label,Stage before,Wire time,int x,int y)->Stage{
+    struct Stage {Wire position,velocity,impacts,time;};
+    const auto stage=[&](const char* label,Stage before,int x,int y)->Stage{
+        const Wire time=before.time;
         // Analytic constant-acceleration advance over the full available step.
         const auto full=add("ballistic_advance",
                             std::string(label)+" Free Flight",x,y);
@@ -1487,14 +1488,6 @@ SubgraphDefinition sdfBilliards() {
                                          MathOperation::Subtract,x+1030,y+640);
         wire(time,remaining,"a");
         wire(from(hitTime,"result"),remaining,"b");
-        const auto afterward=add("ballistic_advance",
-                                 std::string(label)+" Post-Impact Flight",
-                                 x+1780,y+210);
-        wire(from(corrected,"result"),afterward,"position");
-        wire(from(afterImpact,"result"),afterward,"velocity");
-        wire(from(acceleration,"value"),afterward,"acceleration");
-        wire(from(remaining,"result"),afterward,"time");
-
         // The hit/miss decision is explicit and rewritable. On a miss,
         // ordinary free flight is the only update. On a hit, continue from
         // the reflected contact position for the remaining time.
@@ -1506,9 +1499,9 @@ SubgraphDefinition sdfBilliards() {
                                       x+2050,y+240);
         for(const auto choose:{choosePosition,chooseVelocity})
             wire(from(crossing,"hit"),choose,"condition");
-        wire(from(afterward,"position"),choosePosition,"ifTrue");
+        wire(from(corrected,"result"),choosePosition,"ifTrue");
         wire(from(full,"position"),choosePosition,"ifFalse");
-        wire(from(afterward,"velocity"),chooseVelocity,"ifTrue");
+        wire(from(afterImpact,"result"),chooseVelocity,"ifTrue");
         wire(from(full,"velocity"),chooseVelocity,"ifFalse");
         const auto hitSum=calculation((std::string(label)+" Count Impact").c_str(),
                                      MathOperation::Add,x+2050,y+470);
@@ -1524,36 +1517,24 @@ SubgraphDefinition sdfBilliards() {
                              x+1790,y+750,{{"value",0.0F}});
         wire(from(zero,"value"),nextTime,"ifFalse");
         return {from(choosePosition,"result"),from(chooseVelocity,"result"),
-                from(hitSum,"result")};
+                from(hitSum,"result"),from(nextTime,"result")};
     };
 
     // Each stage is built from the SAME independent operations. A user can
     // remove, reorder, replace or duplicate the stages in the subgraph canvas.
     const Stage initial={from(priorPosition,"value"),from(priorVelocity,"value"),
-                         from(priorImpacts,"value")};
-    const auto one=stage("First Contact",initial,from(dt,"value"),800,3300);
-    // The second collision phase needs the unconsumed time of the first hit:
-    // a distinct visible chain, not a hidden loop in a shader primitive.
-    // Each stage computes its own contact-time / remainder from its own input.
-    const auto firstCross=std::ranges::find_if(g.nodes(),[](const NodeRecord& n){
-        return n.label=="First Contact Segment vs SDF";
-    });
-    const auto firstHitTime=std::ranges::find_if(g.nodes(),[](const NodeRecord& n){
-        return n.label=="First Contact Contact Time";
-    });
-    const auto firstRemain=std::ranges::find_if(g.nodes(),[](const NodeRecord& n){
-        return n.label=="First Contact Remaining Time";
-    });
-    const auto secondTime=add("select","Second Contact Allowed Time",2900,3850);
-    if(firstCross!=g.nodes().end()&&firstRemain!=g.nodes().end()){
-        wire(from(firstCross->id,"hit"),secondTime,"condition");
-        wire(from(firstRemain->id,"result"),secondTime,"ifTrue");
-    }
-    const auto zeroTime=add("float","No Time After a Miss",2700,4110,
-                            {{"value",0.0F}});
-    wire(from(zeroTime,"value"),secondTime,"ifFalse");
-    (void)firstHitTime;
-    const auto two=stage("Second Contact",one,from(secondTime,"result"),3600,3300);
+                         from(priorImpacts,"value"),from(dt,"value")};
+    const auto one=stage("First Contact",initial,800,3300);
+    const auto two=stage("Second Contact",one,3600,3300);
+
+    // When all allotted contacts are processed, spend the remaining fraction
+    // in ordinary ballistic free flight. Crucially this happens ONCE;
+    // earlier phases stop at their contact instead of integrating twice.
+    const auto finish=add("ballistic_advance","Finish Remaining Free Flight",5920,3100);
+    wire(two.position,finish,"position");
+    wire(two.velocity,finish,"velocity");
+    wire(from(acceleration,"value"),finish,"acceleration");
+    wire(two.time,finish,"time");
 
     const auto nextPosition=add("simulation_next_state","Next Position",6060,3340,
                                 {{"slot",0.0F}});
@@ -1561,8 +1542,8 @@ SubgraphDefinition sdfBilliards() {
                                 {{"slot",1.0F}});
     const auto nextImpacts=add("simulation_next_state","Next Impacts",6060,3780,
                                {{"slot",2.0F}});
-    wire(two.position,nextPosition,"value");
-    wire(two.velocity,nextVelocity,"value");
+    wire(from(finish,"position"),nextPosition,"value");
+    wire(from(finish,"velocity"),nextVelocity,"value");
     wire(two.impacts,nextImpacts,"value");
 
     const std::pair<const char*,NodeId> exposed[]{
