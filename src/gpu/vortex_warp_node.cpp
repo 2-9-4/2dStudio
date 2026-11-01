@@ -91,7 +91,6 @@ public:
             .floatParameter("ripple","Transition Ripple (UV)",0.025F,-0.3F,0.3F)
             .floatParameter("period","Ripple Wavelength (UV)",0.08F,0.005F,1.0F)
             .floatParameter("ringWidth","Transition Width (UV)",0.10F,0.005F,1.0F)
-            .producedField()
             .build();
     }
     const NodeDescriptor& descriptor()const override{
