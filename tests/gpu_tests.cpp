@@ -2765,6 +2765,8 @@ TEST_CASE("agent-count domain and SDF input support circle and box collisions", 
              {"normalStep",0.003F},{"restitution",1.0F}});
         h.graph.findNode(sim)->subgraphId="builtin.particles.sdf_billiards";
         h.connect(sdf,"distance",sim,"boundary");
+        const auto impactOutput=h.add("output");
+        h.connect(sim,"impacts",impactOutput,"image");
         REQUIRE(h.semanticType(sim,"positions")==ValueType::VectorField);
         h.evaluated(0.0,0.0,false);
         REQUIRE(h.image(sim).width==48);
