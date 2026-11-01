@@ -58,7 +58,7 @@ public:
         const auto restitution=context.scalar("restitution","restitution",1.0F);
         const auto normalStep=context.scalar("normalStep","normalStep",0.001F);
 
-        const auto function=context.helper("sdfBilliard",R"GLSL(
+        std::string helperSource=R"GLSL(
 float sdfBilliard(vec2 q){
     return BOUNDARY_EXPRESSION;
 }
@@ -126,7 +126,11 @@ sdfBilliardResult sdfBilliardAdvance(vec2 initialPosition,vec2 initialVelocity,
     }
     return result;
 }
-)GLSL");
+)GLSL";
+        const std::string marker="BOUNDARY_EXPRESSION";
+        const auto markerAt=helperSource.find(marker);
+        helperSource.replace(markerAt,marker.size(),source.name);
+        const auto function=context.helper("sdfBilliard",std::move(helperSource));
         // 'helper' names are hygienically rewritten per node. Source fields
         // can be external textures or any lowerable SDF graph composition.
         // Do not retain references to simulation compiler frame-stack storage.
