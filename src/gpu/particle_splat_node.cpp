@@ -58,7 +58,7 @@ void main(){
     vec2 uv=texelFetch(positions,cell,0).rg;
     particleColor=hsv(float(gl_VertexID)/float(max(1,particleCount)));
     uint h=hash(uint(gl_VertexID)+uint(total)*17u);
-    weight=0.25+0.75*float(h>>8u)*(1.0/16777216.0);
+    weight=palette==1 ? 1.0 : 0.25+0.75*float(h>>8u)*(1.0/16777216.0);
     // Optional per-agent opacity image, indexed by particle slot, not the
     // output canvas UV. No weight input => identical legacy splat behavior.
     if(hasParticleWeights!=0)
