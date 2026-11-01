@@ -2753,7 +2753,8 @@ TEST_CASE("SDF Billiards is a genuine editable particle simulation subgraph", "[
     REQUIRE(init.find("rg32f")!=std::string::npos);
     REQUIRE(step.find("sdfBilliard")!=std::string::npos);
     REQUIRE(step.find("in_boundary")!=std::string::npos);
-    REQUIRE(step.find("sdfBilliardAdvance")!=std::string::npos);
+    REQUIRE(step.find("sdfBilliard_")!=std::string::npos);
+    REQUIRE(step.find("Advance(")!=std::string::npos);
 }
 
 TEST_CASE("agent-count domain and SDF input support circle and box collisions", "[gpu][billiards]") {
