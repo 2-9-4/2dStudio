@@ -68,7 +68,7 @@ void main(){
     vec2 d=p-center;
     float r=length(d);
     float ring=exp(-pow((r-radius)/ringWidth,2.0));
-    float compression=clamp(1.0-squeeze*envelope(r,radius),0.15,3.0);
+    float compression=clamp(1.0+squeeze*envelope(r,radius),0.15,3.0);
     float oscillation=ripple*sin(6.28318530718*(r-radius)/period)*ring;
     p=center+d*compression+(r>1e-6?d/r:vec2(0.0))*oscillation;
     imageStore(outputImage,pixel,vec4(p,0.0,1.0));
