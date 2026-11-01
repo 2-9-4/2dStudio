@@ -542,7 +542,7 @@ public:
                         count = *supplied;
                 }
                 domainWidth = std::clamp(std::isfinite(count)
-                    ? static_cast<int>(std::round(count)) : 1, 1, 65536);
+                    ? static_cast<int>(std::round(count)) : 1, 1, 16384);
                 domainHeight = 1;
                 break;
             }
