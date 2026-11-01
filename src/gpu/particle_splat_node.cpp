@@ -34,10 +34,16 @@ layout(binding=0)uniform sampler2D positions;
 layout(binding=1)uniform sampler2D particleWeights;
 uniform int hasParticleWeights;
 uniform int particleCount;
+uniform int palette;
 uniform vec2 canvasSize;
 uniform float marginPixels;
 uniform float pointSize;
 out float weight;
+flat out vec3 particleColor;
+vec3 hsv(float hue){
+    vec3 k=fract(vec3(hue,hue+2.0/3.0,hue+1.0/3.0));
+    return clamp(abs(k*6.0-3.0)-1.0,0.0,1.0);
+}
 uint hash(uint h){
     h ^= h>>16u;h*=0x7feb352du;h^=h>>15u;h*=0x846ca68bu;
     return h^(h>>16u);
@@ -50,6 +56,7 @@ void main(){
     int i=min(total-1,int((float(gl_VertexID)+0.5)*float(total)/float(max(1,particleCount))));
     ivec2 cell=ivec2(i%size.x,i/size.x);
     vec2 uv=texelFetch(positions,cell,0).rg;
+    particleColor=hsv(float(gl_VertexID)/float(max(1,particleCount)));
     uint h=hash(uint(gl_VertexID)+uint(total)*17u);
     weight=0.25+0.75*float(h>>8u)*(1.0/16777216.0);
     // Optional per-agent opacity image, indexed by particle slot, not the
@@ -69,6 +76,8 @@ void main(){
 
 constexpr const char* kFragment = R"GLSL(#version 430
 in float weight;
+flat in vec3 particleColor;
+uniform int palette;
 uniform float opacity;
 uniform vec3 ink;
 uniform float roundness;
@@ -78,7 +87,7 @@ void main(){
     vec2 d=gl_PointCoord-vec2(0.5);
     float circle=1.0-smoothstep(0.40,0.50,length(d));
     float coverage=mix(1.0,circle,roundness);
-    color=vec4(ink,opacity*weight*coverage);
+    color=vec4(palette==1?particleColor:ink,opacity*weight*coverage);
 })GLSL";
 
 GLuint shader(GLenum kind,const char* source) {
@@ -123,6 +132,7 @@ public:
         return NodeDescriptorBuilder{"particle_splat",2,"Particle Splat / Trails","Simulation"}
             .input("positions","Particle Positions (UV)",ValueType::VectorField)
             .optionalInput("weights","Particle Opacity Weights",ValueType::ScalarField)
+            .enumParameter("palette","Color Mode",0,{"Uniform Ink","Rainbow by Index"})
             .output("image","Accumulated Trails",ValueType::ColorImage)
             .integerParameter("count","Visible Particles",1000,1,100000)
             .floatParameter("retention","Frame Retention",0.985F,0.0F,1.0F)
@@ -250,6 +260,7 @@ public:
             uniform(pointProgram_,"particleWeights",1);
             uniform(pointProgram_,"hasParticleWeights",weights?1:0);
             uniform(pointProgram_,"particleCount",count);
+            uniform(pointProgram_,"palette",std::clamp(int(node_support::parameter(parameters_,"palette",0.0F)),0,1));
             uniform(pointProgram_,"marginPixels",margin);
             uniform(pointProgram_,"pointSize",pointSize);
             uniform(pointProgram_,"roundness",roundness);
