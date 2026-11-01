@@ -2831,4 +2831,63 @@ TEST_CASE("SDF primitives and outlines support typed field composition", "[gpu][
     REQUIRE(sdfData[0]>0.0F);
 }
 
+
+TEST_CASE("ballistic and SDF crossing/normal nodes are usable independently of billiards", "[gpu][primitives]") {
+    {
+        test_support::RuntimeHarness h{64,64};
+        const auto sdf=h.add("sdf_primitive",{{"shape",0.0F},{"radius",0.35F}});
+        const auto p0=h.add("vector",{{"x",0.5F},{"y",0.5F}});
+        const auto p1=h.add("vector",{{"x",1.0F},{"y",0.5F}});
+        const auto point=h.add("vector",{{"x",0.85F},{"y",0.5F}});
+        const auto crossing=h.add("sdf_segment_crossing");
+        h.connect(sdf,"distance",crossing,"source");
+        h.connect(p0,"value",crossing,"start");
+        h.connect(p1,"value",crossing,"end");
+        const auto normal=h.add("sdf_surface_normal",{{"step",0.004F}});
+        h.connect(sdf,"distance",normal,"source");
+        h.connect(point,"value",normal,"point");
+        for(const auto& [source,socket]:{
+            std::pair{crossing,std::string("fraction")},
+            std::pair{crossing,std::string("hit")},
+            std::pair{normal,std::string("normal")}}){
+            const auto output=h.add("output");
+            h.connect(source,socket,output,"image");
+        }
+        h.evaluated();
+        REQUIRE(h.semanticType(crossing,"fraction")==ValueType::ScalarField);
+        REQUIRE(h.semanticType(normal,"normal")==ValueType::VectorField);
+        const auto f=h.pixels(crossing);
+        const auto hit=h.pixels(crossing,1);
+        const auto n=h.pixels(normal);
+        const auto index=4*(32*64+32);
+        REQUIRE(f[index]==Catch::Approx(0.7F).margin(0.025F));
+        REQUIRE(hit[index]>0.9F);
+        REQUIRE(n[index]>0.9F);
+        REQUIRE(std::abs(n[index+1])<0.1F);
+    }
+    {
+        test_support::RuntimeHarness h{48,48};
+        const auto uv=h.add("coordinates");
+        const auto v=h.add("vector",{{"x",0.2F},{"y",0.0F}});
+        const auto a=h.add("vector",{{"x",0.0F},{"y",-1.0F}});
+        const auto advance=h.add("ballistic_advance",{{"time",0.25F}});
+        h.connect(uv,"coordinates",advance,"position");
+        h.connect(v,"value",advance,"velocity");
+        h.connect(a,"value",advance,"acceleration");
+        for(const char* socket:{"position","velocity"}){
+            const auto output=h.add("output");
+            h.connect(advance,socket,output,"image");
+        }
+        h.evaluated();
+        const auto p=h.pixels(advance);
+        const auto velocity=h.pixels(advance,1);
+        const auto index=4*(24*48+24);
+        const float u=(24.5F)/48.0F;
+        REQUIRE(p[index]==Catch::Approx(u+0.05F).margin(0.002F));
+        REQUIRE(p[index+1]==Catch::Approx(u-0.03125F).margin(0.002F));
+        REQUIRE(velocity[index]==Catch::Approx(0.2F).margin(0.002F));
+        REQUIRE(velocity[index+1]==Catch::Approx(-0.25F).margin(0.002F));
+    }
+}
+
 } // namespace reaction
