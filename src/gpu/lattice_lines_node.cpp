@@ -77,8 +77,7 @@ public:
             .integerParameter("spokes","Spokes",0,0,128)
             .floatParameter("ringRadius","First Ring Radius",0.44F,0.0F,2.0F)
             .floatParameter("ringSpacing","Ring Separation",0.08F,0.001F,2.0F)
-            .floatParameter("thickness","Line Width (pixels)",1.25F,0.5F,12.0F)
-            .producedField().build();
+            .floatParameter("thickness","Line Width (pixels)",1.25F,0.5F,12.0F).build();
     }
     const NodeDescriptor& descriptor()const override{
         static const auto d=describe();return d;
@@ -92,17 +91,17 @@ public:
         glBindImageTexture(0,texture_,0,GL_FALSE,0,GL_WRITE_ONLY,GL_RGBA16F);
         procedural::bindVectorInput(program_,0,"coordinatesImage","hasCoordinates",
             "coordinatesConstant",procedural::coordinateInput(inputs,0));
-        const auto param=[&](const char* name,float fallback){
-            return node_support::parameter(parameters_,name,fallback);
+        const auto param=[&](std::size_t index,const char* name,float fallback){
+            return node_support::floatAt(inputs,index,node_support::parameter(parameters_,name,fallback));
         };
-        node_support::uniform(program_,"mode",std::clamp(int(param("mode",0)),0,1));
-        node_support::uniform(program_,"columns",std::clamp(int(param("columns",32)),1,256));
-        node_support::uniform(program_,"rows",std::clamp(int(param("rows",32)),1,256));
-        node_support::uniform(program_,"rings",std::clamp(int(param("rings",1)),0,128));
-        node_support::uniform(program_,"spokes",std::clamp(int(param("spokes",0)),0,128));
-        node_support::uniform(program_,"ringRadius",param("ringRadius",0.44F));
-        node_support::uniform(program_,"ringSpacing",param("ringSpacing",0.08F));
-        node_support::uniform(program_,"thickness",param("thickness",1.25F));
+        node_support::uniform(program_,"mode",std::clamp(int(param(0,"mode",0)),0,1));
+        node_support::uniform(program_,"columns",std::clamp(int(param(1,"columns",32)),1,256));
+        node_support::uniform(program_,"rows",std::clamp(int(param(2,"rows",32)),1,256));
+        node_support::uniform(program_,"rings",std::clamp(int(param(3,"rings",1)),0,128));
+        node_support::uniform(program_,"spokes",std::clamp(int(param(4,"spokes",0)),0,128));
+        node_support::uniform(program_,"ringRadius",param(5,"ringRadius",0.44F));
+        node_support::uniform(program_,"ringSpacing",param(6,"ringSpacing",0.08F));
+        node_support::uniform(program_,"thickness",param(7,"thickness",1.25F));
         gpu.dispatch(program_,context.width,context.height);
         outputs[0]=ImageHandle{texture_,context.width,context.height,ValueType::ScalarField};
     }
