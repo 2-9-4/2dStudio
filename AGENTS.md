@@ -200,3 +200,14 @@ Vortex and billiards integration notes:
 - A deterministic chaotic simulation should assert both energy conservation
   and its y=0 energy ceiling. The reported "x7 per bounce" is not universal:
   actual amplification is scene- and trajectory-specific.
+
+- **Stateful native parameter-binding footgun:** GraphRuntime::evaluate calls
+  setParameters(record->parameters), then evaluateNativeNode calls
+  setParameters(withConnectedParameterOverrides(...)) in the same frame.
+  The second object can add unconnected default numeric parameter values
+  that the first object omitted. Do NOT reset persistent node state from
+  setParameters equality/signature comparisons: those two calls would
+  repeatedly clear the simulation. Compare the *effective runtime inputs*
+  at the start of evaluate instead (and let reset(EvaluationContext&) handle
+  explicit reset). A GPU test should run multiple frames and assert that
+  collision/step counts actually advance, not just that the first image exists.
