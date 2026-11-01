@@ -1310,7 +1310,7 @@ SubgraphDefinition sdfBilliards() {
         {"boundary", "Boundary (signed distance, negative inside)", K::Input,
           ValueType::ScalarField},
         {"count", "Particle Count", K::Input, ValueType::Float, true,
-         200.0F, 1.0F, 65536.0F, Control::Integer, "agentCount"},
+         200.0F, 1.0F, 16384.0F, Control::Integer, "agentCount"},
         {"fanWidth", "Launch Fan Width (UV)", K::Input, ValueType::Float, true,
          0.000044F, 0.0F, 0.1F},
         {"gravity", "Downward Acceleration (UV/s²)", K::Input, ValueType::Float, true,
