@@ -1288,13 +1288,164 @@ SubgraphDefinition speciesFlow() {
     return result;
 }
 
+
+// Editable particle dynamics template. All mechanics are ordinary registered
+// graph nodes; the boundary is supplied externally as a signed-distance field.
+// "agentCount" is a reusable domain marker, not a hardcoded billiards type.
+SubgraphDefinition sdfBilliards() {
+    SubgraphDefinition result;
+    result.id = "builtin.particles.sdf_billiards";
+    result.version = 1;
+    result.name = "SDF Billiards";
+    result.category = "Simulation";
+    result.execution = SubgraphExecution::Simulation;
+    result.immutable = true;
+    result.stateSlots = {
+        {"position", "Particle Positions", ValueType::VectorField, true},
+        {"velocity", "Particle Velocities", ValueType::VectorField, true},
+        {"impacts", "Per-Particle Impacts", ValueType::ScalarField, true},
+    };
+    using K = SubgraphInterfaceKind;
+    result.interface = {
+        {"boundary", "Boundary (signed distance, negative inside)", K::Input,
+          ValueType::ScalarField},
+        {"count", "Particle Count", K::Input, ValueType::Float, true,
+         200.0F, 1.0F, 65536.0F, Control::Integer, "agentCount"},
+        {"fanWidth", "Launch Fan Width (UV)", K::Input, ValueType::Float, true,
+         0.000044F, 0.0F, 0.1F},
+        {"gravity", "Downward Acceleration (UV/s²)", K::Input, ValueType::Float, true,
+         4.3164F, 0.0F, 100.0F},
+        {"dt", "Fixed Physics Step (seconds)", K::Input, ValueType::Float, true,
+         1.0F/600.0F, 0.00001F, 0.05F},
+        {"radius", "Ball Radius (UV)", K::Input, ValueType::Float, true,
+         0.0F, 0.0F, 0.1F},
+        {"restitution", "Wall Restitution", K::Input, ValueType::Float, true,
+         1.0F, 0.0F, 1.0F},
+        {"normalStep", "Normal Sample Step (UV)", K::Input, ValueType::Float, true,
+         0.001F, 0.00001F, 0.02F},
+        {"reset", "Reset Simulation", K::Input, ValueType::Float, true,
+         0.0F, 0.0F, 1.0F, Control::Boolean, "reset"},
+        {"iterations", "Physics Steps Per Frame", K::Input, ValueType::Float, true,
+         10.0F, 1.0F, 64.0F, Control::Integer, "iterations"},
+        {"positions", "Particle Positions", K::Output, ValueType::VectorField},
+        {"velocities", "Particle Velocities", K::Output, ValueType::VectorField},
+        {"impacts", "Cumulative Impacts per Particle", K::Output, ValueType::ScalarField},
+    };
+
+    auto& g=result.body;
+    const auto add=[&](std::string type,std::string name,int x,int y,
+                        nlohmann::json params=nlohmann::json::object()){
+        return addNode(g,std::move(type),std::move(name),
+                       {static_cast<float>(x),static_cast<float>(y)},std::move(params));
+    };
+    const auto port=[&](const char* key,int x,int y){
+        return input(g,key,key,{static_cast<float>(x),static_cast<float>(y)});
+    };
+    const auto connect=[&](NodeId from,const char* out,NodeId to,const char* in){
+        link(g,from,out,to,in);
+    };
+    const auto calculation=[&](const char* name,MathOperation mode,int x,int y,
+                               nlohmann::json params=nlohmann::json::object()){
+        return math(g,name,static_cast<int>(mode),{static_cast<float>(x),
+                            static_cast<float>(y)},std::move(params));
+    };
+
+    // One pixel of the agent-domain state texture corresponds to one ball.
+    // No RNG: fan positions are evenly spaced for any requested agent count.
+    const auto uv=add("coordinates","Agent Slot Coordinate",0,30);
+    const auto split=add("separate_vector","Agent Slot X",240,30);
+    connect(uv,"coordinates",split,"value");
+    const auto offset=calculation("Center Agent Index",MathOperation::Subtract,480,30,
+                                  {{"b",0.5F}});
+    connect(split,"x",offset,"a");
+    const auto fan=port("fanWidth",480,240);
+    const auto scaled=calculation("Spread Launch Centers",MathOperation::Multiply,720,30);
+    connect(offset,"result",scaled,"a");
+    connect(fan,"value",scaled,"b");
+    const auto startX=calculation("Launch X Center",MathOperation::Add,960,30,
+                                  {{"a",0.5F}});
+    connect(scaled,"result",startX,"b");
+    const auto startPosition=add("combine_vector","Initial Positions",1200,30,
+                                 {{"y",0.5F}});
+    connect(startX,"result",startPosition,"x");
+    const auto startVelocity=vector(g,"Initial Zero Velocity",{1200,240},0.0F,0.0F);
+    const auto startImpacts=add("float","Initial Impact Count",1200,460,{{"value",0.0F}});
+    const auto initialPosition=add("simulation_initial_state","Initialize Positions",
+                                   1470,30,{{"slot",0.0F}});
+    const auto initialVelocity=add("simulation_initial_state","Initialize Velocities",
+                                   1470,240,{{"slot",1.0F}});
+    const auto initialImpacts=add("simulation_initial_state","Initialize Impact Counts",
+                                   1470,460,{{"slot",2.0F}});
+    connect(startPosition,"value",initialPosition,"value");
+    connect(startVelocity,"value",initialVelocity,"value");
+    connect(startImpacts,"value",initialImpacts,"value");
+
+    // Prior state feeds only the general collision integrator, never the
+    // visual renderer. Gravity and shape are external graph inputs.
+    const auto priorPosition=add("simulation_previous_state","Previous Position",
+                                  0,750,{{"slot",0.0F}});
+    const auto priorVelocity=add("simulation_previous_state","Previous Velocity",
+                                  0,990,{{"slot",1.0F}});
+    const auto priorImpacts=add("simulation_previous_state","Previous Impact Count",
+                                  0,1230,{{"slot",2.0F}});
+    const auto boundary=port("boundary",240,1460);
+    const auto gravity=port("gravity",240,1680);
+    const auto negativeGravity=calculation("Down Is Negative Y",MathOperation::Multiply,
+                                           490,1680,{{"b",-1.0F}});
+    connect(gravity,"value",negativeGravity,"a");
+    const auto acceleration=add("combine_vector","Acceleration Vector",740,1680,
+                                 {{"x",0.0F}});
+    connect(negativeGravity,"result",acceleration,"y");
+    const auto step=add("sdf_billiard_step","Elastic Ballistic Step",1250,880);
+    connect(priorPosition,"value",step,"position");
+    connect(priorVelocity,"value",step,"velocity");
+    connect(boundary,"value",step,"boundary");
+    connect(acceleration,"value",step,"acceleration");
+
+    const std::pair<const char*,const char*> stepControls[]{
+        {"dt","dt"},{"radius","radius"},{"restitution","restitution"},
+        {"normalStep","normalStep"}
+    };
+    for(std::size_t i=0;i<std::size(stepControls);++i){
+        const auto param=port(stepControls[i].first,480,1930+int(i)*200);
+        connect(param,"value",step,stepControls[i].second);
+    }
+
+    const auto accumulated=calculation("Accumulate Collisions",MathOperation::Add,1520,1240);
+    connect(priorImpacts,"value",accumulated,"a");
+    connect(step,"impacts",accumulated,"b");
+    const auto nextPosition=add("simulation_next_state","Next Position",1820,850,
+                                {{"slot",0.0F}});
+    const auto nextVelocity=add("simulation_next_state","Next Velocity",1820,1070,
+                                {{"slot",1.0F}});
+    const auto nextImpacts=add("simulation_next_state","Next Impacts",1820,1290,
+                               {{"slot",2.0F}});
+    connect(step,"position",nextPosition,"value");
+    connect(step,"velocity",nextVelocity,"value");
+    connect(accumulated,"result",nextImpacts,"value");
+
+    const std::pair<const char*,NodeId> exposed[]{
+        {"positions",nextPosition},
+        {"velocities",nextVelocity},
+        {"impacts",nextImpacts}
+    };
+    for(std::size_t i=0;i<std::size(exposed);++i){
+        const auto output=add("subgraph_output",exposed[i].first,
+                              2090,850+int(i)*220,{{"key",exposed[i].first}});
+        connect(exposed[i].second,"value",output,"value");
+    }
+    // Reset, count and iterations are runtime controls (the other two live
+    // outside the simulation body), so no dangling simulation pins are needed.
+    return result;
+}
+
 } // namespace
 
 const std::vector<SubgraphDefinition>& builtInSubgraphs() {
     static const std::vector<SubgraphDefinition> values{
         discreteReaction(), genericCellularAutomata(), floodFill(),
         skeletonization(), distanceFromNearestWhitePixel(), sdfGenerator(), lenia(),
-        speciesFlow()};
+        speciesFlow(), sdfBilliards()};
     return values;
 }
 
