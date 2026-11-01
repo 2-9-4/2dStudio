@@ -141,7 +141,16 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
     std::unordered_set<std::string> interfaceKeys;
     std::unordered_map<std::string, const SubgraphInterfaceItem*> interfaceByKey;
     int outputCount = 0;
+    int agentDomainCount = 0;
     for (const auto& item : definition.interface) {
+        if (item.role == "agentCount") {
+            ++agentDomainCount;
+            if (item.kind != SubgraphInterfaceKind::Input ||
+                fixedType(item.contract) != ValueType::Float ||
+                item.control != ParameterDescriptor::Control::Integer ||
+                item.minimum < 1.0F || item.maximum > 16384.0F)
+                errors.push_back("agentCount requires a scalar Integer input in the supported [1,16384] range");
+        }
         if (item.key.empty() || !interfaceKeys.insert(item.key).second)
             errors.push_back("Subgraph interface keys must be non-empty and unique");
         interfaceByKey[item.key] = &item;
@@ -159,6 +168,9 @@ std::vector<std::string> validateSubgraphImpl(const SubgraphDefinition& definiti
             errors.push_back("Subgraph outputs must resolve to a field type");
         if (item.kind == SubgraphInterfaceKind::Output) ++outputCount;
     }
+    if (agentDomainCount > 1) errors.push_back("Only one agentCount interface input is supported");
+    if (agentDomainCount != 0 && definition.execution != SubgraphExecution::Simulation)
+        errors.push_back("agentCount is only supported for simulation subgraphs");
     if (definition.execution == SubgraphExecution::Simulation && (outputCount < 1 || outputCount > 3))
         errors.push_back("Simulation subgraphs support between one and three outputs");
 
