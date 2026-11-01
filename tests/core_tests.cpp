@@ -1,6 +1,7 @@
 #include "reaction/core/layout.hpp"
 #include "reaction/core/math.hpp"
 #include "reaction/core/node_builder.hpp"
+#include "reaction/core/sdf_billiard_descriptor.hpp"
 #include "reaction/core/persistence.hpp"
 #include "reaction/core/vector_math.hpp"
 
@@ -181,6 +182,10 @@ NodeRegistry catalogRegistry() {
     pixels.sockets[1].typeInputs = {"delta"};
     pixels.lowerable = true;
     add(result, std::move(pixels));
+
+    // Metadata-only validation of editable physics templates. No OpenGL
+    // dependency and no duplicated socket schema.
+    add(result, sdfBilliardStepDescriptor());
 
     return result;
 }
