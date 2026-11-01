@@ -94,7 +94,7 @@ public:
         const auto param=[&](std::size_t index,const char* name,float fallback){
             return node_support::floatAt(inputs,index,node_support::parameter(parameters_,name,fallback));
         };
-        node_support::uniform(program_,"mode",std::clamp(int(param(0,"mode",0)),0,1));
+        node_support::uniform(program_,"mode",std::clamp(int(node_support::parameter(parameters_,"mode",0)),0,1));
         node_support::uniform(program_,"columns",std::clamp(int(param(1,"columns",32)),1,256));
         node_support::uniform(program_,"rows",std::clamp(int(param(2,"rows",32)),1,256));
         node_support::uniform(program_,"rings",std::clamp(int(param(3,"rings",1)),0,128));
