@@ -44,17 +44,6 @@ public:
         accumulator_=0.0;
         simulated_=0.0;
     }
-    void setParameters(const nlohmann::json& values)override{
-        node_support::ParameterNode::setParameters(values);
-        // Reset only when physics setup changes, not on display radius/speed.
-        const auto setup=setupSignature();
-        if(setup!=lastSetup_){
-            lastSetup_=setup;
-            balls_.clear();
-            accumulator_=0.0;
-            simulated_=0.0;
-        }
-    }
     void evaluate(EvaluationContext& context,std::span<const Value> inputs,
                   std::span<Value> outputs)override{
         auto param=[&](std::size_t i,const char* name,float fallback){
@@ -127,20 +116,9 @@ public:
         outputs[3]=float(energyError);
     }
 private:
-    [[nodiscard]] std::string setupSignature()const{
-        std::string signature;
-        for(const char* key:{"count","fanMm","radius","ballRadius","gravity"}){
-            signature+=key;
-            signature+='=';
-            if(parameters_.contains(key))signature+=parameters_[key].dump();
-            signature+=';';
-        }
-        return signature;
-    }
     std::vector<billiards::Ball> balls_;
     std::vector<double> activeSetup_;
     std::vector<float> pixels_;
-    std::string lastSetup_;
     GLuint texture_=0;
     int textureWidth_=0;
     double accumulator_=0.0,simulated_=0.0;
