@@ -236,3 +236,20 @@ Editable SDF particle simulation architecture:
   with RG32F feedback state is not equivalent for long-term energy drift.
   Do not claim 1e-12 drift without numeric measurements and additional
   precision infrastructure.
+
+Simulation primitive granularity (billiards refactor):
+- NEVER describe an entire domain-specific simulation update hidden inside one node
+  (e.g. sdf_billiard_step) as a primitive. It defeats the visual node editor.
+- Prefer independently useful operations: ballistic integration (no collisions),
+  segment/SDF intersection (geometry, no dynamics), SDF normal (geometry),
+  and the existing vector reflect, lerp/mix, math and select nodes.
+- Implement motion sequencing and hit/miss branches as visible subgraph links.
+  In particular, time remaining after a collision must only be advanced ONCE.
+  The original single-kernel solver remains registered for legacy projects,
+  not the preferred template.
+- New primitives must compile and run independently as root nodes as well as
+  under simulation shader lowering; add tests for both usages.
+- Do not claim a chord/SDF intersection is an exact ballistic time-of-impact:
+  a curved trajectory can depart from its straight endpoint chord.
+  Use a smaller timestep, or a separate continuous-trajectory geometric
+  intersection primitive if greater accuracy is required.

@@ -8,7 +8,7 @@ namespace reaction {
 // the GPU implementation. Keep a single descriptor source of truth even when
 // core tests intentionally do not link OpenGL.
 inline NodeDescriptor sdfBilliardStepDescriptor() {
-    return NodeDescriptorBuilder{"sdf_billiard_step",1,"SDF Billiard Step","Simulation"}
+    return NodeDescriptorBuilder{"sdf_billiard_step",1,"Legacy SDF Billiard Step","Legacy"}
         .input("position","Previous Position",SocketContract::VectorNumeric)
         .input("velocity","Previous Velocity",SocketContract::VectorNumeric)
         .input("boundary","Boundary SDF (negative inside)",ValueType::ScalarField)

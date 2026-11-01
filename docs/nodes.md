@@ -54,29 +54,54 @@ grid with a transition ripple. These nodes also work independently.
 - **SDF Outline** (`sdf_outline`) — Antialiased line mask at an SDF's zero
   contour, with adjustable UV line width. Suitable for arena outlines.
 
+### Composable ballistic motion and SDF collision geometry
+
+- **Ballistic Advance** (`ballistic_advance`) — Exact constant-acceleration
+  kinematic update over a caller-provided duration. Inputs: start Position,
+  Velocity, Acceleration, Duration. Outputs: end Position and end Velocity.
+  Contains no boundary checks, restitution, state, or rendering.
+- **SDF Segment Crossing** (`sdf_segment_crossing`) — General-purpose
+  inside-to-outside intersection of a straight segment with a signed-distance
+  field. Inputs: scalar SDF, Start/End positions and distance Offset (for
+  nonzero particle radius). Outputs: Crossing Fraction in [0,1] and Hit
+  flag (0/1). Uses scalar bisection. Returns fraction=1 and hit=0 for a
+  segment that stays inside or starts outside. Applicable to rays, paths,
+  clipping, shapes and motion.
+- **SDF Surface Normal** (`sdf_surface_normal`) — Samples a scalar SDF
+  at an arbitrary point and returns the outward gradient unit vector.
+  Adjustable finite-difference step. Usable for shading, offsets and
+  geometry processing, not only collision response.
+- **Vector Math Reflect**, **Vector Math Mix**, **Math** and **Select**
+  (existing nodes) explicitly compute elastic reflection, coefficient
+  of restitution, contact/remaining time and hit-or-miss selection.
+
 ### Editable, shape-independent billiards
 
-- **SDF Billiard Step** (`sdf_billiard_step`) — A reusable lowerable physics
-  primitive. Inputs: previous Position/Velocity, a required scalar signed-
-  distance Boundary field, Acceleration vector, dt, particle radius,
-  restitution and normal-sampling step. Outputs: next Position, Velocity
-  and impacts in this step. Uses analytical ballistic flight, bisection
-  of a boundary crossing, finite-difference surface normal, elastic
-  specular reflection, and integration of the time remaining after impact.
-  Handles up to four collisions per timestep. Units are UV and seconds.
-- **SDF Billiards** (`builtin.particles.sdf_billiards`) — An **editable
-  simulation subgraph**, composed of ordinary Math/Vector, SDF Billiard Step
-  and Previous/Initial/Next State nodes. It contains three named slots:
-  Positions (RG32F), Velocities (RG32F) and Cumulative Impacts (R32F).
-  Its external Boundary input accepts an arbitrary Scalar Field signed
-  distance. This means a circle, box, rounded box or custom field all
-  drive the *same* editable physics graph. Separate controls expose Ball
-  Count (default 200), Launch Fan Width (0.000044 UV), Gravity (4.3164
-  UV/s²), Fixed Step (1/600s), Particle Radius, Restitution, Normal Sample
-  Step, Reset and Physics Steps per Frame (default 10). The launch width
-  is equivalent to 0.1mm if 0.44 UV represents one physical metre.
-  Every ball starts at rest on y=0.5. Each position, velocity and per-
-  agent impact count is available as an independent output.
+- **SDF Billiards** (`builtin.particles.sdf_billiards`, version 2) — An
+  actual inspectable composition of the independent nodes above. Free flight
+  predicts an end position, SDF Segment Crossing locates a boundary contact,
+  contact-time Ballistic Advance computes position and velocity at impact,
+  SDF Surface Normal samples the outward normal, Vector Math Reflect and
+  Mix choose the post-impact velocity, and Select branches explicitly
+  between collision and unimpeded motion. **Two collision stages** are
+  chained visibly, followed by a final free-flight integration of unused
+  time. An artist can replace or remove reflection, change the collision
+  response, or duplicate a stage directly inside the subgraph canvas.
+  The 3 feedback state slots remain Positions (RG32F), Velocities (RG32F)
+  and Cumulative Impacts (R32F); the wall shape remains an external SDF
+  input. Controls: Ball Count (default 200), Launch Fan Width, Gravity,
+  Fixed Step, Particle Radius, Restitution, Normal Sample Step, Reset
+  and Physics Steps per Frame.
+  The segment intersection uses the straight chord between ballistic
+  endpoints as its root-finding path, while contact position/velocity use
+  exact constant-acceleration flight at the resulting time. This is
+  approximate for strongly curved motion during one timestep: reduce dt
+  as needed. At most two impact events are handled per physics step,
+  though extra stages can be added in the editor.
+- **Legacy SDF Billiard Step** (`sdf_billiard_step`) is kept registered
+  only so projects created by the previous implementation still load.
+  The built-in template and default example **never instantiate it**.
+  It is not a recommended primitive or part of the new composition.
 
 The count interface uses the reusable **agentCount** execution role, so
 the GPU state domain is Count × 1 instead of a full canvas raster.
@@ -92,7 +117,7 @@ Index still handles colored presentation separately from motion.
 
 **Precision limits:** The editable GPU solver uses float32 arithmetic and
 RG32F state rather than the legacy native double-precision CPU engine;
-it does not promise 1e-12 energy drift. Raster SDF resolution, floating-
+it does not promise 1e-12 energy drift; the chord-based crossing location also introduces timestep-dependent error. Raster SDF resolution, floating-
 point precision and step size affect boundary accuracy. Restitution=1
 has no intentional damping. The old `circular_billiards` node remains
 available to load existing saved projects, but new examples prefer the
