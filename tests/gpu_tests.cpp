@@ -2715,6 +2715,8 @@ TEST_CASE("Circular billiards exposes a 200-slot vector field and energy diagnos
 }
 
 
+namespace reaction {
+
 TEST_CASE("SDF Billiards is a genuine editable particle simulation subgraph", "[gpu][billiards]") {
     NodeRegistry registry;
     registerBuiltInNodes(registry);
@@ -2813,3 +2815,5 @@ TEST_CASE("SDF primitives and outlines support typed field composition", "[gpu][
     REQUIRE(sdfData[center]<0.0F);
     REQUIRE(sdfData[0]>0.0F);
 }
+
+} // namespace reaction
