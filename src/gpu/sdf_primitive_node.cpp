@@ -78,9 +78,7 @@ public:
     bool lowerShader(ShaderLoweringContext& context)const override{
         const auto distance=context.scalar("distance","distance",0.0F);
         const auto width=context.scalar("width","width",0.002F);
-        (void)context.emitTyped("(1.0-smoothstep(max(0.0,("+width.name+")-fwidth("+
-            distance.name+")),("+width.name+")+fwidth("+distance.name+
-            "),abs("+distance.name+")))",ShaderValueType::Scalar,"lines");
+        (void)context.emitTyped("(1.0-smoothstep(max(0.0,("+width.name+")-max(pixelSize.x,pixelSize.y)),("+width.name+")+max(pixelSize.x,pixelSize.y),abs("+distance.name+")))",ShaderValueType::Scalar,"lines");
         return true;
     }
 };
