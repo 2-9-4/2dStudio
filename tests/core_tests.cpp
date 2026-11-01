@@ -1511,3 +1511,44 @@ TEST_CASE("auto-layout layers nodes fed by several links from one source") {
 }
 
 } // namespace reaction
+
+
+// Analytical circular billiards kernel: these tests need no OpenGL context.
+#include "reaction/core/circular_billiards.hpp"
+
+TEST_CASE("circular billiards preserves deterministic trajectories and launch energy") {
+    using namespace reaction::billiards;
+    Ball a=initialBall(0,200,0.0001);
+    Ball same=initialBall(0,200,0.0001);
+    Ball neighbor=initialBall(1,200,0.0001);
+    REQUIRE(a.y==0.0);
+    REQUIRE(a.vx==0.0);
+    REQUIRE(a.vy==0.0);
+    REQUIRE(std::abs(neighbor.x-a.x-0.0001/199.0)<1e-16);
+    for(int i=0;i<6000;i++){
+        advance(a,1.0/600.0,9.81,1.0);
+        advance(same,1.0/600.0,9.81,1.0);
+        advance(neighbor,1.0/600.0,9.81,1.0);
+        REQUIRE(a.x==same.x);
+        REQUIRE(a.y==same.y);
+        REQUIRE(a.vx==same.vx);
+        REQUIRE(a.vy==same.vy);
+        REQUIRE(a.impacts==same.impacts);
+        REQUIRE(std::abs(energy(a,9.81))<1e-10);
+        REQUIRE(std::hypot(a.x,a.y)<=1.0+1e-12);
+        REQUIRE(a.y<=1e-10); // zero launch energy: upper half is inaccessible
+    }
+    REQUIRE(a.impacts>2);
+    REQUIRE(std::hypot(a.x-neighbor.x,a.y-neighbor.y)>1e-4);
+}
+
+TEST_CASE("circular billiards energy is conserved through repeat wall impacts") {
+    using namespace reaction::billiards;
+    Ball b=initialBall(199,200,0.0001);
+    for(int i=0;i<30000;i++) {
+        advance(b,1.0/600.0,9.81,1.0);
+        REQUIRE(std::abs(energy(b,9.81))<1e-10);
+    }
+    REQUIRE(b.impacts>10);
+    REQUIRE(std::hypot(b.x,b.y)<=1.0+1e-12);
+}
