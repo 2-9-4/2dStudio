@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <fstream>
 #include <sstream>
 #include <thread>
 #include <unordered_map>
@@ -918,6 +919,28 @@ void Application::editorWindowCloseCallback(GLFWwindow* window) {
     if (application) application->requestEditorClose();
 }
 
+void Application::exportParticlePathsDialog(NodeId id) {
+    const auto svg=runtime_->vectorSvg(id);
+    if(svg.empty()){
+        setStatus("No recorded particle paths to export — run the simulation first",true);
+        return;
+    }
+    auto filename=currentPath_.empty()?std::filesystem::path("particle-paths.svg")
+                                      :currentPath_.filename().replace_extension(".svg");
+    auto selected=pfd::save_file("Export Particle Paths as SVG",
+                                filename.string(),{"SVG vector paths","*.svg"}).result();
+    if(selected.empty())return;
+    std::filesystem::path path=std::move(selected);
+    if(path.extension()!=".svg")path+=".svg";
+    try{
+        std::ofstream out(path,std::ios::binary|std::ios::trunc);
+        if(!out)throw std::runtime_error("Could not open SVG output for writing");
+        out.write(svg.data(),static_cast<std::streamsize>(svg.size()));
+        if(!out)throw std::runtime_error("Failed writing particle SVG");
+        setStatus("Exported "+path.filename().string());
+    }catch(const std::exception& error){setStatus(error.what(),true);}
+}
+
 void Application::exportFrameDialog() {
     const auto image = runtime_->outputImage();
     if (image.texture == 0 || image.width <= 0 || image.height <= 0) {
@@ -1281,6 +1304,10 @@ void Application::renderGraph() {
                 if (descriptor->stateful && ImGui::Button("Reset Simulation")) {
                     runtime_->resetNode(node.id);
                     setStatus("Reset simulation node");
+                }
+                if(node.type=="particle_path_trace"){
+                    if(ImGui::Button("Export Traced Paths as SVG…"))
+                        exportParticlePathsDialog(node.id);
                 }
                 if (node.type == "subgraph") {
                     ImGui::TextDisabled("Select + Tab to enter");

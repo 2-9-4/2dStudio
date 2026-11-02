@@ -32,6 +32,7 @@ private:
     void discardRecoverySidecar();
     static void editorWindowCloseCallback(GLFWwindow* window);
     void exportFrameDialog();
+    void exportParticlePathsDialog(NodeId node);
     void startRecordingDialog();
     void stopRecording(bool reportStatus = true);
     void recordFrame();

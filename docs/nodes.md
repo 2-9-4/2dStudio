@@ -35,11 +35,15 @@ submodes, and the special nodes available inside simulation subgraphs.
   and localized transition-ring ripple are independent controls. Connect to
   Lattice Lines, Texture Sample, or any coordinate-aware generator. Extreme
   settings can fold coordinates; normal settings preserve the sheet topology.
-- **Lattice Lines** (`lattice_lines`) — Antialiased Scalar Field of rectangular
-  grid lines, or aspect-correct polar rings and spokes. Optional Coordinates
-  input defaults to canvas UV, so it works with Vortex Warp. Columns, Rows,
-  Rings, Spokes (0 to disable), First Ring Radius, Ring Separation and
-  Thickness in pixels are independent. Follow with Color Ramp for line colors.
+- **Lattice Lines** (`lattice_lines`) — Rectangular grid or polar
+  rings/spokes. The original **Line Mask** Scalar Field output is unchanged.
+  New **Colored Lines** Color Image output uses independent **X Lines RGB**
+  and **Y Lines RGB** controls (for polar mode, rings are X and spokes Y).
+  Choose **Per-Axis Colors** to use the two colors for every line family,
+  or **Rainbow by Line** to vary the color of each individual X/Y line.
+  Intersections blend the two colors. Optional warped Coordinates, line
+  spacing/count and thickness inputs are preserved. Connect `colored`
+  directly to an image output, or `lines` to Color Ramp as before.
 
 Open `examples/vortex-lattice.reaction.json` for the 36×36 dipole-vortex
 grid with a transition ripple. These nodes also work independently.
@@ -75,40 +79,52 @@ grid with a transition ripple. These nodes also work independently.
   (existing nodes) explicitly compute elastic reflection, coefficient
   of restitution, contact/remaining time and hit-or-miss selection.
 
-### Editable, shape-independent billiards
+### Swept SDF ballistic collisions
 
-- **SDF Billiards** (`builtin.particles.sdf_billiards`, version 2) — An
-  actual inspectable composition of the independent nodes above. Free flight
-  predicts an end position, SDF Segment Crossing locates a boundary contact,
-  contact-time Ballistic Advance computes position and velocity at impact,
-  SDF Surface Normal samples the outward normal, Vector Math Reflect and
-  Mix choose the post-impact velocity, and Select branches explicitly
-  between collision and unimpeded motion. **Two collision stages** are
-  chained visibly, followed by a final free-flight integration of unused
-  time. An artist can replace or remove reflection, change the collision
-  response, or duplicate a stage directly inside the subgraph canvas.
-  The 3 feedback state slots remain Positions (RG32F), Velocities (RG32F)
-  and Cumulative Impacts (R32F); the wall shape remains an external SDF
-  input. Controls: Ball Count (default 200), Launch Fan Width, Gravity,
-  Fixed Step, Particle Radius, Restitution, Normal Sample Step, Reset
-  and Physics Steps per Frame.
-  The segment intersection uses the straight chord between ballistic
-  endpoints as its root-finding path, while contact position/velocity use
-  exact constant-acceleration flight at the resulting time. This is
-  approximate for strongly curved motion during one timestep: reduce dt
-  as needed. At most two impact events are handled per physics step,
-  though extra stages can be added in the editor.
-- **Legacy SDF Billiard Step** (`sdf_billiard_step`) is kept registered
-  only so projects created by the previous implementation still load.
-  The built-in template and default example **never instantiate it**.
-  It is not a recommended primitive or part of the new composition.
+- **SDF Ballistic Collision** (`sdf_ballistic_collision`) — A reusable
+  lowerable update operator independent of spawning, simulation state,
+  shape generation and rendering. Inputs are Position, Velocity, an external
+  scalar signed-distance Boundary, Acceleration, Time Step, Particle Radius,
+  Restitution and Surface Normal Step. Outputs are Next Position,
+  Next Velocity and Impacts during this step.
+  It tests the **actual constant-acceleration trajectory**, using
+  conservative advancement based on SDF clearance and a fallback dense
+  scan. Impacts use root bisection and a finite-difference outward normal;
+  the remaining timestep is integrated after each reflection. Handles up
+  to 12 contacts per step, and projects numerically penetrating particles
+  back inside both at startup and at the end. This avoids the old
+  chord-intersection tunneling and initial-outside freeze behavior.
+  A raster SDF is approximate, and a disconnected or discontinuous field
+  cannot guarantee perfect collision geometry; choose suitable SDF
+  resolution and sampling step.
+- **SDF Billiards** (`builtin.particles.sdf_billiards`, version 3) —
+  Editable simulation template: the new collision node is wired to an
+  external boundary, ordinary Math/Vector gravity construction, separate
+  Positions/Velocities/Impacts state slots, and independent launch setup.
+  Motion and bounce behavior can be replaced at this one stage without
+  rewriting state, rendering, or shape generation. The old graph-composed
+  collision implementation is retained in previously saved editable
+  project copies but not the new built-in default.
+- **Particle Path Trace** (`particle_path_trace`) — Records a Vector
+  Field of particle positions into individual polylines. Each agent
+  retains a stable identity. Track a configurable particle count, sample
+  every N evaluation frames, set a per-agent point budget and minimum
+  point spacing. Its `image` output previews the accumulated trajectories;
+  use the node's **Export Traced Paths as SVG…** button to save independent
+  SVG `<path>` elements with stable per-particle IDs and selected color
+  mode (white or rainbow). Export uses the project canvas dimensions and
+  flips Y into SVG top-left coordinates. Reset Simulation clears the
+  recorder. No interpolation of unseen simulation substeps is invented:
+  the export contains the actual evaluated/recorded samples. Trails are
+  held in memory and not serialized into the project file. Use the
+  reset button before a new recording.
 
 The count interface uses the reusable **agentCount** execution role, so
 the GPU state domain is Count × 1 instead of a full canvas raster.
 Existing reaction-diffusion and species-flow simulations remain
 canvas-sized; no simulation-type-specific allocation rules are added.
 
-The example `examples/circular-chaos.reaction.json` now connects
+The example `examples/circular-chaos.reaction.json` connects
 `SDF Primitive → SDF Billiards → Particle Splat`, with a separate SDF
 Outline composited onto the image. Change the SDF Primitive Shape from
 Circle to Box without changing physics. Connect an external signed-distance
@@ -117,7 +133,8 @@ Index still handles colored presentation separately from motion.
 
 **Precision limits:** The editable GPU solver uses float32 arithmetic and
 RG32F state rather than the legacy native double-precision CPU engine;
-it does not promise 1e-12 energy drift; the chord-based crossing location also introduces timestep-dependent error. Raster SDF resolution, floating-
+it does not promise 1e-12 energy drift. The SDF is a sampled field, so
+geometric resolution and finite-difference normal errors still matter. Raster SDF resolution, floating-
 point precision and step size affect boundary accuracy. Restitution=1
 has no intentional damping. The old `circular_billiards` node remains
 available to load existing saved projects, but new examples prefer the

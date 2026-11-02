@@ -942,6 +942,12 @@ void GraphRuntime::resetNode(NodeId id) {
     }
 }
 
+std::string GraphRuntime::vectorSvg(NodeId id) const {
+    const auto found=instances_.find(id);
+    if(found==instances_.end())return {};
+    return found->second->vectorSvg(graph_.settings.width,graph_.settings.height);
+}
+
 ImageHandle GraphRuntime::outputImage() const {
     const auto found = values_.find(graph_.activeOutput);
     if (found == values_.end() || found->second.empty()) return {};

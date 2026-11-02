@@ -2729,21 +2729,11 @@ TEST_CASE("SDF Billiards is a genuine editable particle simulation subgraph", "[
     REQUIRE(it->stateSlots.size()==3);
     REQUIRE(it->stateSlots[0].highPrecision);
     REQUIRE(it->stateSlots[1].highPrecision);
+    REQUIRE(it->version==3);
+    REQUIRE(std::ranges::count(it->body.nodes(),"sdf_ballistic_collision",
+                               &NodeRecord::type)==1);
     REQUIRE(std::ranges::count(it->body.nodes(),"sdf_billiard_step",
                                &NodeRecord::type)==0);
-    REQUIRE(std::ranges::count(it->body.nodes(),"ballistic_advance",
-                               &NodeRecord::type)>=5);
-    REQUIRE(std::ranges::count(it->body.nodes(),"sdf_segment_crossing",
-                               &NodeRecord::type)==2);
-    REQUIRE(std::ranges::count(it->body.nodes(),"sdf_surface_normal",
-                               &NodeRecord::type)==2);
-    REQUIRE(std::ranges::count_if(it->body.nodes(),[](const NodeRecord& n){
-        return n.type=="vector_math" &&
-               n.parameters.value("operation",0.0F)==
-                   static_cast<float>(VectorMathOperation::Reflect);
-    })==2);
-    REQUIRE(std::ranges::count(it->body.nodes(),"select",
-                               &NodeRecord::type)>=6);
     REQUIRE(std::ranges::count(it->body.nodes(),"simulation_previous_state",
                                &NodeRecord::type)==3);
     REQUIRE(std::ranges::count(it->body.nodes(),"simulation_next_state",
@@ -2766,8 +2756,7 @@ TEST_CASE("SDF Billiards is a genuine editable particle simulation subgraph", "[
     const auto step=generateSimulationShader(*it,false);
     REQUIRE(init.find("rg32f")!=std::string::npos);
     REQUIRE(step.find("sdfBilliard")==std::string::npos);
-    REQUIRE(step.find("sdfSegment")!=std::string::npos);
-    REQUIRE(step.find("sdfNormal")!=std::string::npos);
+    REQUIRE(step.find("sdfCollide")!=std::string::npos);
     REQUIRE(step.find("in_boundary")!=std::string::npos);
 }
 
@@ -2887,6 +2876,83 @@ TEST_CASE("ballistic and SDF crossing/normal nodes are usable independently of b
         REQUIRE(p[index+1]==Catch::Approx(u-0.03125F).margin(0.002F));
         REQUIRE(velocity[index]==Catch::Approx(0.2F).margin(0.002F));
         REQUIRE(velocity[index+1]==Catch::Approx(-0.25F).margin(0.002F));
+    }
+}
+
+
+TEST_CASE("lattice retains legacy scalar mask and offers distinct X/Y colored lines", "[gpu][lattice]") {
+    test_support::RuntimeHarness h{128,128};
+    const auto lattice=h.add("lattice_lines",{{"columns",4},{"rows",4},
+       {"thickness",3.0F},{"xR",1.0F},{"xG",0.0F},{"xB",0.0F},
+       {"yR",0.0F},{"yG",0.0F},{"yB",1.0F}});
+    const auto sink=h.add("output");
+    h.connect(lattice,"colored",sink,"image");
+    REQUIRE(h.semanticType(lattice,"lines")==ValueType::ScalarField);
+    REQUIRE(h.semanticType(lattice,"colored")==ValueType::ColorImage);
+    h.evaluated();
+    const auto rgb=h.pixels(lattice,1);
+    // A vertical X-grid line at x=.25, away from any horizontal crossing.
+    const auto xv=4*(41*128+32);
+    const auto yv=4*(32*128+41);
+    REQUIRE(rgb[xv]>rgb[xv+2]+0.25F);
+    REQUIRE(rgb[yv+2]>rgb[yv]+0.25F);
+}
+
+TEST_CASE("path recorder traces particle positions and exports SVG with stable agent identity", "[gpu][svg]") {
+    test_support::RuntimeHarness h{160,120};
+    const auto particles=h.add("circular_billiards",{{"count",4.0F},
+             {"fanMm",0.1F},{"speed",1.0F}});
+    const auto trace=h.add("particle_path_trace",{{"count",4.0F},
+             {"sampleEvery",1.0F},{"maxPoints",200.0F},{"palette",1.0F}});
+    h.connect(particles,"positions",trace,"positions");
+    const auto preview=h.add("output");
+    h.connect(trace,"image",preview,"image");
+    h.evaluated(0.0,0.0,false);
+    REQUIRE(h.runtime->vectorSvg(trace).empty());
+    for(int f=1;f<=8;f++)h.evaluated(f/60.0,1.0/60.0,true);
+    const auto svg=h.runtime->vectorSvg(trace);
+    REQUIRE(svg.starts_with("<?xml"));
+    REQUIRE(svg.find("<svg xmlns=")!=std::string::npos);
+    REQUIRE(svg.find("width=\"160\"")!=std::string::npos);
+    REQUIRE(svg.find("height=\"120\"")!=std::string::npos);
+    REQUIRE(svg.find("data-particle=\"0\"")!=std::string::npos);
+    REQUIRE(svg.find("data-particle=\"3\"")!=std::string::npos);
+    REQUIRE(svg.find(" L ")!=std::string::npos);
+    REQUIRE(h.semanticType(trace,"image")==ValueType::ColorImage);
+    REQUIRE(h.image(trace).width==160);
+    h.runtime->resetNode(trace);
+    h.evaluated(0.0,0.0,false);
+    REQUIRE(h.runtime->vectorSvg(trace).empty());
+}
+
+TEST_CASE("swept SDF ballistic collision recovers penetrating states and retains shapes", "[gpu][collision]"){
+    for(int shape:{0,1}){
+        test_support::RuntimeHarness h{128,128};
+        const auto sdf=h.add("sdf_primitive",{{"shape",float(shape)},
+           {"radius",0.30F},{"halfWidth",0.30F},{"halfHeight",0.30F}});
+        const auto start=h.add("vector",{{"x",0.96F},{"y",0.5F}});
+        const auto velocity=h.add("vector",{{"x",6.0F},{"y",0.0F}});
+        const auto a=h.add("vector",{{"x",0.0F},{"y",-6.0F}});
+        const auto bounce=h.add("sdf_ballistic_collision",{{"dt",0.05F},
+                       {"normalStep",0.002F},{"restitution",1.0F}});
+        h.connect(sdf,"distance",bounce,"boundary");
+        h.connect(start,"value",bounce,"position");
+        h.connect(velocity,"value",bounce,"velocity");
+        h.connect(a,"value",bounce,"acceleration");
+        const auto output=h.add("output");
+        h.connect(bounce,"position",output,"image");
+        const auto impacts=h.add("output");
+        h.connect(bounce,"impacts",impacts,"image");
+        h.evaluated();
+        const auto p=h.pixels(bounce);
+        const auto x=p[4*(64*128+64)], y=p[4*(64*128+64)+1];
+        REQUIRE(std::isfinite(x));
+        REQUIRE(std::isfinite(y));
+        if(shape==0)REQUIRE(std::hypot(x-0.5F,y-0.5F)<0.31F);
+        else{
+            REQUIRE(std::abs(x-0.5F)<0.31F);
+            REQUIRE(std::abs(y-0.5F)<0.31F);
+        }
     }
 }
 

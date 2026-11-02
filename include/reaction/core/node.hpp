@@ -132,6 +132,8 @@ public:
                           std::span<const Value> inputs,
                           std::span<Value> outputs) = 0;
     virtual void reset(EvaluationContext&) {}
+    // Optional accumulated vector-art export. Empty means no usable recorded paths.
+    [[nodiscard]] virtual std::string vectorSvg(int, int) const { return {}; }
     [[nodiscard]] virtual nlohmann::json parameters() const = 0;
     virtual void setParameters(const nlohmann::json& values) = 0;
     // Lets multi-output nodes avoid materializing outputs that have no consumers.

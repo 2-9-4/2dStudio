@@ -97,6 +97,7 @@ public:
     bool evaluate(double time, double deltaTime, bool playing);
     void reset();
     void resetNode(NodeId id);
+    [[nodiscard]] std::string vectorSvg(NodeId id) const;
     void clear();
     [[nodiscard]] ImageHandle outputImage() const;
     [[nodiscard]] const CompileResult& compileResult() const { return compiled_; }

@@ -1295,7 +1295,7 @@ SubgraphDefinition speciesFlow() {
 SubgraphDefinition sdfBilliards() {
     SubgraphDefinition result;
     result.id = "builtin.particles.sdf_billiards";
-    result.version = 2;
+    result.version = 3;
     result.name = "SDF Billiards";
     result.category = "Simulation";
     result.execution = SubgraphExecution::Simulation;
@@ -1380,171 +1380,50 @@ SubgraphDefinition sdfBilliards() {
     connect(startVelocity,"value",initialVelocity,"value");
     connect(startImpacts,"value",initialImpacts,"value");
 
-    // The simulation is an inspectable composition: integration, crossing
-    // fraction, impact-time integration, SDF normal, reflection, restitution
-    // mix, remaining-time integration and Select for each contact.
-    // No primitive knows about the surrounding billiard simulation.
-    const auto priorPosition=add("simulation_previous_state","Previous Position",
-                                  0,750,{{"slot",0.0F}});
-    const auto priorVelocity=add("simulation_previous_state","Previous Velocity",
-                                  0,990,{{"slot",1.0F}});
-    const auto priorImpacts=add("simulation_previous_state","Previous Impact Count",
-                                  0,1230,{{"slot",2.0F}});
-    const auto boundary=port("boundary",0,1650);
-    const auto gravity=port("gravity",0,1890);
-    const auto dt=port("dt",0,2150);
-    const auto radius=port("radius",0,2390);
-    const auto restitution=port("restitution",0,2630);
-    const auto normalStep=port("normalStep",0,2870);
-    const auto negativeGravity=calculation("Downward Acceleration",
-                           MathOperation::Multiply,250,1890,{{"b",-1.0F}});
-    connect(gravity,"value",negativeGravity,"a");
-    const auto acceleration=add("combine_vector","Editable Acceleration",500,1890,
-                                 {{"x",0.0F}});
-    connect(negativeGravity,"result",acceleration,"y");
-
-    using Wire=std::pair<NodeId,const char*>;
-    const auto from=[](NodeId id,const char* pin)->Wire{return {id,pin};};
-    const auto wire=[&](Wire a,NodeId node,const char* pin){
-        connect(a.first,a.second,node,pin);
+    // General collision kernel is interchangeable with the fully graph-
+    // composed v2 collision logic: it is only responsible for ballistic SDF
+    // motion, and owns no source, persistence, rendering or spawn scheme.
+    const auto beforePosition=add("simulation_previous_state","Previous Position",
+                                   0,750,{{"slot",0.0F}});
+    const auto beforeVelocity=add("simulation_previous_state","Previous Velocity",
+                                   0,970,{{"slot",1.0F}});
+    const auto beforeImpacts=add("simulation_previous_state","Previous Impacts",
+                                  0,1190,{{"slot",2.0F}});
+    const auto boundary=port("boundary",0,1480);
+    const auto gravity=port("gravity",0,1700);
+    const auto negateGravity=calculation("Downward Acceleration",
+                       MathOperation::Multiply,270,1700,{{"b",-1.0F}});
+    connect(gravity,"value",negateGravity,"a");
+    const auto acceleration=add("combine_vector","Acceleration Vector",540,1700,
+                                {{"x",0.0F}});
+    connect(negateGravity,"result",acceleration,"y");
+    const auto collision=add("sdf_ballistic_collision","Swept SDF Collision",
+                              960,950);
+    connect(beforePosition,"value",collision,"position");
+    connect(beforeVelocity,"value",collision,"velocity");
+    connect(boundary,"value",collision,"boundary");
+    connect(acceleration,"value",collision,"acceleration");
+    const std::pair<const char*,const char*> controls[]{
+        {"dt","dt"},{"radius","radius"},{"restitution","restitution"},
+        {"normalStep","normalStep"}
     };
-    const auto bounceFraction=calculation("Restitution + 1",MathOperation::Add,
-                                          240,2640,{{"b",1.0F}});
-    wire(from(restitution,"value"),bounceFraction,"a");
-    const auto reflectMix=calculation("Reflection Blend (1+e)/2",
-                                      MathOperation::Multiply,490,2640,
-                                      {{"b",0.5F}});
-    connect(bounceFraction,"result",reflectMix,"a");
-
-    struct Stage {Wire position,velocity,impacts,time;};
-    const auto stage=[&](const char* label,Stage before,int x,int y)->Stage{
-        const Wire time=before.time;
-        // Analytic constant-acceleration advance over the full available step.
-        const auto full=add("ballistic_advance",
-                            std::string(label)+" Free Flight",x,y);
-        wire(before.position,full,"position");
-        wire(before.velocity,full,"velocity");
-        wire(from(acceleration,"value"),full,"acceleration");
-        wire(time,full,"time");
-
-        // A geometric segment crossing, not a billiards-specific solver:
-        // fraction=1 on a miss and 0<frac<1 at an outward crossing.
-        const auto crossing=add("sdf_segment_crossing",
-                               std::string(label)+" Segment vs SDF",x+260,y);
-        wire(from(boundary,"value"),crossing,"source");
-        wire(before.position,crossing,"start");
-        wire(from(full,"position"),crossing,"end");
-        wire(from(radius,"value"),crossing,"offset");
-        const auto hitTime=calculation((std::string(label)+" Contact Time").c_str(),
-                                     MathOperation::Multiply,x+530,y);
-        wire(from(crossing,"fraction"),hitTime,"a");
-        wire(time,hitTime,"b");
-
-        // Integrate AGAIN exactly to the hit, not simply to the chord
-        // interpolation point. This preserves gravity during flight.
-        const auto contact=add("ballistic_advance",
-                               std::string(label)+" Flight to Contact",x+780,y);
-        wire(before.position,contact,"position");
-        wire(before.velocity,contact,"velocity");
-        wire(from(acceleration,"value"),contact,"acceleration");
-        wire(from(hitTime,"result"),contact,"time");
-
-        const auto normal=add("sdf_surface_normal",
-                              std::string(label)+" SDF Normal",x+1030,y+210);
-        wire(from(boundary,"value"),normal,"source");
-        wire(from(contact,"position"),normal,"point");
-        wire(from(normalStep,"value"),normal,"step");
-
-        // Ordinary Vector Math Reflect is perfectly elastic. Mix in the
-        // incoming velocity to set an arbitrary coefficient of restitution:
-        // e=1 => full reflection, e=0 => no normal component.
-        const auto reflected=vectorMath(g,std::string(label)+" Specular Reflect",
-                                         VectorMathOperation::Reflect,
-                                         {float(x+1280),float(y+180)});
-        wire(from(contact,"velocity"),reflected,"a");
-        wire(from(normal,"normal"),reflected,"b");
-        const auto afterImpact=vectorMath(g,std::string(label)+" Restitution",
-                                          VectorMathOperation::Mix,
-                                          {float(x+1530),float(y+180)});
-        wire(from(contact,"velocity"),afterImpact,"a");
-        wire(from(reflected,"result"),afterImpact,"b");
-        wire(from(reflectMix,"result"),afterImpact,"scalar");
-
-        // Slightly push inside after a crossing to avoid roundoff causing
-        // immediate repeated impact on the same zero contour.
-        const auto inward=vectorMath(g,std::string(label)+" Inward Bias",
-                                     VectorMathOperation::Scale,
-                                     {float(x+1280),float(y+440)});
-        wire(from(normal,"normal"),inward,"a");
-        const auto inwardNode=g.findNode(inward);
-        if(inwardNode)inwardNode->parameters["scalar"]=0.000002F;
-        const auto corrected=vectorMath(g,std::string(label)+" Contact Inside",
-                                        VectorMathOperation::Subtract,
-                                        {float(x+1530),float(y+440)});
-        wire(from(contact,"position"),corrected,"a");
-        wire(from(inward,"result"),corrected,"b");
-
-        const auto remaining=calculation((std::string(label)+" Remaining Time").c_str(),
-                                         MathOperation::Subtract,x+1030,y+640);
-        wire(time,remaining,"a");
-        wire(from(hitTime,"result"),remaining,"b");
-        // The hit/miss decision is explicit and rewritable. On a miss,
-        // ordinary free flight is the only update. On a hit, continue from
-        // the reflected contact position for the remaining time.
-        const auto choosePosition=add("select",
-                                      std::string(label)+" Choose Position",
-                                      x+2050,y);
-        const auto chooseVelocity=add("select",
-                                      std::string(label)+" Choose Velocity",
-                                      x+2050,y+240);
-        for(const auto choose:{choosePosition,chooseVelocity})
-            wire(from(crossing,"hit"),choose,"condition");
-        wire(from(corrected,"result"),choosePosition,"ifTrue");
-        wire(from(full,"position"),choosePosition,"ifFalse");
-        wire(from(afterImpact,"result"),chooseVelocity,"ifTrue");
-        wire(from(full,"velocity"),chooseVelocity,"ifFalse");
-        const auto hitSum=calculation((std::string(label)+" Count Impact").c_str(),
-                                     MathOperation::Add,x+2050,y+470);
-        wire(before.impacts,hitSum,"a");
-        wire(from(crossing,"hit"),hitSum,"b");
-        // The second stage receives zero remaining time if the first missed
-        // the wall, and otherwise only the fraction remaining after contact.
-        const auto nextTime=add("select",std::string(label)+" Unused Duration",
-                                x+2050,y+680);
-        wire(from(crossing,"hit"),nextTime,"condition");
-        wire(from(remaining,"result"),nextTime,"ifTrue");
-        const auto zero=add("float",std::string(label)+" No Time on Miss",
-                             x+1790,y+750,{{"value",0.0F}});
-        wire(from(zero,"value"),nextTime,"ifFalse");
-        return {from(choosePosition,"result"),from(chooseVelocity,"result"),
-                from(hitSum,"result"),from(nextTime,"result")};
-    };
-
-    // Each stage is built from the SAME independent operations. A user can
-    // remove, reorder, replace or duplicate the stages in the subgraph canvas.
-    const Stage initial={from(priorPosition,"value"),from(priorVelocity,"value"),
-                         from(priorImpacts,"value"),from(dt,"value")};
-    const auto one=stage("First Contact",initial,800,3300);
-    const auto two=stage("Second Contact",one,3600,3300);
-
-    // When all allotted contacts are processed, spend the remaining fraction
-    // in ordinary ballistic free flight. Crucially this happens ONCE;
-    // earlier phases stop at their contact instead of integrating twice.
-    const auto finish=add("ballistic_advance","Finish Remaining Free Flight",5920,3100);
-    wire(two.position,finish,"position");
-    wire(two.velocity,finish,"velocity");
-    wire(from(acceleration,"value"),finish,"acceleration");
-    wire(two.time,finish,"time");
-
-    const auto nextPosition=add("simulation_next_state","Next Position",6060,3340,
+    for(std::size_t i=0;i<std::size(controls);++i){
+        const auto value=port(controls[i].first,560,1940+int(i)*220);
+        connect(value,"value",collision,controls[i].second);
+    }
+    const auto counted=calculation("Accumulate Impacts",MathOperation::Add,
+                                   1310,1230);
+    connect(beforeImpacts,"value",counted,"a");
+    connect(collision,"impacts",counted,"b");
+    const auto nextPosition=add("simulation_next_state","Next Position",1640,850,
                                 {{"slot",0.0F}});
-    const auto nextVelocity=add("simulation_next_state","Next Velocity",6060,3560,
+    const auto nextVelocity=add("simulation_next_state","Next Velocity",1640,1070,
                                 {{"slot",1.0F}});
-    const auto nextImpacts=add("simulation_next_state","Next Impacts",6060,3780,
+    const auto nextImpacts=add("simulation_next_state","Next Impacts",1640,1290,
                                {{"slot",2.0F}});
-    wire(from(finish,"position"),nextPosition,"value");
-    wire(from(finish,"velocity"),nextVelocity,"value");
-    wire(two.impacts,nextImpacts,"value");
+    connect(collision,"position",nextPosition,"value");
+    connect(collision,"velocity",nextVelocity,"value");
+    connect(counted,"result",nextImpacts,"value");
 
     const std::pair<const char*,NodeId> exposed[]{
         {"positions",nextPosition},
