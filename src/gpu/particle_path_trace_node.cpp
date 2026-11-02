@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <iomanip>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -120,7 +121,7 @@ public:
         // repeatedly. A new input field can also be sampled while paused.
         const bool sample=(recorded_==0 || (context.playing &&
              context.frame!=previousFrame_ && context.frame%std::uint64_t(sampleEvery)==0));
-        if(sample && count>0 && recorded_<std::size_t(maxPoints)){
+        if(sample && count>0 && recorded_<std::size_t(maxPoints)) {
             const std::size_t total=static_cast<std::size_t>(available);
             std::vector<float> pixels(total*2);
             GLint oldTexture=0,oldPack=0;
