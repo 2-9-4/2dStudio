@@ -526,24 +526,25 @@ bool renderColorRampPickerPopup(GraphLike& graph) {
     return changed;
 }
 
-// A single compact swatch + three short connection pins replaces the three
-// full-width RGB drag rows and the oversized inline ColorEdit3. Users can still
-// wire R/G/B independently; the full color picker only opens on demand.
-bool renderSplatInkControl(
+// Standard compact RGB control: one color swatch and three ordinary input
+// pins, usable by any node exposing a color as independent R/G/B sliders.
+// The modal picker runs outside the transformed node-editor canvas.
+void renderRgbColorControl(
     NodeRecord& node, const NodeDescriptor& descriptor,
     node_widgets::PopupState& popup,
-    std::unordered_map<std::uintptr_t, PinTarget>& pins) {
-    constexpr std::array<const char*, 3> keys{"r","g","b"};
-    constexpr std::array<const char*, 3> labels{"R","G","B"};
-    constexpr std::array<float, 3> defaults{.90F,.2925F,.09F};
-    float color[3]{};
-    for(std::size_t i=0;i<keys.size();++i)
+    std::unordered_map<std::uintptr_t, PinTarget>& pins,
+    std::string_view groupId, const char* label,
+    const std::array<const char*,3>& keys,
+    const std::array<float,3>& defaults) {
+    constexpr std::array<const char*,3> channelNames{"R","G","B"};
+    std::array<float,3> color{};
+    for(std::size_t i=0;i<3;++i)
         color[i]=node.parameters.value(keys[i],defaults[i]);
 
     ImGui::BeginGroup();
-    ImGui::TextUnformatted("Ink");
+    ImGui::TextUnformatted(label);
     ImGui::SameLine(0.0F,8.0F);
-    for(std::size_t i=0;i<keys.size();++i){
+    for(std::size_t i=0;i<3;++i){
         const auto index=inputSocketIndex(descriptor,keys[i]);
         if(index<0)continue;
         const auto id=pinUiId(node.id,static_cast<std::size_t>(index),
@@ -556,22 +557,20 @@ bool renderSplatInkControl(
         const float width=renderTypeSquares(socket.contract,ImGui::GetCursorScreenPos());
         ImGui::Dummy(ImVec2(width,8.0F));
         ImGui::SameLine(0.0F,2.0F);
-        ImGui::TextUnformatted(labels[i]);
+        ImGui::TextUnformatted(channelNames[i]);
         ImGui::EndGroup();
         ed::EndPin();
         ImGui::SameLine(0.0F,5.0F);
     }
-    ImGui::PushID("splatInk");
+    ImGui::PushID(groupId.data());
     if(ImGui::ColorButton("##swatch",ImVec4(color[0],color[1],color[2],1.0F),
                           ImGuiColorEditFlags_NoAlpha|ImGuiColorEditFlags_NoDragDrop,
                           ImVec2(42.0F,19.0F))) {
-        // Capture only the widget action here. The shared PopupState is
-        // opened/rendered after ed::Suspend(), in untransformed screen space.
-        popup.request(node_widgets::PopupKind::SplatInkColor,node.id);
+        popup.requestColor(node.id,std::string(groupId),label,
+                           {keys[0],keys[1],keys[2]},defaults);
     }
     ImGui::PopID();
     ImGui::EndGroup();
-    return false;
 }
 
 // Renders the node box the same way in the root graph and in every editable
@@ -604,11 +603,22 @@ bool renderNodeBody(NodeRecord& node, const NodeDescriptor& descriptor,
             renderSocketPin(node.id, descriptor, socketIndex, pins, outputTypes);
     }
     for (const auto& property : descriptor.parameters) {
-        if (node.type == "particle_splat" &&
-            (property.key == "r" || property.key == "g" || property.key == "b")) {
-            if (property.key == "r" &&
-                renderSplatInkControl(node,descriptor,popup,pins))
-                changeReported=true;
+        if(node.type=="particle_splat" &&
+           (property.key=="r" || property.key=="g" || property.key=="b")){
+            if(property.key=="r")
+                renderRgbColorControl(node,descriptor,popup,pins,"splatInk","Ink",
+                                      {"r","g","b"},{.90F,.2925F,.09F});
+            continue;
+        }
+        if(node.type=="lattice_lines" &&
+           (property.key=="xR" || property.key=="xG" || property.key=="xB" ||
+            property.key=="yR" || property.key=="yG" || property.key=="yB")){
+            if(property.key=="xR")
+                renderRgbColorControl(node,descriptor,popup,pins,"latticeX","X lines",
+                                      {"xR","xG","xB"},{.95F,.30F,.16F});
+            if(property.key=="yR")
+                renderRgbColorControl(node,descriptor,popup,pins,"latticeY","Y lines",
+                                      {"yR","yG","yB"},{.16F,.63F,.97F});
             continue;
         }
         if (node.type == "color_ramp" &&

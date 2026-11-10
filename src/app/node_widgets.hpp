@@ -22,7 +22,7 @@ enum class PopupKind {
     ConvolutionPreset,
     ConvolutionKernel,
     ParameterEnum,
-    SplatInkColor,
+    RgbColor,
 };
 
 struct PopupState {
@@ -31,11 +31,23 @@ struct PopupState {
     bool openRequested = false;
     std::string parameterKey;
     std::vector<std::string> enumOptions;
+    std::string colorLabel;
+    std::array<std::string,3> colorKeys;
+    std::array<float,3> colorDefaults{};
 
     void request(PopupKind requestedKind, NodeId requestedNode) {
         kind = requestedKind;
         node = requestedNode;
         openRequested = true;
+    }
+
+    void requestColor(NodeId requestedNode, std::string id, std::string label,
+                      std::array<std::string,3> keys, std::array<float,3> defaults) {
+        request(PopupKind::RgbColor, requestedNode);
+        parameterKey = std::move(id);
+        colorLabel = std::move(label);
+        colorKeys = std::move(keys);
+        colorDefaults = defaults;
     }
 
     void requestEnum(NodeId requestedNode, std::string key,
