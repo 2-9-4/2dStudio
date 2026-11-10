@@ -37,8 +37,9 @@ submodes, and the special nodes available inside simulation subgraphs.
   settings can fold coordinates; normal settings preserve the sheet topology.
 - **Lattice Lines** (`lattice_lines`) — Rectangular grid or polar
   rings/spokes. The original **Line Mask** Scalar Field output is unchanged.
-  New **Colored Lines** Color Image output uses independent **X Lines RGB**
-  and **Y Lines RGB** controls (for polar mode, rings are X and spokes Y).
+  New **Colored Lines** Color Image output uses the standard compact RGB color
+  picker swatches for **X Lines** and **Y Lines**, each retaining independently
+  connectable R/G/B channel pins (for polar mode, rings are X and spokes Y).
   Choose **Per-Axis Colors** to use the two colors for every line family,
   or **Rainbow by Line** to vary the color of each individual X/Y line.
   Intersections blend the two colors. Optional warped Coordinates, line
