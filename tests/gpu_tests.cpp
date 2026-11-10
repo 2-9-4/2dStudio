@@ -2956,4 +2956,27 @@ TEST_CASE("swept SDF ballistic collision recovers penetrating states and retains
     }
 }
 
+
+TEST_CASE("lattice RGB picker channels preserve individually connectable legacy parameters", "[gpu][lattice]") {
+    test_support::RuntimeHarness h{128,128};
+    const auto lattice=h.add("lattice_lines",{{"columns",4},{"rows",4},
+        {"thickness",3.0F},{"xR",1.0F},{"xG",0.0F},{"xB",0.0F},
+        {"yR",0.0F},{"yG",0.0F},{"yB",1.0F}});
+    const auto override=h.add("float",{{"value",0.0F}});
+    h.connect(override,"value",lattice,"xR");
+    const auto sink=h.add("output");
+    h.connect(lattice,"colored",sink,"image");
+    const auto& descriptor=h.descriptor("lattice_lines");
+    for (const char* key:{"xR","xG","xB","yR","yG","yB"}) {
+        REQUIRE(std::ranges::any_of(descriptor.sockets,[&](const auto& socket){
+            return socket.key==key && socket.direction==SocketDirection::Input;
+        }));
+    }
+    h.evaluated();
+    const auto image=h.pixels(lattice,1);
+    const auto xLine=4*(41*128+32);
+    const auto yLine=4*(32*128+41);
+    REQUIRE(image[xLine]<0.05F); // Connected X red overrides persisted xR=1
+    REQUIRE(image[yLine+2]>0.25F); // Y blue remains independent
+}
 } // namespace reaction
