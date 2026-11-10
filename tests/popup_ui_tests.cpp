@@ -39,14 +39,14 @@ struct UiFixture {
 
 } // namespace
 
-TEST_CASE("node-editor splat picker opens at screen-space mouse position while suspended") {
+TEST_CASE("node-editor shared RGB picker opens at screen-space mouse position while suspended") {
     using namespace reaction;
     UiFixture ui;
     Graph graph;
     const auto id=graph.addNode("particle_splat",{-900.0F,1700.0F});
     graph.findNode(id)->parameters={{"r",.9F},{"g",.2925F},{"b",.09F}};
     node_widgets::PopupState popup;
-    popup.request(node_widgets::PopupKind::SplatInkColor,id);
+    popup.requestColor(id,"splatInk","Ink",{"r","g","b"},{.9F,.2925F,.09F});
 
     auto& io=ImGui::GetIO();
     io.MousePos={740.0F,415.0F};
@@ -68,7 +68,7 @@ TEST_CASE("node-editor splat picker opens at screen-space mouse position while s
     REQUIRE(physicalMouse.x==Catch::Approx(740.0F));
     REQUIRE(physicalMouse.y==Catch::Approx(415.0F));
     REQUIRE_FALSE(node_widgets::renderPopup(popup,graph));
-    REQUIRE(ImGui::IsPopupOpen("Splat ink color"));
+    REQUIRE(ImGui::IsPopupOpen("RGB color picker"));
 
     const auto& stack=ImGui::GetCurrentContext()->OpenPopupStack;
     REQUIRE_FALSE(stack.empty());
