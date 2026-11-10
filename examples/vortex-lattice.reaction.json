@@ -3,33 +3,22 @@
   "formatVersion": 4,
   "links": [
     {
-      "id": 1,
       "from": {
         "node": 1,
         "socket": "coordinates"
       },
+      "id": 1,
       "to": {
         "node": 2,
         "socket": "coordinates"
       }
     },
     {
-      "id": 2,
       "from": {
         "node": 2,
-        "socket": "lines"
+        "socket": "colored"
       },
-      "to": {
-        "node": 3,
-        "socket": "value"
-      }
-    },
-    {
-      "id": 3,
-      "from": {
-        "node": 3,
-        "socket": "image"
-      },
+      "id": 4,
       "to": {
         "node": 4,
         "socket": "image"
@@ -39,70 +28,50 @@
   "nodes": [
     {
       "id": 1,
-      "type": "vortex_warp",
-      "typeVersion": 1,
-      "position": [
-        0,
-        160
-      ],
+      "label": "Two counter-rotating foci + transition ripple",
       "parameters": {
+        "falloff": 0.0,
         "mode": 1,
-        "falloff": 0,
-        "twist": 5.5,
-        "radius": 0.23,
-        "separation": 0.2,
-        "squeeze": 0.36,
-        "ripple": 0.025,
-        "period": 0.08,
-        "ringWidth": 0.1
+        "period": 0.07265999913215637,
+        "radius": 0.18211999535560608,
+        "ringWidth": 1.0,
+        "ripple": 0.017799999564886093,
+        "separation": 0.6079999804496765,
+        "squeeze": 0.800000011920929,
+        "twist": 2.2799999713897705
       },
-      "label": "Two counter-rotating foci + transition ripple"
+      "position": [
+        -472.0,
+        115.0
+      ],
+      "type": "vortex_warp",
+      "typeVersion": 1
     },
     {
       "id": 2,
-      "type": "lattice_lines",
-      "typeVersion": 1,
-      "position": [
-        400,
-        160
-      ],
+      "label": "Undistorted lattice sampled in twisted coordinates",
       "parameters": {
-        "mode": 0,
         "columns": 36,
+        "mode": 0,
         "rows": 36,
         "thickness": 1.35
       },
-      "label": "Undistorted lattice sampled in twisted coordinates"
-    },
-    {
-      "id": 3,
-      "type": "color_ramp",
-      "typeVersion": 1,
       "position": [
-        800,
-        160
+        400.0,
+        160.0
       ],
-      "parameters": {
-        "low": 0.02,
-        "high": 0.95,
-        "r0": 0,
-        "g0": 0,
-        "b0": 0,
-        "r1": 1,
-        "g1": 1,
-        "b1": 1
-      },
-      "label": "Ink / paper coloring"
+      "type": "lattice_lines",
+      "typeVersion": 1
     },
     {
       "id": 4,
-      "type": "output",
-      "typeVersion": 1,
+      "parameters": {},
       "position": [
-        1190,
-        160
+        1632.0,
+        28.0
       ],
-      "parameters": {}
+      "type": "output",
+      "typeVersion": 1
     }
   ],
   "project": {
