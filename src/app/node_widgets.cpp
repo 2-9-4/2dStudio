@@ -19,7 +19,7 @@ constexpr const char* popupName(PopupKind kind) {
     case PopupKind::ConvolutionPreset: return "Convolution preset";
     case PopupKind::ConvolutionKernel: return "Convolution kernel";
     case PopupKind::ParameterEnum: return "Parameter enum";
-    case PopupKind::SplatInkColor: return "Splat ink color";
+    case PopupKind::RgbColor: return "RGB color picker";
     case PopupKind::None: return "";
     }
     return "";
@@ -266,28 +266,24 @@ bool renderPopup(PopupState& popup, GraphBody& graph) {
                 }
                 ImGui::EndChild();
             }
-        } else if (popup.kind == PopupKind::SplatInkColor) {
-            if (node->type != "particle_splat") {
-                ImGui::CloseCurrentPopup();
-            } else {
-                constexpr std::array<const char*,3> keys{"r","g","b"};
-                constexpr std::array<float,3> defaults{.90F,.2925F,.09F};
-                float color[3]{};
-                for (std::size_t i=0;i<keys.size();++i)
-                    color[i]=node->parameters.value(keys[i],defaults[i]);
-                if (ImGui::ColorPicker3("##picker",color,
-                                       ImGuiColorEditFlags_NoAlpha)) {
-                    for (std::size_t i=0;i<keys.size();++i) {
-                        // Connected pins override only their own local channel.
-                        const std::string key(keys[i]);
-                        const bool connected=std::ranges::any_of(graph.links(),
-                            [&](const LinkRecord& link) {
-                                return link.toNode==node->id && link.toSocket==key;
-                            });
-                        if (!connected) {
-                            node->parameters[key]=color[i];
-                            changed=true;
-                        }
+        } else if (popup.kind == PopupKind::RgbColor) {
+            // The same full-screen-space picker drives every compact RGB
+            // swatch. Connected component pins are immutable from this editor;
+            // unconnected channels retain their local persisted values.
+            float color[3]{};
+            for (std::size_t i=0;i<3;++i)
+                color[i]=node->parameters.value(popup.colorKeys[i],popup.colorDefaults[i]);
+            ImGui::TextUnformatted(popup.colorLabel.c_str());
+            if (ImGui::ColorPicker3("##picker",color,ImGuiColorEditFlags_NoAlpha)) {
+                for (std::size_t i=0;i<3;++i) {
+                    const auto& key=popup.colorKeys[i];
+                    const bool connected=std::ranges::any_of(graph.links(),
+                        [&](const LinkRecord& link) {
+                            return link.toNode==node->id && link.toSocket==key;
+                        });
+                    if(!connected){
+                        node->parameters[key]=color[i];
+                        changed=true;
                     }
                 }
             }
